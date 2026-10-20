@@ -586,7 +586,7 @@ class Handler(BaseHTTPRequestHandler):
                 nid=None
                 with conn() as c:
                     cur=c.execute("INSERT INTO notifications(kind,subject,body,status,created_at,recipient) VALUES(?,?,?,?,?,?) RETURNING id",("client_message",subject,"To: "+client["name"]+" <"+client["email"]+">\\n\\n"+body,"new",now(),client["email"]))
-                    nid=cur.lastrowid
+                    nid=cur.fetchone()["id"]
                 if not send_owner_email(subject,body,client["email"]): return self.sendj({"error":"Message saved in Alerts but not sent. Configure SMTP in the server environment first."},503)
                 with conn() as c: c.execute("UPDATE notifications SET status='emailed',emailed_at=? WHERE id=?",(now(),nid))
                 return self.sendj({"ok":True,"recipient":client["email"]})
