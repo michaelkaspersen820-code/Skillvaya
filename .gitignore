@@ -1,0 +1,17 @@
+# User data and runtime databases
+*.sqlite3
+*.sqlite3-*
+*.db
+*.log
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Backups, caches, Python artifacts
+*.bak
+__pycache__/
+*.py[cod]
+# Local generated exports
+uploads/
