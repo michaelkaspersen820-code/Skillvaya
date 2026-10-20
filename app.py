@@ -670,7 +670,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.require("admin")
                 return self.sendj({"items":self._refund_list()})
             if path=="/api/admin/owner-promotions":
-                self.require("admin")
+                owner=self.require("admin")
                 kind=str(d.get("kind","ad")).strip().lower()
                 business_name=str(d.get("business_name","")).strip()[:120]
                 title=str(d.get("title","")).strip()[:160]
@@ -685,7 +685,15 @@ class Handler(BaseHTTPRequestHandler):
                 with conn() as c:
                     cur=c.execute("INSERT INTO owner_promotions(kind,business_name,title,category,description,target_url,image_url,status,owner_free,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'active',1,?,?) RETURNING id",(kind,business_name,title,category,description,target_url,image_url,now(),now()))
                     promotion_id=cur.fetchone()["id"]
-                return self.sendj({"ok":True,"id":promotion_id,"owner_free":True},201)
+                    # Owner business/service entries are also added to the public provider directory
+                    # as free active basic listings. They do not create a payment request or subscription.
+                    directory_id=None
+                    if kind=="business":
+                        directory_id=c.execute(
+                            "INSERT INTO businesses(user_id,name,category,area,phone,email,website,description,photos,plan,billing,status,payment_status,created_at) VALUES(?,?,?,?,?,?,?,?,?,'local','monthly','active','verified',?) RETURNING id",
+                            (owner["id"],business_name,category,str(d.get("area","South Africa")).strip()[:120] or "South Africa",str(d.get("phone","")).strip()[:40],str(d.get("contact_email","")).strip().lower()[:254] or owner.get("email",""),target_url,description,image_url,now())
+                        ).fetchone()["id"]
+                return self.sendj({"ok":True,"id":promotion_id,"directory_business_id":directory_id,"owner_free":True,"payment_required":False},201)
             if path.startswith("/api/admin/owner-promotions/"):
                 self.require("admin")
                 try: pid=int(path.rsplit("/",1)[1])
