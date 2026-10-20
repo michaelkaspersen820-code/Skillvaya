@@ -27,6 +27,10 @@ if DATABASE_URL:
             return super().__getitem__(key)
 
     def hybrid_row(cursor):
+        # psycopg also asks for a row factory while executing statements with no result set.
+        # Such cursors have no description; returning a tuple row maker avoids a crash.
+        if cursor.description is None:
+            return lambda values: values
         columns = [d.name for d in cursor.description]
         return lambda values: HybridRow(columns, values)
 
