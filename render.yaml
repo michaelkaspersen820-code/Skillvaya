@@ -23,3 +23,7 @@
         sync: false
       - key: SKILLVAYA_PAYFAST_PASSPHRASE
         sync: false
+      - key: SKILLVAYA_OWNER_EMAIL
+        sync: false
+      - key: SKILLVAYA_OWNER_PASSWORD
+        sync: false

@@ -15,6 +15,13 @@ PLANS = {"local":{"name":"Local","monthly":105},"priority":{"name":"Priority","m
 def conn():
     c=sqlite3.connect(DB); c.row_factory=sqlite3.Row; return c
 def init():
+    # Public deployments must provide a dedicated owner identity and a strong password.
+    # This prevents a fresh public database from having no way to authenticate its owner.
+    if os.environ.get("PORT"):
+        owner_email = os.environ.get("SKILLVAYA_OWNER_EMAIL", "").strip().lower()
+        owner_password = os.environ.get("SKILLVAYA_OWNER_PASSWORD", "")
+        if "@" not in owner_email or len(owner_password) < 14:
+            raise RuntimeError("Public deployment blocked: set SKILLVAYA_OWNER_EMAIL and a unique SKILLVAYA_OWNER_PASSWORD of at least 14 characters before starting Skillvaya.")
     with conn() as c:
         c.executescript("""
         CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', created_at TEXT NOT NULL, phone TEXT DEFAULT '', accepted_terms_version TEXT NOT NULL DEFAULT '', accepted_terms_at TEXT NOT NULL DEFAULT '');
@@ -51,6 +58,15 @@ def init():
             c.execute("UPDATE settings SET value='skillvaya@gmail.com' WHERE key='owner_email' AND (value IS NULL OR value='' OR value='owner@skillvaya.local')")
         if not c.execute("SELECT 1 FROM settings WHERE key='terms_version'").fetchone():
             c.execute("INSERT INTO settings(key,value) VALUES('terms_version','2026-10-20')")
+        # Create/update the dedicated owner account only when explicit host secrets exist.
+        owner_email = os.environ.get("SKILLVAYA_OWNER_EMAIL", "").strip().lower()
+        owner_password = os.environ.get("SKILLVAYA_OWNER_PASSWORD", "")
+        if owner_email and owner_password and "@" in owner_email and len(owner_password) >= 14:
+            existing = c.execute("SELECT id FROM users WHERE email=?", (owner_email,)).fetchone()
+            if existing:
+                c.execute("UPDATE users SET name='Skillvaya Owner', role='admin', password_hash=? WHERE id=?", (hashpw(owner_password), existing["id"]))
+            else:
+                c.execute("INSERT INTO users(name,email,password_hash,role,created_at,phone,accepted_terms_version,accepted_terms_at) VALUES(?,?,?,?,?,?,?,?)", ("Skillvaya Owner", owner_email, hashpw(owner_password), "admin", now(), "", "owner", now()))
 def now(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
 def hashpw(p):
     salt=secrets.token_hex(16)
