@@ -671,7 +671,8 @@ class Handler(BaseHTTPRequestHandler):
                 if any(x and not x.startswith(("https://","http://")) for x in (target_url,image_url)): return self.sendj({"error":"Links must start with http:// or https://."},400)
                 with conn() as c:
                     cur=c.execute("INSERT INTO owner_promotions(kind,business_name,title,category,description,target_url,image_url,status,owner_free,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'active',1,?,?) RETURNING id",(kind,business_name,title,category,description,target_url,image_url,now(),now()))
-                return self.sendj({"ok":True,"id":cur.fetchone()["id"],"owner_free":True},201)
+                    promotion_id=cur.fetchone()["id"]
+                return self.sendj({"ok":True,"id":promotion_id,"owner_free":True},201)
             if path.startswith("/api/admin/owner-promotions/"):
                 self.require("admin")
                 try: pid=int(path.rsplit("/",1)[1])
