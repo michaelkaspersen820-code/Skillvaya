@@ -1,0 +1,38 @@
+name: Skillvaya QA
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile application and verification scripts
+        run: >-
+          python -m py_compile app.py run_local.py desktop_launcher.py
+          qa_one_go.py verify_owner_app_shell.py verify_payfast_checkout.py
+          test_deployment_owner_bootstrap.py test_owner_promotions.py
+      - name: Run isolated marketplace end-to-end QA
+        run: python qa_one_go.py
+      - name: Verify owner app navigation and payment-readiness messaging
+        run: python verify_owner_app_shell.py
+      - name: Verify PayFast sandbox checkout safeguards
+        run: python verify_payfast_checkout.py
+      - name: Verify production owner bootstrap and password hashing
+        run: python test_deployment_owner_bootstrap.py
+      - name: Verify owner promotions
+        run: python test_owner_promotions.py
