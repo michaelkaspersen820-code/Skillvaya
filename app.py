@@ -11,7 +11,7 @@ DB = os.environ.get("SKILLVAYA_DB_PATH", os.path.join(ROOT, "skillvaya.sqlite3")
 # use managed PostgreSQL so customer records survive web-service restarts and redeploys.
 if DATABASE_URL:
     import psycopg
-    DBIntegrityError = psycopg.errors.UniqueViolation
+    DBIntegrityError = psycopg.IntegrityError
 
     class HybridRow(dict):
         def __init__(self, columns, values):
@@ -44,6 +44,8 @@ else:
         return c
 
 def execute_script(c, script):
+    if not DATABASE_URL:
+        script = script.replace("BIGSERIAL PRIMARY KEY", "INTEGER PRIMARY KEY")
     for statement in script.split(";"):
         if statement.strip():
             c.execute(statement)
