@@ -175,8 +175,8 @@ def send_owner_email(subject, body, recipient=None):
         return False
 def notify(kind, subject, body, recipient=""):
     with conn() as c:
-        cur=c.execute("INSERT INTO notifications(kind,subject,body,created_at,recipient) VALUES(?,?,?,?,?)",(kind,subject,body,now(),recipient))
-        nid=cur.lastrowid
+        cur=c.execute("INSERT INTO notifications(kind,subject,body,created_at,recipient) VALUES(?,?,?,?,?) RETURNING id",(kind,subject,body,now(),recipient))
+        nid=cur.fetchone()["id"]
     if send_owner_email(subject,body,recipient or None):
         with conn() as c: c.execute("UPDATE notifications SET emailed_at=?,status='emailed' WHERE id=?",(now(),nid))
         return True
@@ -585,7 +585,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not client: return self.sendj({"error":"Client account not found."},404)
                 nid=None
                 with conn() as c:
-                    cur=c.execute("INSERT INTO notifications(kind,subject,body,status,created_at,recipient) VALUES(?,?,?,?,?,?)",("client_message",subject,"To: "+client["name"]+" <"+client["email"]+">\\n\\n"+body,"new",now(),client["email"]))
+                    cur=c.execute("INSERT INTO notifications(kind,subject,body,status,created_at,recipient) VALUES(?,?,?,?,?,?) RETURNING id",("client_message",subject,"To: "+client["name"]+" <"+client["email"]+">\\n\\n"+body,"new",now(),client["email"]))
                     nid=cur.lastrowid
                 if not send_owner_email(subject,body,client["email"]): return self.sendj({"error":"Message saved in Alerts but not sent. Configure SMTP in the server environment first."},503)
                 with conn() as c: c.execute("UPDATE notifications SET status='emailed',emailed_at=? WHERE id=?",(now(),nid))
@@ -670,8 +670,8 @@ class Handler(BaseHTTPRequestHandler):
                 if category not in CATEGORIES: return self.sendj({"error":"Choose a valid category."},400)
                 if any(x and not x.startswith(("https://","http://")) for x in (target_url,image_url)): return self.sendj({"error":"Links must start with http:// or https://."},400)
                 with conn() as c:
-                    cur=c.execute("INSERT INTO owner_promotions(kind,business_name,title,category,description,target_url,image_url,status,owner_free,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'active',1,?,?)",(kind,business_name,title,category,description,target_url,image_url,now(),now()))
-                return self.sendj({"ok":True,"id":cur.lastrowid,"owner_free":True},201)
+                    cur=c.execute("INSERT INTO owner_promotions(kind,business_name,title,category,description,target_url,image_url,status,owner_free,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'active',1,?,?) RETURNING id",(kind,business_name,title,category,description,target_url,image_url,now(),now()))
+                return self.sendj({"ok":True,"id":cur.fetchone()["id"],"owner_free":True},201)
             if path.startswith("/api/admin/owner-promotions/"):
                 self.require("admin")
                 try: pid=int(path.rsplit("/",1)[1])
