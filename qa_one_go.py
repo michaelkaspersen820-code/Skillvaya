@@ -20,13 +20,14 @@ def request(path,method="GET",data=None,token=None,expected=200):
         with urllib.request.urlopen(req,timeout=5) as r: status,body=r.status,r.read()
     except urllib.error.HTTPError as e: status,body=e.code,e.read()
     assert status==expected,"%s %s expected %s got %s: %s"%(method,path,expected,status,body[:300])
-    if path in ("/","/customer","/owner-control"): return body.decode("utf-8",errors="replace")
+    if path in ("/","/customer","/owner-control","/owner-app"): return body.decode("utf-8",errors="replace")
     return json.loads(body) if body else {}
 def check(name,fn):
     fn(); passed.append(name); print("PASS",name)
 try:
     root=request("/")
-    check("Owner App serves as the root screen",lambda: (_ for _ in ()).throw(AssertionError()) if "Owner App" not in root else None)
+    check("Public Skillvaya website serves as the root screen",lambda: (_ for _ in ()).throw(AssertionError()) if "Find your people" not in root or "Download / install app" not in root else None)
+    check("Owner App remains on its separate route",lambda: (_ for _ in ()).throw(AssertionError()) if "Owner App" not in request("/owner-app") else None)
     check("Customer app remains a separate route",lambda: (_ for _ in ()).throw(AssertionError()) if "Choose plan" not in request("/customer") else None)
     check("Owner Control has a payment/refund section",lambda: (_ for _ in ()).throw(AssertionError()) if "PayFast payment requests" not in request("/owner-control") else None)
     check("category directory is available",lambda: (_ for _ in ()).throw(AssertionError()) if len(request("/api/categories")["categories"])<30 else None)
