@@ -9,6 +9,15 @@
 !.env.example
 *.pem
 *.key
+*.jks
+# Android build outputs and local Gradle cache
+android-native/.gradle/
+android-native/build/
+android-native/app/build/
+# Local build outputs
+build/
+dist/
+*.spec
 # Backups, caches, Python artifacts
 *.bak
 __pycache__/

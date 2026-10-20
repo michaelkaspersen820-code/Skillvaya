@@ -346,13 +346,39 @@ class Handler(BaseHTTPRequestHandler):
         with conn() as c:
             rows=c.execute("SELECT p.id,p.reference,p.plan,p.billing,p.amount,p.status,p.created_at,p.verified_at,p.pf_payment_id,p.refunded_amount,p.refund_status,u.email user_email FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 300").fetchall()
         return [dict(x) for x in rows]
+    def do_HEAD(self):
+        path=urlparse(self.path).path
+        if path=="/healthz":
+            b=json.dumps({"ok":True,"service":"skillvaya"}).encode()
+            self.send_response(200); self.send_header("Content-Type","application/json; charset=utf-8"); self.send_header("Content-Length",str(len(b))); self.end_headers(); return
+        if path in ("/downloads/Skillvaya.apk","/downloads/Skillvaya.exe"):
+            filename=path.rsplit("/",1)[-1]
+            download_path=os.path.join(ROOT,"downloads",filename)
+            if filename=="Skillvaya.exe" and os.environ.get("SKILLVAYA_EXE_PATH"):
+                download_path=os.environ["SKILLVAYA_EXE_PATH"]
+            if not os.path.isfile(download_path):
+                self.send_response(404); self.end_headers(); return
+            size=os.path.getsize(download_path)
+            content_type="application/vnd.android.package-archive" if filename.endswith(".apk") else "application/vnd.microsoft.portable-executable"
+            self.send_response(200); self.send_header("Content-Type",content_type); self.send_header("Content-Disposition",'attachment; filename="'+filename+'"'); self.send_header("Content-Length",str(size)); self.send_header("Cache-Control","no-store"); self.end_headers(); return
+        self.send_response(404); self.end_headers()
     def do_GET(self):
         path=urlparse(self.path).path
         try:
             if path=="/healthz":
                 return self.sendj({"ok":True,"service":"skillvaya"})
+            if path in ("/downloads/Skillvaya.apk","/downloads/Skillvaya.exe"):
+                filename=path.rsplit("/",1)[-1]
+                download_path=os.path.join(ROOT,"downloads",filename)
+                if filename=="Skillvaya.exe" and os.environ.get("SKILLVAYA_EXE_PATH"):
+                    download_path=os.environ["SKILLVAYA_EXE_PATH"]
+                if not os.path.isfile(download_path):
+                    return self.sendj({"error":"Installer is not available on this server yet"},404)
+                with open(download_path,"rb") as f: b=f.read()
+                content_type="application/vnd.android.package-archive" if filename.endswith(".apk") else "application/vnd.microsoft.portable-executable"
+                self.send_response(200); self.send_header("Content-Type",content_type); self.send_header("Content-Disposition",'attachment; filename="'+filename+'"'); self.send_header("Content-Length",str(len(b))); self.send_header("Cache-Control","no-store"); self.end_headers(); self.wfile.write(b); return
             if path=="/sv-logo.jpeg":
-                logo_path=os.path.join(os.path.dirname(__file__),"sv-logo.jpeg")
+                logo_path=os.path.join(ROOT,"sv-logo.jpeg")
                 with open(logo_path,"rb") as f: b=f.read()
                 self.send_response(200); self.send_header("Content-Type","image/jpeg"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
             if path=="/manifest.json":

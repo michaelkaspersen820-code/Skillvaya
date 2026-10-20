@@ -1,0 +1,41 @@
+plugins {
+    id 'com.android.application'
+    id 'com.chaquo.python'
+}
+android {
+    namespace 'za.co.skillvaya.app'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'za.co.skillvaya.app'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+        ndk { abiFilters 'arm64-v8a', 'x86_64' }
+    }
+    signingConfigs {
+        release {
+            def ksPath = System.getenv('SKILLVAYA_KEYSTORE_PATH')
+            if (ksPath != null && !ksPath.isEmpty()) {
+                storeFile file(ksPath)
+                storePassword System.getenv('SKILLVAYA_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('SKILLVAYA_KEY_ALIAS')
+                keyPassword System.getenv('SKILLVAYA_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (System.getenv('SKILLVAYA_KEYSTORE_PATH') != null) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
+chaquopy {
+    defaultConfig {
+        version = "3.12"
+        buildPython "C:/Users/user/AppData/Local/Programs/Python/Python312/python.exe"
+    }
+}

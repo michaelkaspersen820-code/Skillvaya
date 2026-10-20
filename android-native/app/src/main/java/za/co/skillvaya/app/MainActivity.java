@@ -1,0 +1,67 @@
+package za.co.skillvaya.app;
+import android.app.Activity;
+import android.os.Bundle;
+import android.graphics.Color;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.widget.FrameLayout;
+import android.view.ViewGroup;
+import android.view.Gravity;
+import android.widget.TextView;
+import java.io.File;
+import java.io.InputStream;
+import java.io.FileOutputStream;
+import com.chaquo.python.Python;
+import com.chaquo.python.android.AndroidPlatform;
+
+public class MainActivity extends Activity {
+    private WebView webView;
+    private TextView status;
+    @Override public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        getWindow().setStatusBarColor(Color.rgb(7,20,38));
+        getWindow().setNavigationBarColor(Color.rgb(7,20,38));
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.rgb(7,20,38));
+        webView = new WebView(this);
+        status = new TextView(this);
+        status.setText("Starting Skillvaya…"); status.setTextColor(Color.WHITE);
+        status.setTextSize(18); status.setGravity(Gravity.CENTER);
+        root.addView(webView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(status, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        setContentView(root); webView.setVisibility(WebView.GONE);
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true); settings.setUserAgentString(settings.getUserAgentString() + " SkillvayaNative");
+        settings.setDatabaseEnabled(true); settings.setSupportZoom(false);
+        settings.setAllowFileAccess(false); settings.setAllowContentAccess(true);
+        webView.setWebViewClient(new WebViewClient()); webView.setWebChromeClient(new WebChromeClient());
+        try {
+            for (String name : new String[]{"website.html","icon-192.png","icon-512.png","sv-logo.jpeg"}) copyAsset(name);
+            if (!Python.isStarted()) Python.start(new AndroidPlatform(this));
+            new Thread(() -> {
+                try { Python.getInstance().getModule("android_server").callAttr("start_server", getFilesDir().getAbsolutePath(), new File(getFilesDir(),"skillvaya.sqlite3").getAbsolutePath()); }
+                catch (Exception e) { runOnUiThread(() -> status.setText("Skillvaya could not start. Please reinstall or contact support.")); }
+            }, "SkillvayaPythonBootstrap").start();
+            new Thread(() -> {
+                for (int i=0; i<120; i++) {
+                    try {
+                        java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL("http://127.0.0.1:8878/healthz").openConnection();
+                        c.setConnectTimeout(500); c.setReadTimeout(500); int code=c.getResponseCode(); c.disconnect();
+                        if (code==200) { runOnUiThread(() -> { status.setVisibility(TextView.GONE); webView.setVisibility(WebView.VISIBLE); webView.loadUrl("http://127.0.0.1:8878/"); }); return; }
+                    } catch (Exception ignored) {}
+                    try { Thread.sleep(250); } catch (InterruptedException ignored) { return; }
+                }
+                runOnUiThread(() -> status.setText("Skillvaya startup timed out. Close and reopen the app."));
+            }, "SkillvayaHealthCheck").start();
+        } catch (Exception e) { status.setText("Skillvaya setup failed. Please reinstall the app."); }
+    }
+    private void copyAsset(String name) throws Exception {
+        File out=new File(getFilesDir(),name); if(out.exists()&&out.length()>0)return;
+        try(InputStream in=getAssets().open(name);FileOutputStream fos=new FileOutputStream(out)){
+            byte[] buffer=new byte[8192];int n;while((n=in.read(buffer))>0)fos.write(buffer,0,n);
+        }
+    }
+    @Override public void onBackPressed(){if(webView!=null&&webView.canGoBack())webView.goBack();else super.onBackPressed();}
+}

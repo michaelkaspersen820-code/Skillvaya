@@ -22,12 +22,23 @@ def request(path,method="GET",data=None,token=None,expected=200):
     assert status==expected,"%s %s expected %s got %s: %s"%(method,path,expected,status,body[:300])
     if path in ("/","/customer","/owner-control","/owner-app"): return body.decode("utf-8",errors="replace")
     return json.loads(body) if body else {}
+def head(path):
+    req=urllib.request.Request(base+path,method="HEAD")
+    with urllib.request.urlopen(req,timeout=5) as r:
+        return r.status, r.headers
+def check_installer(path, mime):
+    status, headers = head(path)
+    assert status == 200, "Installer download endpoint did not return HTTP 200"
+    assert headers.get("Content-Type", "").startswith(mime), "Installer MIME type is incorrect"
+    assert int(headers.get("Content-Length", "0")) > 1000000, "Installer file is missing or unexpectedly small"
 def check(name,fn):
     fn(); passed.append(name); print("PASS",name)
 try:
     root=request("/")
     check("Public Skillvaya website serves as the root screen",lambda: (_ for _ in ()).throw(AssertionError()) if "Find your people" not in root or "Download / install app" not in root else None)
     check("Owner App remains on its separate route",lambda: (_ for _ in ()).throw(AssertionError()) if "Owner App" not in request("/owner-app") else None)
+    check("Android APK download route serves the signed installer",lambda: check_installer("/downloads/Skillvaya.apk","application/vnd.android.package-archive"))
+    check("Windows EXE download route serves the installer",lambda: check_installer("/downloads/Skillvaya.exe","application/vnd.microsoft.portable-executable"))
     check("Customer app remains a separate route",lambda: (_ for _ in ()).throw(AssertionError()) if "Choose plan" not in request("/customer") else None)
     check("Owner Control has a payment/refund section",lambda: (_ for _ in ()).throw(AssertionError()) if "PayFast payment requests" not in request("/owner-control") else None)
     check("category directory is available",lambda: (_ for _ in ()).throw(AssertionError()) if len(request("/api/categories")["categories"])<30 else None)
