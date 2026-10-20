@@ -2,9 +2,9 @@ name: Skillvaya QA
 
 on:
   push:
-    branches: [main]
+    branches: [main, free-hosting-postgres]
   pull_request:
-    branches: [main]
+    branches: [main, free-hosting-postgres]
   workflow_dispatch:
 
 permissions:
