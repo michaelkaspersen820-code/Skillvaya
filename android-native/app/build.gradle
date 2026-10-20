@@ -5,7 +5,10 @@ plugins {
 android {
     namespace 'za.co.skillvaya.app'
     compileSdk 35
+    buildFeatures { buildConfig true }
     defaultConfig {
+        def publicUrl = (System.getenv('SKILLVAYA_PUBLIC_URL') ?: '').replace('\\', '\\\\').replace('"', '\\"')
+        buildConfigField 'String', 'PUBLIC_URL', '"' + publicUrl + '"'
         applicationId 'za.co.skillvaya.app'
         minSdk 26
         targetSdk 35

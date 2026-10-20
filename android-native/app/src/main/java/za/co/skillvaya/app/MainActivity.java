@@ -38,6 +38,19 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(false); settings.setAllowContentAccess(true);
         webView.setWebViewClient(new WebViewClient()); webView.setWebChromeClient(new WebChromeClient());
         try {
+            if (BuildConfig.PUBLIC_URL != null && !BuildConfig.PUBLIC_URL.trim().isEmpty()) {
+                status.setText("Connecting to Skillvaya…");
+                webView.setWebViewClient(new WebViewClient() {
+                    @Override public void onPageFinished(WebView view, String url) {
+                        status.setVisibility(TextView.GONE); webView.setVisibility(ViewGroup.VISIBLE);
+                    }
+                    @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                        return false;
+                    }
+                });
+                webView.loadUrl(BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", ""));
+                return;
+            }
             for (String name : new String[]{"website.html","icon-192.png","icon-512.png","sv-logo.jpeg"}) copyAsset(name);
             if (!Python.isStarted()) Python.start(new AndroidPlatform(this));
             new Thread(() -> {
