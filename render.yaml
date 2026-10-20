@@ -1,18 +1,14 @@
-﻿services:
+services:
   - type: web
     name: skillvaya
     runtime: python
-    plan: starter
-    buildCommand: python -m py_compile app.py
+    plan: free
+    buildCommand: pip install -r requirements.txt && python -m py_compile app.py
     startCommand: python app.py
     healthCheckPath: /healthz
-    disk:
-      name: skillvaya-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
-      - key: SKILLVAYA_DB_PATH
-        value: /var/data/skillvaya.sqlite3
+      - key: DATABASE_URL
+        sync: false
       - key: SKILLVAYA_PAYFAST_MODE
         value: sandbox
       - key: SKILLVAYA_PUBLIC_URL
