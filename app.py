@@ -4,7 +4,55 @@ import json, sqlite3, hashlib, hmac, secrets, os, datetime, threading, webbrowse
 from contextlib import contextmanager
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 DB = os.environ.get("SKILLVAYA_DB_PATH", os.path.join(ROOT, "skillvaya.sqlite3"))
+
+# SQLite remains the zero-configuration local development database. Hosted free deployments
+# use managed PostgreSQL so customer records survive web-service restarts and redeploys.
+if DATABASE_URL:
+    import psycopg
+    DBIntegrityError = psycopg.errors.UniqueViolation
+
+    class HybridRow(dict):
+        def __init__(self, columns, values):
+            super().__init__(zip(columns, values))
+            self._values = tuple(values)
+        def __getitem__(self, key):
+            if isinstance(key, int):
+                return self._values[key]
+            return super().__getitem__(key)
+
+    def hybrid_row(cursor):
+        columns = [d.name for d in cursor.description]
+        return lambda values: HybridRow(columns, values)
+
+    class PgConnection:
+        def __init__(self, raw):
+            self.raw = raw
+        def execute(self, sql, params=()):
+            return self.raw.execute(sql.replace("?", "%s"), params)
+        def commit(self): return self.raw.commit()
+        def rollback(self): return self.raw.rollback()
+        def close(self): return self.raw.close()
+    def connect_db():
+        return PgConnection(psycopg.connect(DATABASE_URL, row_factory=hybrid_row))
+else:
+    DBIntegrityError = sqlite3.IntegrityError
+    def connect_db():
+        c = sqlite3.connect(DB, timeout=15)
+        c.row_factory = sqlite3.Row
+        return c
+
+def execute_script(c, script):
+    for statement in script.split(";"):
+        if statement.strip():
+            c.execute(statement)
+
+def table_columns(c, table):
+    if DATABASE_URL:
+        rows = c.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?", (table,)).fetchall()
+        return {r["column_name"] for r in rows}
+    return {r[1] for r in c.execute("PRAGMA table_info(" + table + ")")}
 # Local development remains loopback-only. A managed host supplies PORT; public deployment
 # must also complete the production owner-authentication release gate before going live.
 HOST = os.environ.get("SKILLVAYA_HOST", "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
@@ -15,11 +63,7 @@ CATEGORIES = [
 PLANS = {"local":{"name":"Local","monthly":105},"priority":{"name":"Priority","monthly":210},"plus":{"name":"Business Plus","monthly":500},"spotlight":{"name":"Business Spotlight","monthly":1000}}
 @contextmanager
 def conn():
-    # sqlite3's built-in connection context manager commits/rolls back but does not close.
-    # Explicitly close every managed connection to avoid leaked Windows file handles and
-    # to make temporary-database tests and hosted SQLite operations reliable.
-    c=sqlite3.connect(DB, timeout=15)
-    c.row_factory=sqlite3.Row
+    c = connect_db()
     try:
         yield c
         c.commit()
@@ -37,18 +81,18 @@ def init():
         if "@" not in owner_email or len(owner_password) < 14:
             raise RuntimeError("Public deployment blocked: set SKILLVAYA_OWNER_EMAIL and a unique SKILLVAYA_OWNER_PASSWORD of at least 14 characters before starting Skillvaya.")
     with conn() as c:
-        c.executescript("""
-        CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', created_at TEXT NOT NULL, phone TEXT DEFAULT '', accepted_terms_version TEXT NOT NULL DEFAULT '', accepted_terms_at TEXT NOT NULL DEFAULT '');
-        CREATE TABLE IF NOT EXISTS businesses(id INTEGER PRIMARY KEY, user_id INTEGER, name TEXT NOT NULL, category TEXT NOT NULL, area TEXT NOT NULL, phone TEXT NOT NULL, email TEXT, website TEXT, description TEXT NOT NULL, photos TEXT DEFAULT '', plan TEXT NOT NULL DEFAULT 'local', billing TEXT NOT NULL DEFAULT 'monthly', status TEXT NOT NULL DEFAULT 'pending', payment_status TEXT NOT NULL DEFAULT 'unpaid', rating REAL DEFAULT 0, created_at TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS enquiries(id INTEGER PRIMARY KEY, business_id INTEGER NOT NULL, customer_id INTEGER NOT NULL, message TEXT NOT NULL, status TEXT DEFAULT 'new', created_at TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS complaints(id INTEGER PRIMARY KEY, business_id INTEGER NOT NULL, customer_id INTEGER NOT NULL, reason TEXT NOT NULL, evidence TEXT DEFAULT '', status TEXT DEFAULT 'open', priority TEXT DEFAULT 'normal', created_at TEXT NOT NULL, admin_note TEXT DEFAULT '');
-        CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, business_id INTEGER, plan TEXT NOT NULL, billing TEXT NOT NULL, amount INTEGER NOT NULL, reference TEXT NOT NULL UNIQUE, status TEXT DEFAULT 'pending', created_at TEXT NOT NULL, verified_at TEXT, pf_payment_id TEXT, refunded_amount INTEGER NOT NULL DEFAULT 0, refund_status TEXT NOT NULL DEFAULT 'none');
-        CREATE TABLE IF NOT EXISTS analytics(id INTEGER PRIMARY KEY, event TEXT NOT NULL, user_id INTEGER, detail TEXT DEFAULT '', created_at TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL, emailed_at TEXT, recipient TEXT NOT NULL DEFAULT '');
+        execute_script(c, """
+        CREATE TABLE IF NOT EXISTS users(id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', created_at TEXT NOT NULL, phone TEXT DEFAULT '', accepted_terms_version TEXT NOT NULL DEFAULT '', accepted_terms_at TEXT NOT NULL DEFAULT '');
+        CREATE TABLE IF NOT EXISTS businesses(id BIGSERIAL PRIMARY KEY, user_id INTEGER, name TEXT NOT NULL, category TEXT NOT NULL, area TEXT NOT NULL, phone TEXT NOT NULL, email TEXT, website TEXT, description TEXT NOT NULL, photos TEXT DEFAULT '', plan TEXT NOT NULL DEFAULT 'local', billing TEXT NOT NULL DEFAULT 'monthly', status TEXT NOT NULL DEFAULT 'pending', payment_status TEXT NOT NULL DEFAULT 'unpaid', rating REAL DEFAULT 0, created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS enquiries(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, customer_id INTEGER NOT NULL, message TEXT NOT NULL, status TEXT DEFAULT 'new', created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS complaints(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, customer_id INTEGER NOT NULL, reason TEXT NOT NULL, evidence TEXT DEFAULT '', status TEXT DEFAULT 'open', priority TEXT DEFAULT 'normal', created_at TEXT NOT NULL, admin_note TEXT DEFAULT '');
+        CREATE TABLE IF NOT EXISTS payments(id BIGSERIAL PRIMARY KEY, user_id INTEGER NOT NULL, business_id INTEGER, plan TEXT NOT NULL, billing TEXT NOT NULL, amount INTEGER NOT NULL, reference TEXT NOT NULL UNIQUE, status TEXT DEFAULT 'pending', created_at TEXT NOT NULL, verified_at TEXT, pf_payment_id TEXT, refunded_amount INTEGER NOT NULL DEFAULT 0, refund_status TEXT NOT NULL DEFAULT 'none');
+        CREATE TABLE IF NOT EXISTS analytics(id BIGSERIAL PRIMARY KEY, event TEXT NOT NULL, user_id INTEGER, detail TEXT DEFAULT '', created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS notifications(id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL, emailed_at TEXT, recipient TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
-        CREATE TABLE IF NOT EXISTS subscriptions(id INTEGER PRIMARY KEY, business_id INTEGER NOT NULL, user_id INTEGER NOT NULL, plan TEXT NOT NULL, billing TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', started_at TEXT NOT NULL, expires_at TEXT NOT NULL, cancelled_at TEXT, UNIQUE(business_id));
+        CREATE TABLE IF NOT EXISTS subscriptions(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, user_id INTEGER NOT NULL, plan TEXT NOT NULL, billing TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', started_at TEXT NOT NULL, expires_at TEXT NOT NULL, cancelled_at TEXT, UNIQUE(business_id));
         CREATE TABLE IF NOT EXISTS owner_promotions(
-            id INTEGER PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'ad',
+            id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'ad',
             business_name TEXT NOT NULL, title TEXT NOT NULL,
             category TEXT NOT NULL DEFAULT 'Other professional services',
             description TEXT NOT NULL, target_url TEXT NOT NULL DEFAULT '',
@@ -57,20 +101,20 @@ def init():
         );
         """)
         # Safe schema migration for databases created by earlier local versions.
-        usercols={r[1] for r in c.execute("PRAGMA table_info(users)")}
+        usercols=table_columns(c, "users")
         if "phone" not in usercols:
             c.execute("ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''")
         if "accepted_terms_version" not in usercols:
             c.execute("ALTER TABLE users ADD COLUMN accepted_terms_version TEXT NOT NULL DEFAULT ''")
         if "accepted_terms_at" not in usercols:
             c.execute("ALTER TABLE users ADD COLUMN accepted_terms_at TEXT NOT NULL DEFAULT ''")
-        ncols={r[1] for r in c.execute("PRAGMA table_info(notifications)")}
+        ncols=table_columns(c, "notifications")
         if "recipient" not in ncols:
             c.execute("ALTER TABLE notifications ADD COLUMN recipient TEXT NOT NULL DEFAULT ''")
-        cols={r[1] for r in c.execute("PRAGMA table_info(businesses)")}
+        cols=table_columns(c, "businesses")
         if "subscription_expires_at" not in cols:
             c.execute("ALTER TABLE businesses ADD COLUMN subscription_expires_at TEXT")
-        pcols={r[1] for r in c.execute("PRAGMA table_info(payments)")}
+        pcols=table_columns(c, "payments")
         if "pf_payment_id" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN pf_payment_id TEXT")
         if "refunded_amount" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN refunded_amount INTEGER NOT NULL DEFAULT 0")
         if "refund_status" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN refund_status TEXT NOT NULL DEFAULT 'none'")
@@ -557,8 +601,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not terms_accepted: return self.sendj({"error":"You must read and accept the Skillvaya Terms, Conditions, Rules & Safety before creating an account."},400)
                 if not name or "@" not in email or len(pw)<8 or role not in ("customer","provider"): return self.sendj({"error":"Enter a name, valid email, password of 8+ characters, and valid account type."},400)
                 with conn() as c:
-                    try: c.execute("INSERT INTO users(name,email,password_hash,role,created_at,phone,accepted_terms_version,accepted_terms_at) VALUES(?,?,?,?,?,?,?,?)",(name,email,hashpw(pw),role,now(),phone,terms_version,now())); uid=c.execute("SELECT last_insert_rowid()").fetchone()[0]
-                    except sqlite3.IntegrityError: return self.sendj({"error":"An account with that email already exists."},409)
+                    try: uid=c.execute("INSERT INTO users(name,email,password_hash,role,created_at,phone,accepted_terms_version,accepted_terms_at) VALUES(?,?,?,?,?,?,?,?) RETURNING id",(name,email,hashpw(pw),role,now(),phone,terms_version,now())).fetchone()["id"]
+                    except DBIntegrityError: return self.sendj({"error":"An account with that email already exists."},409)
                 u={"id":uid,"name":name,"email":email,"phone":phone,"role":role}; t=secrets.token_urlsafe(32); SESSIONS[t]=u
                 notify("new_account","New Skillvaya account","New "+role+" account created: "+name+" <"+email+">.")
                 return self.sendj({"token":t,"user":u})
