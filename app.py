@@ -7,6 +7,10 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 DB = os.environ.get("SKILLVAYA_DB_PATH", os.path.join(ROOT, "skillvaya.sqlite3"))
 
+# Never allow a hosted service to silently fall back to ephemeral SQLite.
+if os.environ.get("PORT") and not DATABASE_URL:
+    raise RuntimeError("Hosted Skillvaya startup blocked: set DATABASE_URL to the Neon PostgreSQL connection string. SQLite is for local development only.")
+
 # SQLite remains the zero-configuration local development database. Hosted free deployments
 # use managed PostgreSQL so customer records survive web-service restarts and redeploys.
 if DATABASE_URL:
