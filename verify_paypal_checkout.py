@@ -28,6 +28,7 @@ def fake_paypal_request(method, path, payload=None):
         state["orders"][order_id] = {
             "reference": unit["custom_id"],
             "amount": unit["amount"]["value"],
+            "currency": unit["amount"]["currency_code"],
         }
         return {"id": order_id, "status": "CREATED", "links": [
             {"rel": "approve", "href": "https://www.sandbox.paypal.com/checkoutnow?token=" + order_id}
@@ -99,7 +100,7 @@ try:
 
     first = request("/api/paypal/create-order", "POST", {"plan":"priority","billing":"monthly"}, token=token)
     pending = db_one("SELECT status,payment_gateway,paypal_order_id,paypal_currency,paypal_amount FROM payments WHERE reference=?", (first["reference"],))
-    check("Order creation converts ZAR to USD, returns an approval URL, and stays pending", lambda: (_ for _ in ()).throw(AssertionError((first, tuple(pending)))) if not first.get("checkout_ready") or "sandbox.paypal.com" not in first.get("approval_url","") or tuple(pending) != ("pending","paypal",first["order_id"],"USD","13.13") or first.get("paypal_currency")!="USD" else None)
+    check("Order creation converts ZAR to USD, returns an approval URL, and stays pending", lambda: (_ for _ in ()).throw(AssertionError((first, tuple(pending)))) if not first.get("checkout_ready") or "sandbox.paypal.com" not in first.get("approval_url","") or tuple(pending) != ("pending","paypal",first["order_id"],"USD","13.13") or first.get("paypal_currency")!="USD" or state["orders"][first["order_id"]]["currency"]!="USD" else None)
 
     captured = request("/api/paypal/capture", "POST", {"order_id":first["order_id"]}, token=token)
     paid = db_one("SELECT status,payment_gateway,paypal_capture_id FROM payments WHERE reference=?", (first["reference"],))
