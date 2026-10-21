@@ -29,6 +29,14 @@ try:
  with app.conn() as c:
   c.execute("INSERT INTO businesses(user_id,name,category,area,phone,email,description,plan,billing,status,payment_status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(provider["user"]["id"],"QA Plumbing","Plumbers","Johannesburg","+27123456789","jobs@example.test","QA job provider listing","local","monthly","active","verified",app.now()))
   bid=c.execute("SELECT id FROM businesses WHERE name='QA Plumbing'").fetchone()["id"]
+ check("Favorites require customer authentication",lambda: req("/api/favorites",expected=401))
+ check("New customer starts with an empty saved-provider list",lambda: (_ for _ in ()).throw(AssertionError("favorites were not empty")) if req("/api/favorites",token=customer["token"])["items"] else None)
+ fav=req("/api/favorites","POST",{"business_id":bid},customer["token"])
+ check("Customer can save an active provider",lambda: (_ for _ in ()).throw(AssertionError(fav)) if fav.get("saved") is not True else None)
+ check("Saved provider is persisted in customer list",lambda: (_ for _ in ()).throw(AssertionError("saved provider missing")) if not any(x["id"]==bid for x in req("/api/favorites",token=customer["token"])["items"]) else None)
+ fav=req("/api/favorites","POST",{"business_id":bid},customer["token"])
+ check("Customer can remove a saved provider",lambda: (_ for _ in ()).throw(AssertionError(fav)) if fav.get("saved") is not False or req("/api/favorites",token=customer["token"])["items"] else None)
+ check("Providers cannot use the customer favorites endpoint",lambda: req("/api/favorites",token=provider["token"],expected=401))
  job=req("/api/jobs","POST",{"business_id":bid,"title":"Repair leaking kitchen pipe","description":"The kitchen sink pipe is leaking and needs inspection and repair.","area":"Randburg","preferred_date":"Flexible","budget_rands":"1200.00"},customer["token"],201)
  jid=job["job_id"]
  check("Customer can create a job request",lambda: (_ for _ in ()).throw(AssertionError(job)) if job.get("status")!="requested" else None)
