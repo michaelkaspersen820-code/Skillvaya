@@ -39,11 +39,13 @@ try:
     website=request("/website")
     workspace=request("/customer-app")
     manifest=request("/manifest.json")
-    check("Root route opens sign-in first",lambda: (_ for _ in ()).throw(AssertionError("login missing")) if "Sign in to open your Skillvaya workspace." not in root else None)
-    check("Customer entry route opens sign-in first",lambda: (_ for _ in ()).throw(AssertionError("customer entry bypasses login")) if "Sign in to open your Skillvaya workspace." not in customer_entry else None)
+    check("Root route opens the public app with sign-in in Profile",lambda: (_ for _ in ()).throw(AssertionError("app shell or Profile sign-in missing")) if 'id="customer"' not in root or "Profile / Sign in" not in root or "Sign in to open your Skillvaya workspace." in root else None)
+    check("Customer entry route opens the same public app",lambda: (_ for _ in ()).throw(AssertionError("customer app shell missing")) if 'id="customer"' not in customer_entry or "Profile / Sign in" not in customer_entry else None)
     check("Marketing page remains separate on /website",lambda: (_ for _ in ()).throw(AssertionError("website route missing")) if "Find your people" not in website or "Install Skillvaya" not in website else None)
     check("Installed web app manifest launches at /login",lambda: (_ for _ in ()).throw(AssertionError(manifest)) if manifest.get("start_url","").split("?")[0]!="/login" else None)
-    check("Workspace route has a valid-session guard",lambda: (_ for _ in ()).throw(AssertionError("session guard missing")) if "if(!token){location.replace('/');return}" not in workspace else None)
+    check("Workspace route restores saved sessions instead of forcing a gateway login",lambda: (_ for _ in ()).throw(AssertionError("session restore or profile-only login missing")) if "if(!token){location.replace('/');return}" in workspace or "Profile / Sign in" not in workspace else None)
+    check("Sign-in is not duplicated in the main navigation",lambda: (_ for _ in ()).throw(AssertionError("duplicate sign-in/logout navigation found")) if 'id="nav-account"' in workspace or '<button onclick="logout()">Log out</button>' in workspace else None)
+    check("Provider profile form is gated behind verified payment",lambda: (_ for _ in ()).throw(AssertionError("provider profile gate missing")) if 'id="providerProfileCard" class="card hidden"' not in workspace or "refreshProviderGate" not in workspace else None)
     owner_app=request("/owner-app")
     owner_control=request("/owner-control")
     check("Owner app uses the SV brand image",lambda: (_ for _ in ()).throw(AssertionError("owner shell missing")) if "Owner App" not in owner_app or "/sv-logo.jpeg" not in owner_app else None)
@@ -57,7 +59,25 @@ try:
     check("Server requires terms agreement at sign-in",lambda: request("/api/login","POST",{"email":"qa-provider@example.invalid","password":"SafePass123"},expected=400))
     check("Provider login succeeds after explicit terms agreement",lambda: request("/api/login","POST",{"email":"qa-provider@example.invalid","password":"SafePass123","accept_terms":True}))
     check("Wrong password is rejected",lambda: request("/api/login","POST",{"email":"qa-provider@example.invalid","password":"wrong-pass"},expected=401))
-    check("Provider can submit a listing",lambda: request("/api/businesses","POST",{"name":"QA Real Service","category":"Plumbers","area":"Johannesburg","phone":"+27123456789","description":"QA-only service listing."},token=pt,expected=201))
+    check("Provider cannot create profile before verified payment",lambda: request("/api/businesses","POST",{"name":"QA Real Service","category":"Plumbers","area":"Johannesburg","phone":"+27123456789","description":"QA-only service listing."},token=pt,expected=403))
+    with sv.conn() as c:
+        c.execute("INSERT INTO payments(user_id,plan,billing,amount,reference,status,created_at,verified_at) VALUES(?,?,?,?,?,'verified',?,?)",(provider["user"]["id"],"spotlight","monthly",500,"SV-QA-PROFILE",sv.now(),sv.now()))
+    listing=request("/api/businesses","POST",{"name":"QA Real Service","category":"Plumbers","area":"Johannesburg","phone":"+27123456789","description":"QA-only service listing."},token=pt,expected=201)
+    check("Verified payment unlocks and activates provider profile",lambda: (_ for _ in ()).throw(AssertionError(str(listing))) if not listing.get("ok") else None)
+    row=db_one("SELECT plan,status,payment_status FROM businesses WHERE name=?",("QA Real Service",))
+    check("Paid provider profile inherits the verified plan",lambda: (_ for _ in ()).throw(AssertionError(str(row))) if not row or row[0]!="spotlight" or row[1]!="active" or row[2]!="verified" else None)
+    payment=db_one("SELECT business_id FROM payments WHERE reference=?",("SV-QA-PROFILE",))
+    check("Verified payment is linked to the created provider profile",lambda: (_ for _ in ()).throw(AssertionError(str(payment))) if not payment or payment[0] is None else None)
+    def cookie_session_check():
+        req=urllib.request.Request(base+"/api/login",method="POST",headers={"Content-Type":"application/json"},data=json.dumps({"email":"qa-provider@example.invalid","password":"SafePass123","accept_terms":True}).encode())
+        with urllib.request.urlopen(req,timeout=8) as r:
+            data=json.loads(r.read()); cookie=r.headers.get("Set-Cookie","")
+        assert "skillvaya_session=" in cookie, "persistent session cookie was not set"
+        token_value=cookie.split("skillvaya_session=",1)[1].split(";",1)[0]
+        q=urllib.request.Request(base+"/api/me",headers={"Cookie":"skillvaya_session="+token_value})
+        with urllib.request.urlopen(q,timeout=8) as r: restored=json.loads(r.read())
+        assert restored.get("user",{}).get("role")=="provider", restored
+    check("Persistent cookie restores provider session without localStorage bearer token",cookie_session_check)
     owner=request("/api/login","POST",{"email":os.environ["SKILLVAYA_OWNER_EMAIL"],"password":os.environ["SKILLVAYA_OWNER_PASSWORD"],"accept_terms":True})
     at=owner["token"]
     check("Owner account logs in as administrator",lambda: (_ for _ in ()).throw(AssertionError("owner role mismatch")) if owner.get("user",{}).get("role")!="admin" else None)
