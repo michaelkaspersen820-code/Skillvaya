@@ -491,13 +491,12 @@ async function api(path,opts={}){opts.headers={...(opts.headers||{}),'Content-Ty
 function msg(id,text,good=false){let el=document.getElementById(id);el.className='notice '+(good?'good':'bad');el.textContent=text}
 async function init(){
   try{
-    // Resolve the signed-in account once instead of repeating the same request during startup.
-    await sessionInfo();
+    // Authentication, categories and provider listings are independent initial requests.
+    // Run them together so database latency doesn't stack up behind the loading screen.
+    const [_,d]=await Promise.all([sessionInfo(),api('/api/categories'),loadBusinesses()]);
     if(me&&me.role==='admin'){
       document.body.insertAdjacentHTML('afterbegin','<div id="ownerEditionBar" style="position:sticky;top:0;z-index:999;background:#0b766e;color:white;padding:10px 14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><strong>SKILLVAYA OWNER EDITION — ALL FEATURES UNLOCKED FREE</strong><a href="/owner-app" style="color:white;font-weight:700">← Back to Owner / Controller</a></div>');
     }
-    // Categories and provider listings can load in parallel.
-    const [d]=await Promise.all([api('/api/categories'),loadBusinesses()]);
     cats=d.categories;
     document.getElementById('categories').innerHTML='<button class="cat selected" data-category="All categories">All categories</button>'+cats.map(c=>'<button class="cat" data-category="'+esc(c)+'">'+esc(c)+'</button>').join('');
     document.getElementById('categories').querySelectorAll('button[data-category]').forEach(b=>b.addEventListener('click',()=>pickCat(b.dataset.category)));
