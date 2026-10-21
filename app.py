@@ -491,28 +491,18 @@ async function api(path,opts={}){opts.headers={...(opts.headers||{}),'Content-Ty
 function msg(id,text,good=false){let el=document.getElementById(id);el.className='notice '+(good?'good':'bad');el.textContent=text}
 async function init(){
   try{
-    if(token){
-      try{
-        const auth=await api('/api/me');
-        if(!auth.user||!['customer','provider','admin'].includes(auth.user.role))throw Error('This account does not have access to the customer/provider workspace.');
-        me=auth.user;
-      }catch(_){
-        token='';
-        localStorage.removeItem('sv_token');localStorage.removeItem('skillvaya_token');localStorage.removeItem('skillvaya_user');
-        sessionStorage.removeItem('sv_token');sessionStorage.removeItem('skillvaya_token');
-        try{const auth=await api('/api/me');if(auth.user&&['customer','provider','admin'].includes(auth.user.role))me=auth.user;}catch(__){me=null;}
-      }
-    }else{
-      try{const auth=await api('/api/me');if(auth.user&&['customer','provider','admin'].includes(auth.user.role))me=auth.user;}catch(_){me=null;}
-    }
+    // Resolve the signed-in account once instead of repeating the same request during startup.
+    await sessionInfo();
     if(me&&me.role==='admin'){
       document.body.insertAdjacentHTML('afterbegin','<div id="ownerEditionBar" style="position:sticky;top:0;z-index:999;background:#0b766e;color:white;padding:10px 14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><strong>SKILLVAYA OWNER EDITION — ALL FEATURES UNLOCKED FREE</strong><a href="/owner-app" style="color:white;font-weight:700">← Back to Owner / Controller</a></div>');
     }
-    const d=await api('/api/categories');cats=d.categories;
+    // Categories and provider listings can load in parallel.
+    const [d]=await Promise.all([api('/api/categories'),loadBusinesses()]);
+    cats=d.categories;
     document.getElementById('categories').innerHTML='<button class="cat selected" data-category="All categories">All categories</button>'+cats.map(c=>'<button class="cat" data-category="'+esc(c)+'">'+esc(c)+'</button>').join('');
     document.getElementById('categories').querySelectorAll('button[data-category]').forEach(b=>b.addEventListener('click',()=>pickCat(b.dataset.category)));
     document.getElementById('bizCat').innerHTML=cats.map(c=>'<option>'+esc(c)+'</option>').join('');
-    await loadBusinesses();drawPlans();await sessionInfo();await refreshProviderGate();loadPlatformRating();
+    drawPlans();await refreshProviderGate();loadPlatformRating();
   }catch(e){console.warn('Skillvaya startup failed; saved session data has not been cleared unless the server rejected it:',e.message);}
 }
 function pickCat(c){chosen=c;document.querySelectorAll('.cat').forEach(x=>x.classList.toggle('selected',x.textContent===c));if(c==='All categories'){backToCategories();return}document.getElementById('customer').classList.add('hidden');document.getElementById('categoryScreen').classList.remove('hidden');document.getElementById('categoryScreenTitle').textContent=c;document.getElementById('categoryScreenCount').textContent='Loading service providers…';document.getElementById('categoryScreenSort').value=document.getElementById('sort').value;loadBusinesses()}
