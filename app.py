@@ -482,6 +482,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path=urlparse(self.path).path
         try:
+            if path=="/api/payment-provider":
+                cfg=paypal_config()
+                ready=bool(cfg["client_id"] and cfg["secret"] and cfg["public_url"].startswith("https://"))
+                return self.sendj({"provider":"paypal" if ready else "payfast","paypal_ready":ready,"mode":cfg["mode"] if ready else None})
             if path=="/downloads":
                 body = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#071426"><title>Official Skillvaya Downloads</title><style>
 *{box-sizing:border-box}body{margin:0;background:#f2f6fa;color:#122238;font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Arial}a{color:inherit}.top{background:linear-gradient(130deg,#071426,#10384b);color:#fff;padding:28px 20px 58px}.wrap{width:min(100% - 32px,1000px);margin:auto}.brand{font-weight:850;font-size:24px;letter-spacing:-.7px}.brand span{color:#42d3c8}.eyebrow{color:#78e7df;text-transform:uppercase;font-size:12px;font-weight:800;letter-spacing:1.5px;margin-top:32px}h1{font-size:clamp(34px,6vw,54px);line-height:1.08;letter-spacing:-1.5px;max-width:700px;margin:10px 0 12px}.lead{color:#cfdae6;max-width:690px;margin:0}.main{margin:-28px auto 50px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.card{background:#fff;border:1px solid #dbe5ee;border-radius:20px;padding:26px;box-shadow:0 12px 35px #18334a0b}.icon{width:52px;height:52px;display:grid;place-items:center;border-radius:15px;background:#e0f8f5;color:#087f80;font-size:25px;font-weight:900}.card h2{margin:16px 0 6px;font-size:24px}.muted{color:#596b7e;font-size:14px}.button{display:flex;justify-content:center;text-decoration:none;background:#087f80;color:#fff;border-radius:12px;padding:13px 18px;font-weight:800;margin:20px 0 12px}.button:hover{background:#066a6b}.sub{font-size:12px;color:#607185}.section{background:#fff;border:1px solid #dbe5ee;border-radius:18px;padding:24px;margin-top:18px}.section h2{margin:0 0 10px}.notice{background:#fff8e7;border:1px solid #f0d69a;border-radius:13px;padding:16px;margin-top:12px}.notice strong{color:#68470a}.steps{padding-left:22px}.steps li{margin:7px 0}.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.check{background:#f4f8fb;border-radius:10px;padding:12px;font-size:14px}footer{padding:24px 0 40px;color:#607185;font-size:13px}footer a{color:#087f80}@media(max-width:650px){.grid,.checks{grid-template-columns:1fr}.top{padding-bottom:48px}.card{padding:21px}.section{padding:19px}}
@@ -614,6 +618,51 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_response(400); self.send_header("Content-Type","text/plain; charset=utf-8"); self.end_headers(); self.wfile.write(message.encode("utf-8"))
                 return
             d=self.body()
+            if path=="/api/paypal/create-order":
+                u=self.require("provider"); plan=d.get("plan"); billing=d.get("billing")
+                if plan not in PLANS or billing not in ("monthly","yearly"): return self.sendj({"error":"Choose a valid plan and billing term."},400)
+                cfg=paypal_config()
+                if not cfg["public_url"].startswith("https://"): return self.sendj({"error":"Set SKILLVAYA_PUBLIC_URL to the public HTTPS Skillvaya address in Render."},503)
+                if not cfg["client_id"] or not cfg["secret"]: return self.sendj({"error":"PayPal credentials are not configured in Render."},503)
+                amount=int(PLANS[plan]["monthly"]*(11 if billing=="yearly" else 1)); ref="SV-"+secrets.token_hex(4).upper()
+                with conn() as c:
+                    b=c.execute("SELECT id FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1",(u["id"],)).fetchone()
+                    c.execute("INSERT INTO payments(user_id,business_id,plan,billing,amount,reference,created_at,payment_gateway) VALUES(?,?,?,?,?,?,?,'paypal')",(u["id"],b["id"] if b else None,plan,billing,amount,ref,now()))
+                try:
+                    order=paypal_api_request("POST","/v2/checkout/orders",{"intent":"CAPTURE","purchase_units":[{"reference_id":ref,"custom_id":ref,"invoice_id":ref,"description":"Skillvaya "+PLANS[plan]["name"]+" "+billing,"amount":{"currency_code":"ZAR","value":format(amount,".2f")}}],"application_context":{"brand_name":"Skillvaya","user_action":"PAY_NOW","return_url":cfg["public_url"]+"/payment/paypal-return","cancel_url":cfg["public_url"]+"/payment/cancel"}})
+                except Exception as e: return self.sendj({"error":"Could not start PayPal checkout: "+str(e),"reference":ref},502)
+                approval=next((x.get("href") for x in order.get("links",[]) if x.get("rel")=="approve"),None); order_id=order.get("id")
+                if not order_id or not approval: return self.sendj({"error":"PayPal did not return a checkout approval link.","reference":ref},502)
+                with conn() as c: c.execute("UPDATE payments SET paypal_order_id=? WHERE reference=?",(order_id,ref))
+                notify("payment_request","PayPal payment request created","Provider: "+u["email"]+"; plan: "+plan+"; billing: "+billing+"; amount: R"+str(amount)+"; reference: "+ref+". Payment is not confirmed.")
+                return self.sendj({"ok":True,"checkout_ready":True,"reference":ref,"amount":amount,"mode":cfg["mode"],"order_id":order_id,"approval_url":approval})
+            if path=="/api/paypal/capture":
+                u=self.require("provider"); order_id=str(d.get("order_id","")).strip()
+                if not order_id or len(order_id)>128: return self.sendj({"error":"A valid PayPal order ID is required."},400)
+                with conn() as c: row=c.execute("SELECT * FROM payments WHERE paypal_order_id=? AND user_id=? LIMIT 1",(order_id,u["id"])).fetchone()
+                if not row: return self.sendj({"error":"This PayPal order does not match a Skillvaya payment for your account."},404)
+                if row["status"]=="verified": return self.sendj({"ok":True,"already_verified":True,"status":"verified"})
+                try: result=paypal_api_request("POST","/v2/checkout/orders/"+urllib.parse.quote(order_id,safe="")+"/capture",{})
+                except Exception as e:
+                    try: result=paypal_api_request("GET","/v2/checkout/orders/"+urllib.parse.quote(order_id,safe=""))
+                    except Exception: return self.sendj({"error":"PayPal capture could not be verified: "+str(e)},502)
+                units=result.get("purchase_units") or []; unit=units[0] if units else {}
+                captures=((unit.get("payments") or {}).get("captures") or []); capture=captures[0] if captures else {}
+                cap_amount=capture.get("amount") or {}
+                if result.get("status")!="COMPLETED" or capture.get("status")!="COMPLETED": return self.sendj({"error":"PayPal has not confirmed a completed payment. Your plan has not been activated."},409)
+                if unit.get("custom_id")!=row["reference"] or cap_amount.get("currency_code")!="ZAR": return self.sendj({"error":"PayPal reference or currency did not match. The plan has not been activated."},409)
+                try: paid=float(cap_amount.get("value","-1"))
+                except (TypeError,ValueError): paid=-1
+                if abs(paid-float(row["amount"]))>0.001: return self.sendj({"error":"The confirmed PayPal amount does not match the requested plan. The plan has not been activated."},409)
+                capture_id=capture.get("id")
+                if not capture_id: return self.sendj({"error":"PayPal did not provide a capture ID. The plan has not been activated."},409)
+                with conn() as c:
+                    fresh=c.execute("SELECT * FROM payments WHERE id=?",(row["id"],)).fetchone()
+                    if fresh["status"]=="verified": return self.sendj({"ok":True,"already_verified":True,"status":"verified"})
+                    activate_payment(c,fresh,capture_id)
+                    c.execute("UPDATE payments SET payment_gateway='paypal',paypal_capture_id=?,pf_payment_id=? WHERE id=?",(capture_id,capture_id,row["id"]))
+                notify("payment_verified","PayPal payment verified","Provider ID: "+str(u["id"])+"; plan: "+row["plan"]+"; amount: R"+str(row["amount"])+"; reference: "+row["reference"]+"; PayPal capture: "+capture_id+".")
+                return self.sendj({"ok":True,"status":"verified","reference":row["reference"],"plan":row["plan"]})
             if path=="/api/analytics":
                 event=d.get("event","")
                 if event not in ("visit","install"): return self.sendj({"error":"Unsupported event."},400)
