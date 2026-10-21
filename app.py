@@ -549,7 +549,7 @@ const splashFailsafe=setTimeout(()=>{const splash=document.getElementById('svSpl
 init().finally(()=>{clearTimeout(splashFailsafe);const splash=document.getElementById('svSplash');if(splash)setTimeout(()=>splash.classList.add('done'),450)});
 try{fetch('/api/analytics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:'visit',detail:/Mobi|Android|iPhone/i.test(navigator.userAgent)?'mobile':'desktop'})})}catch(e){}
 let installPrompt=null;window.addEventListener('beforeinstallprompt',e=>{installPrompt=e;});window.addEventListener('appinstalled',()=>{fetch('/api/analytics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:'install',detail:'pwa'})}).catch(()=>{})});
-if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(console.warn);
+if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).then(reg=>reg.update()).catch(console.warn);
 </script></body></html>'''
 SESSIONS={}
 def issue_session(user):
