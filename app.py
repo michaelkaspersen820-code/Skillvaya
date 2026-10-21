@@ -177,6 +177,8 @@ def init():
         if "pf_payment_id" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN pf_payment_id TEXT")
         if "refunded_amount" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN refunded_amount INTEGER NOT NULL DEFAULT 0")
         if "refund_status" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN refund_status TEXT NOT NULL DEFAULT 'none'")
+        if "paypal_currency" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN paypal_currency TEXT NOT NULL DEFAULT 'USD'")
+        if "paypal_amount" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN paypal_amount TEXT")
         if "payment_gateway" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN payment_gateway TEXT NOT NULL DEFAULT 'paypal'")
         if "paypal_order_id" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN paypal_order_id TEXT")
         if "paypal_capture_id" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN paypal_capture_id TEXT")
@@ -297,6 +299,33 @@ def paypal_config():
             "secret":os.environ.get("SKILLVAYA_PAYPAL_CLIENT_SECRET","").strip(),
             "base":"https://api-m.sandbox.paypal.com" if sandbox else "https://api-m.paypal.com",
             "public_url":os.environ.get("SKILLVAYA_PUBLIC_URL","https://skillvaya.onrender.com").strip().rstrip("/")}
+
+# PayPal Checkout Orders do not accept ZAR. Keep displayed/accounting prices in ZAR,
+# but present a converted USD amount to PayPal and persist that exact quote per order.
+_PAYPAL_FX_CACHE = {"rate": None, "expires_at": 0}
+def paypal_zar_per_usd():
+    configured = os.environ.get("SKILLVAYA_PAYPAL_ZAR_PER_USD", "").strip()
+    if configured:
+        try:
+            rate = float(configured)
+            if rate > 0:
+                return rate
+        except ValueError:
+            pass
+    if _PAYPAL_FX_CACHE["rate"] and _PAYPAL_FX_CACHE["expires_at"] > time.time():
+        return _PAYPAL_FX_CACHE["rate"]
+    try:
+        req = urllib.request.Request("https://open.er-api.com/v6/latest/USD",
+            headers={"User-Agent": "Skillvaya/1.0", "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=8) as res:
+            fx = json.loads(res.read().decode() or "{}")
+        rate = float((fx.get("rates") or {}).get("ZAR", 0))
+        if fx.get("result") != "success" or rate <= 0:
+            raise ValueError("FX provider did not return a valid USD/ZAR rate")
+        _PAYPAL_FX_CACHE.update({"rate": rate, "expires_at": time.time() + 1800})
+        return rate
+    except Exception:
+        raise RuntimeError("PayPal requires USD checkout. The current ZAR-to-USD exchange rate is unavailable; no payment has been started. Please try again shortly.")
 
 _PAYPAL_TOKEN_CACHE = {"key": None, "token": None, "expires_at": 0}
 
@@ -573,7 +602,7 @@ document.getElementById('profileForm').onsubmit=async e=>{e.preventDefault();try
 document.getElementById('passwordForm').onsubmit=async e=>{e.preventDefault();let f=e.target;if(f.elements.new_password.value!==f.elements.confirm_password.value){msg('passwordMsg','The new password and confirmation do not match.');return}try{let d=await api('/api/account/password',{method:'POST',body:JSON.stringify({current_password:f.elements.current_password.value,new_password:f.elements.new_password.value})});f.reset();msg('passwordMsg',d.message||'Password changed successfully.',true)}catch(x){msg('passwordMsg',x.message)}};
 document.getElementById('bizForm').onsubmit=async e=>{e.preventDefault();try{const f=Object.fromEntries(new FormData(e.target));const files=Array.from(document.getElementById('providerPortfolioFiles').files||[]);const total=files.reduce((n,x)=>n+x.size,0);if(total>2*1024*1024)throw Error('Portfolio photos/catalogue must be 2 MB or less combined.');f.photos=JSON.stringify(await Promise.all(files.map(file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({name:file.name,type:file.type,data:reader.result});reader.onerror=()=>reject(Error('Could not read '+file.name));reader.readAsDataURL(file)}))));let d;if(me&&me.role==='admin'){const first=files[0];d=await api('/api/admin/owner-promotions',{method:'POST',body:JSON.stringify({kind:'business',business_name:f.name,title:f.name,category:f.category,description:f.description,target_url:f.website||'',image_url:first&&first.type!=='application/pdf'?(JSON.parse(f.photos)[0]||{}).data||'':'',area:f.area,phone:f.phone,whatsapp:f.whatsapp||f.phone,contact_email:f.email||''})});msg('bizMsg','Your free owner service listing has been published. No provider plan or payment was required.',true);e.target.reset()}else{d=await api('/api/businesses',{method:'POST',body:JSON.stringify(f)});msg('bizMsg','Payment verified. Your provider profile and portfolio files have been saved.',true)}await loadBusinesses();await refreshProviderGate()}catch(x){msg('bizMsg',x.message)}};
 async function refreshProviderGate(){const card=document.getElementById('providerProfileCard'),notice=document.getElementById('providerProfileNotice'),plans=document.getElementById('providerPlansCard');if(!card||!notice)return;if(me&&me.role==='admin'){card.classList.remove('hidden');notice.textContent='OWNER FREE ACCESS: enter and publish your own services here. No subscription, plan selection, or payment is required.';notice.classList.remove('hidden');notice.classList.add('good');if(plans)plans.classList.add('hidden');return}if(plans)plans.classList.remove('hidden');notice.classList.remove('good');if(!me||me.role!=='provider'){card.classList.add('hidden');notice.textContent='Sign in or create a provider account in Profile / Sign in, then choose a plan. Business profile setup unlocks only after verified payment.';notice.classList.remove('hidden');return}try{const d=await api('/api/payment/status');const ready=(d.payments||[]).some(p=>p.status==='verified'&&p.business_id==null);const hasBusiness=(d.payments||[]).some(p=>p.status==='verified'&&p.business_id!=null);if(ready){card.classList.remove('hidden');notice.classList.add('hidden')}else{card.classList.add('hidden');notice.classList.remove('hidden');notice.textContent=hasBusiness?'A paid provider profile is already linked to your account. Manage your existing profile from Profile / Sign in.':'Choose a plan and complete PayPal checkout. Profile setup appears only after Skillvaya verifies the payment.'}}catch(e){card.classList.add('hidden');notice.classList.remove('hidden');notice.textContent='Sign in as a provider and complete a verified plan payment before setting up your business profile.'}}
-function drawPlans(){if(me&&me.role==='admin'){document.getElementById('plans').innerHTML='<div class="price featured"><h3>Skillvaya Owner Edition</h3><div class="amount">FREE</div><p>All available app features unlocked for the owner account. No subscription or checkout required.</p><span class="pill">Top-tier owner access</span></div>';return}let y=document.getElementById('billing').value==='yearly';document.getElementById('plans').innerHTML=planInfo.map(p=>'<div class="price '+(p[0]==='spotlight'?'featured':'')+'"><h3>'+p[1]+'</h3><div class="amount">R'+(p[2]*(y?11:1)).toLocaleString('en-ZA')+'<span class="tiny muted"> / '+(y?'year':'month')+'</span></div>'+(y?'<span class="pill">12 months for price of 11</span>':'')+'<p class="muted tiny">'+p[3]+'</p><button class="primary" onclick="choosePlan(\''+p[0]+'\',\''+(y?'yearly':'monthly')+'\')">Choose plan</button></div>').join('')}
+function drawPlans(){if(me&&me.role==='admin'){document.getElementById('plans').innerHTML='<div class="price featured"><h3>Skillvaya Owner Edition</h3><div class="amount">FREE</div><p>All available app features unlocked for the owner account. No subscription or checkout required.</p><span class="pill">Top-tier owner access</span></div>';return}let y=document.getElementById('billing').value==='yearly';document.getElementById('plans').innerHTML='<p class="muted tiny">Plan prices are shown in South African rand (ZAR). PayPal checkout is charged in US dollars (USD) using the current exchange rate; PayPal may apply its own currency-conversion fees.</p>'+planInfo.map(p=>'<div class="price '+(p[0]==='spotlight'?'featured':'')+'"><h3>'+p[1]+'</h3><div class="amount">R'+(p[2]*(y?11:1)).toLocaleString('en-ZA')+'<span class="tiny muted"> / '+(y?'year':'month')+'</span></div>'+(y?'<span class="pill">12 months for price of 11</span>':'')+'<p class="muted tiny">'+p[3]+'</p><button class="primary" onclick="choosePlan(\''+p[0]+'\',\''+(y?'yearly':'monthly')+'\')">Choose plan</button></div>').join('')}
 async function choosePlan(plan,billing){if(me&&me.role==='admin'){alert('Your Skillvaya Owner Edition is already unlocked for free. No payment is required.');return}if(!me){view('settings');profileAuthMode('signin');alert('Create a provider profile or sign in first.');return}try{const p=await api('/api/payment-provider');if(p.provider!=='paypal'||!p.checkout_ready)throw Error(p.message||'PayPal is not ready. Check the configured PayPal mode and matching credentials in Render.');const d=await api('/api/paypal/create-order',{method:'POST',body:JSON.stringify({plan,billing})});if(!d.checkout_ready||!d.approval_url)throw Error(d.error||'PayPal checkout is not ready.');location.assign(d.approval_url)}catch(e){alert(e.message)}}
 async function loadAdmin(){try{let d=await api('/api/admin/summary');document.getElementById('adminData').classList.remove('hidden');document.getElementById('adminMsg').classList.add('hidden');document.getElementById('sBiz').textContent=d.businesses;document.getElementById('sComplaints').textContent=d.complaints;document.getElementById('sPayments').textContent=d.payments;document.getElementById('sPending').textContent=d.pending;adminTab('complaints')}catch(e){document.getElementById('adminData').classList.add('hidden');document.getElementById('adminMsg').textContent='Owner sign-in required. '+e.message}}
 async function adminTab(tab){try{if(tab==='settings'){let d=await api('/api/admin/settings');document.getElementById('adminTable').innerHTML='<h3>Owner email & alerts</h3><p>Reports, new account notices, payment events and overdue subscription alerts can be emailed when SMTP is configured.</p><form id="ownerEmailForm"><label>Owner notification email</label><input name="owner_email" type="email" value="'+esc(d.owner_email)+'" placeholder="you@example.com" required><p><button class="primary">Save email</button> <button type="button" class="ghost" onclick="testOwnerEmail()">Send test email</button></p></form><div class="notice">'+(d.smtp_configured?'SMTP credentials detected.':'Email sending is not yet configured; events are saved to Alerts until SMTP is configured.')+'</div><p class="muted tiny">'+esc(d.note)+'</p>';document.getElementById('ownerEmailForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/admin/settings',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});alert('Owner email saved.');adminTab('settings')}catch(x){alert(x.message)}};return}
@@ -916,17 +945,23 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                 if not cfg["public_url"].startswith("https://"): return self.sendj({"error":"Set SKILLVAYA_PUBLIC_URL to the public HTTPS Skillvaya address in Render."},503)
                 if not cfg["client_id"] or not cfg["secret"]: return self.sendj({"error":"PayPal credentials are not configured in Render."},503)
                 amount=int(PLANS[plan]["monthly"]*(11 if billing=="yearly" else 1)); ref="SV-"+secrets.token_hex(4).upper()
+                try:
+                    zar_per_usd=paypal_zar_per_usd()
+                    paypal_amount=format(round(amount/zar_per_usd+1e-9,2),".2f")
+                except Exception as e:
+                    return self.sendj({"error":str(e)},503)
+                paypal_currency="USD"
                 with conn() as c:
                     b=c.execute("SELECT id FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1",(u["id"],)).fetchone()
-                    c.execute("INSERT INTO payments(user_id,business_id,plan,billing,amount,reference,created_at,payment_gateway) VALUES(?,?,?,?,?,?,?,'paypal')",(u["id"],b["id"] if b else None,plan,billing,amount,ref,now()))
+                    c.execute("INSERT INTO payments(user_id,business_id,plan,billing,amount,reference,created_at,payment_gateway,paypal_currency,paypal_amount) VALUES(?,?,?,?,?,?,?,'paypal',?,?)",(u["id"],b["id"] if b else None,plan,billing,amount,ref,now(),paypal_currency,paypal_amount))
                 try:
-                    order=paypal_api_request("POST","/v2/checkout/orders",{"intent":"CAPTURE","purchase_units":[{"reference_id":ref,"custom_id":ref,"invoice_id":ref,"description":"Skillvaya "+PLANS[plan]["name"]+" "+billing,"amount":{"currency_code":"ZAR","value":format(amount,".2f")}}],"application_context":{"brand_name":"Skillvaya","user_action":"PAY_NOW","return_url":cfg["public_url"]+"/payment/paypal-return","cancel_url":cfg["public_url"]+"/payment/cancel"}})
+                    order=paypal_api_request("POST","/v2/checkout/orders",{"intent":"CAPTURE","purchase_units":[{"reference_id":ref,"custom_id":ref,"invoice_id":ref,"description":"Skillvaya "+PLANS[plan]["name"]+" "+billing,"amount":{"currency_code":paypal_currency,"value":paypal_amount}}],"application_context":{"brand_name":"Skillvaya","user_action":"PAY_NOW","return_url":cfg["public_url"]+"/payment/paypal-return","cancel_url":cfg["public_url"]+"/payment/cancel"}})
                 except Exception as e: return self.sendj({"error":"Could not start PayPal checkout: "+str(e),"reference":ref},502)
                 approval=next((x.get("href") for x in order.get("links",[]) if x.get("rel")=="approve"),None); order_id=order.get("id")
                 if not order_id or not approval: return self.sendj({"error":"PayPal did not return a checkout approval link.","reference":ref},502)
                 with conn() as c: c.execute("UPDATE payments SET paypal_order_id=? WHERE reference=?",(order_id,ref))
                 notify("payment_request","PayPal payment request created","Provider: "+u["email"]+"; plan: "+plan+"; billing: "+billing+"; amount: R"+str(amount)+"; reference: "+ref+". Payment is not confirmed.")
-                return self.sendj({"ok":True,"checkout_ready":True,"reference":ref,"amount":amount,"mode":cfg["mode"],"order_id":order_id,"approval_url":approval})
+                return self.sendj({"ok":True,"checkout_ready":True,"reference":ref,"amount":amount,"currency":"ZAR","paypal_amount":paypal_amount,"paypal_currency":paypal_currency,"mode":cfg["mode"],"order_id":order_id,"approval_url":approval})
             if path=="/api/paypal/capture":
                 u=self.require("provider"); order_id=str(d.get("order_id","")).strip()
                 if not order_id or len(order_id)>128: return self.sendj({"error":"A valid PayPal order ID is required."},400)
@@ -941,10 +976,12 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                 captures=((unit.get("payments") or {}).get("captures") or []); capture=captures[0] if captures else {}
                 cap_amount=capture.get("amount") or {}
                 if result.get("status")!="COMPLETED" or capture.get("status")!="COMPLETED": return self.sendj({"error":"PayPal has not confirmed a completed payment. Your plan has not been activated."},409)
-                if unit.get("custom_id")!=row["reference"] or cap_amount.get("currency_code")!="ZAR": return self.sendj({"error":"PayPal reference or currency did not match. The plan has not been activated."},409)
-                try: paid=float(cap_amount.get("value","-1"))
-                except (TypeError,ValueError): paid=-1
-                if abs(paid-float(row["amount"]))>0.001: return self.sendj({"error":"The confirmed PayPal amount does not match the requested plan. The plan has not been activated."},409)
+                expected_currency=(row["paypal_currency"] or "USD") if "paypal_currency" in row.keys() else "USD"
+                expected_amount=(row["paypal_amount"] or "") if "paypal_amount" in row.keys() else ""
+                if unit.get("custom_id")!=row["reference"] or cap_amount.get("currency_code")!=expected_currency or not expected_amount: return self.sendj({"error":"PayPal reference or checkout currency/amount record did not match. The plan has not been activated."},409)
+                try: paid=float(cap_amount.get("value","-1")); expected_paid=float(expected_amount)
+                except (TypeError,ValueError): paid=-1; expected_paid=-2
+                if abs(paid-expected_paid)>0.001: return self.sendj({"error":"The confirmed PayPal amount does not match the exact checkout quote. The plan has not been activated."},409)
                 capture_id=capture.get("id")
                 if not capture_id: return self.sendj({"error":"PayPal did not provide a capture ID. The plan has not been activated."},409)
                 with conn() as c:

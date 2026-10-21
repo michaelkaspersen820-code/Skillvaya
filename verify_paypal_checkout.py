@@ -10,6 +10,7 @@ os.environ["SKILLVAYA_PAYPAL_MODE"] = "sandbox"
 os.environ["SKILLVAYA_PAYPAL_CLIENT_ID"] = "mock-sandbox-client-id"
 os.environ["SKILLVAYA_PAYPAL_CLIENT_SECRET"] = "mock-sandbox-secret"
 os.environ["SKILLVAYA_PUBLIC_URL"] = "https://skillvaya.example.test"
+os.environ["SKILLVAYA_PAYPAL_ZAR_PER_USD"] = "16.0" # deterministic QA-only quote
 import app
 
 fd, db = tempfile.mkstemp(suffix=".sqlite3")
@@ -40,7 +41,7 @@ def fake_paypal_request(method, path, payload=None):
             "payments": {"captures": [{
                 "id": "MOCK-CAPTURE-" + order_id,
                 "status": "COMPLETED",
-                "amount": {"currency_code": "ZAR", "value": amount},
+                "amount": {"currency_code": "USD", "value": amount},
             }]},
         }]}
     if method == "POST" and "/v2/payments/captures/" in path and path.endswith("/refund"):
@@ -85,10 +86,6 @@ try:
         "password":"SecureQApass123", "role":"provider", "accept_terms":True,
     })
     token = provider["token"]
-    request("/api/businesses", "POST", {
-        "name":"PayPal QA Plumbing", "category":"Plumbers", "area":"Johannesburg",
-        "phone":"+27111111111", "description":"Temporary isolated QA listing."
-    }, token=token, expected=201)
     admin = request("/api/login", "POST", {
         "email":os.environ["SKILLVAYA_OWNER_EMAIL"],
         "password":os.environ["SKILLVAYA_OWNER_PASSWORD"],
@@ -101,14 +98,19 @@ try:
     check("Owner diagnostics successfully verify mocked Sandbox OAuth without exposing secrets", lambda: (_ for _ in ()).throw(AssertionError(status)) if not status.get("oauth_valid") or not status.get("checkout_ready") or status.get("provider") != "paypal" else None)
 
     first = request("/api/paypal/create-order", "POST", {"plan":"priority","billing":"monthly"}, token=token)
-    pending = db_one("SELECT status,payment_gateway,paypal_order_id FROM payments WHERE reference=?", (first["reference"],))
-    check("Order creation returns an approval URL and stays pending", lambda: (_ for _ in ()).throw(AssertionError((first, tuple(pending)))) if not first.get("checkout_ready") or "sandbox.paypal.com" not in first.get("approval_url","") or tuple(pending) != ("pending","paypal",first["order_id"]) else None)
+    pending = db_one("SELECT status,payment_gateway,paypal_order_id,paypal_currency,paypal_amount FROM payments WHERE reference=?", (first["reference"],))
+    check("Order creation converts ZAR to USD, returns an approval URL, and stays pending", lambda: (_ for _ in ()).throw(AssertionError((first, tuple(pending)))) if not first.get("checkout_ready") or "sandbox.paypal.com" not in first.get("approval_url","") or tuple(pending) != ("pending","paypal",first["order_id"],"USD","13.13") or first.get("paypal_currency")!="USD" else None)
 
     captured = request("/api/paypal/capture", "POST", {"order_id":first["order_id"]}, token=token)
     paid = db_one("SELECT status,payment_gateway,paypal_capture_id FROM payments WHERE reference=?", (first["reference"],))
+    check("A completed matching USD capture verifies the payment", lambda: (_ for _ in ()).throw(AssertionError((captured,tuple(paid)))) if captured.get("status") != "verified" or tuple(paid) != ("verified","paypal","MOCK-CAPTURE-"+first["order_id"]) else None)
+    check("Payment stays linked to the account until provider profile creation", lambda: (_ for _ in ()).throw(AssertionError(captured)) if not captured.get("profile_required") else None)
+    request("/api/businesses", "POST", {
+        "name":"PayPal QA Plumbing", "category":"Plumbers", "area":"Johannesburg",
+        "phone":"+27111111111", "description":"Temporary isolated QA listing."
+    }, token=token, expected=201)
     business = db_one("SELECT status,payment_status,plan FROM businesses WHERE name=?", ("PayPal QA Plumbing",))
-    check("A completed matching capture verifies the payment", lambda: (_ for _ in ()).throw(AssertionError((captured,tuple(paid)))) if captured.get("status") != "verified" or tuple(paid) != ("verified","paypal","MOCK-CAPTURE-"+first["order_id"]) else None)
-    check("Matching payment activates the correct provider plan", lambda: (_ for _ in ()).throw(AssertionError(tuple(business))) if tuple(business) != ("active","verified","priority") else None)
+    check("Verified USD payment unlocks provider profile and activates the correct plan", lambda: (_ for _ in ()).throw(AssertionError(tuple(business))) if tuple(business) != ("active","verified","priority") else None)
     replay = request("/api/paypal/capture", "POST", {"order_id":first["order_id"]}, token=token)
     check("Repeated capture returns already-verified without extending twice", lambda: (_ for _ in ()).throw(AssertionError(replay)) if not replay.get("already_verified") else None)
 
