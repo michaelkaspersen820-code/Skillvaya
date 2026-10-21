@@ -46,6 +46,8 @@ try:
     check("Workspace route restores saved sessions instead of forcing a gateway login",lambda: (_ for _ in ()).throw(AssertionError("session restore or profile-only login missing")) if "if(!token){location.replace('/');return}" in workspace or "Profile / Sign in" not in workspace else None)
     check("Sign-in is not duplicated in the main navigation",lambda: (_ for _ in ()).throw(AssertionError("duplicate sign-in/logout navigation found")) if 'id="nav-account"' in workspace or '<button onclick="logout()">Log out</button>' in workspace else None)
     check("Provider profile form is gated behind verified payment",lambda: (_ for _ in ()).throw(AssertionError("provider profile gate missing")) if 'id="providerProfileCard" class="card hidden"' not in workspace or "refreshProviderGate" not in workspace else None)
+    check("Main tabs hide unrelated owner promotions and owner login routes to owner workspace",lambda: (_ for _ in ()).throw(AssertionError("tab isolation or owner routing missing")) if "ownerPublic.classList.toggle('hidden',v!=='customer')" not in workspace or "if(v==='admin'){location.href='/owner-app';return}" not in workspace else None)
+    check("Owner-free provider studio has its own no-payment path",lambda: (_ for _ in ()).throw(AssertionError("owner free profile path missing")) if "OWNER FREE ACCESS" not in workspace or "providerPlansCard" not in workspace or "payment is required" not in workspace else None)
     owner_app=request("/owner-app")
     owner_control=request("/owner-control")
     check("Owner app uses the SV brand image",lambda: (_ for _ in ()).throw(AssertionError("owner shell missing")) if "Owner App" not in owner_app or "/sv-logo.jpeg" not in owner_app else None)
@@ -81,6 +83,10 @@ try:
     owner=request("/api/login","POST",{"email":os.environ["SKILLVAYA_OWNER_EMAIL"],"password":os.environ["SKILLVAYA_OWNER_PASSWORD"],"accept_terms":True})
     at=owner["token"]
     check("Owner account logs in as administrator",lambda: (_ for _ in ()).throw(AssertionError("owner role mismatch")) if owner.get("user",{}).get("role")!="admin" else None)
+    owner_free=request("/api/admin/owner-promotions","POST",{"kind":"business","business_name":"QA Owner Free Service","title":"QA Owner Free Service","category":"Plumbers","description":"QA-only owner listing with free publication.","area":"Johannesburg","phone":"+27110000000","contact_email":os.environ["SKILLVAYA_OWNER_EMAIL"]},token=at,expected=201)
+    check("Owner can publish a service listing free without a provider payment",lambda: (_ for _ in ()).throw(AssertionError(str(owner_free))) if not owner_free.get("owner_free") or owner_free.get("payment_required") is not False or not owner_free.get("directory_business_id") else None)
+    owner_listing=db_one("SELECT area,phone,plan,status,payment_status FROM businesses WHERE name=?",("QA Owner Free Service",))
+    check("Owner free listing includes entered service area and contact details",lambda: (_ for _ in ()).throw(AssertionError(str(owner_listing))) if not owner_listing or owner_listing[0]!="Johannesburg" or owner_listing[1]!="+27110000000" or owner_listing[2]!="local" or owner_listing[3]!="active" or owner_listing[4]!="verified" else None)
     gateway=request("/api/payment-provider")
     check("PayPal is the only advertised checkout provider",lambda: (_ for _ in ()).throw(AssertionError(gateway)) if gateway.get("provider")!="paypal" else None)
     before=db_one("SELECT count(*) FROM payments")[0]
