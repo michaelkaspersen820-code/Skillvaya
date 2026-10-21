@@ -34,6 +34,7 @@ public class MainActivity extends Activity {
     private TextView status;
     private ValueCallback<Uri[]> filePathCallback;
     private Uri cameraOutputUri;
+    private File cameraOutputFile;
     private static final int FILE_CHOOSER_REQUEST = 7341;
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -83,13 +84,16 @@ public class MainActivity extends Activity {
                 if (filePathCallback != null) filePathCallback.onReceiveValue(null);
                 filePathCallback = callback;
                 cameraOutputUri = null;
+                cameraOutputFile = null;
                 try {
                     if (params.isCaptureEnabled()) {
                         Intent camera = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-                        if (camera.resolveActivity(getPackageManager()) == null) throw new IllegalStateException("No camera app is available.");
+                        // Do not gate camera launch on resolveActivity(): Android 11+ package
+                        // visibility can hide installed camera apps unless they are declared in <queries>.
                         File cameraDir = new File(getCacheDir(), "camera");
                         if (!cameraDir.exists() && !cameraDir.mkdirs()) throw new IllegalStateException("Could not create camera storage.");
                         File photo = File.createTempFile("skillvaya_profile_", ".jpg", cameraDir);
+                        cameraOutputFile = photo;
                         cameraOutputUri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", photo);
                         camera.putExtra(MediaStore.EXTRA_OUTPUT, cameraOutputUri);
                         camera.setClipData(ClipData.newRawUri("Skillvaya profile photo", cameraOutputUri));
@@ -97,21 +101,38 @@ public class MainActivity extends Activity {
                         startActivityForResult(camera, FILE_CHOOSER_REQUEST);
                         return true;
                     }
-                    Intent intent;
-                    try { intent = params.createIntent(); }
-                    catch (Exception ignored) { intent = null; }
-                    if (intent == null) {
-                        intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                        intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    // Use Android's system document picker directly. This avoids WebView-generated
+                    // chooser intents that can behave inconsistently across Android versions.
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    String[] acceptedTypes = params.getAcceptTypes();
+                    int acceptedCount = 0;
+                    String singleType = null;
+                    if (acceptedTypes != null) {
+                        for (String acceptedType : acceptedTypes) {
+                            if (acceptedType != null && !acceptedType.trim().isEmpty() && !"*/*".equals(acceptedType.trim())) {
+                                acceptedCount++;
+                                singleType = acceptedType.trim();
+                            }
+                        }
+                    }
+                    if (acceptedCount == 1) {
+                        intent.setType(singleType);
+                    } else if (acceptedCount > 1) {
+                        intent.setType("*/*");
+                        intent.putExtra(Intent.EXTRA_MIME_TYPES, acceptedTypes);
+                    } else {
                         intent.setType("*/*");
                     }
                     if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     startActivityForResult(intent, FILE_CHOOSER_REQUEST);
                     return true;
                 } catch (Exception e) {
                     if (filePathCallback != null) filePathCallback.onReceiveValue(null);
                     filePathCallback = null;
                     cameraOutputUri = null;
+                    cameraOutputFile = null;
                     Toast.makeText(MainActivity.this, "Could not open the camera or file picker: " + e.getMessage(), Toast.LENGTH_LONG).show();
                     return true;
                 }
@@ -161,7 +182,15 @@ public class MainActivity extends Activity {
             Uri[] results = null;
             if (resultCode == Activity.RESULT_OK) {
                 if (cameraOutputUri != null) {
-                    results = new Uri[]{cameraOutputUri};
+                    // Some camera apps return RESULT_OK without writing the requested output.
+                    // Only hand the URI to WebView if the actual photo file contains data.
+                    if (cameraOutputFile != null && cameraOutputFile.isFile() && cameraOutputFile.length() > 0) {
+                        results = new Uri[]{cameraOutputUri};
+                    } else if (data != null && data.getData() != null) {
+                        results = new Uri[]{data.getData()};
+                    } else {
+                        Toast.makeText(MainActivity.this, "The camera did not return a photo. Please try again.", Toast.LENGTH_LONG).show();
+                    }
                 } else if (data != null && data.getClipData() != null) {
                     int count = data.getClipData().getItemCount();
                     results = new Uri[count];
@@ -173,6 +202,7 @@ public class MainActivity extends Activity {
             filePathCallback.onReceiveValue(results);
             filePathCallback = null;
             cameraOutputUri = null;
+            cameraOutputFile = null;
         }
     }
     private void copyAsset(String name) throws Exception {
