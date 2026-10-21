@@ -13,7 +13,7 @@ $pw = [IO.File]::ReadAllText($pwPath).Trim()
 $env:SKILLVAYA_KEYSTORE_PASSWORD = $pw
 $env:SKILLVAYA_KEY_PASSWORD = $pw
 $env:SKILLVAYA_KEY_ALIAS = 'skillvaya-release'
-$env:SKILLVAYA_PUBLIC_URL = ''
+$env:SKILLVAYA_PUBLIC_URL = 'https://skillvaya.onrender.com'
 Set-Location (Join-Path $root 'android-native')
 .\gradlew.bat assembleRelease
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
