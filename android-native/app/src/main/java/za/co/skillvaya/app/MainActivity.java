@@ -1,6 +1,7 @@
 package za.co.skillvaya.app;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.ClipData;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.webkit.WebView;
@@ -91,6 +92,7 @@ public class MainActivity extends Activity {
                         File photo = File.createTempFile("skillvaya_profile_", ".jpg", cameraDir);
                         cameraOutputUri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", photo);
                         camera.putExtra(MediaStore.EXTRA_OUTPUT, cameraOutputUri);
+                        camera.setClipData(ClipData.newRawUri("Skillvaya profile photo", cameraOutputUri));
                         camera.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
                         startActivityForResult(camera, FILE_CHOOSER_REQUEST);
                         return true;
