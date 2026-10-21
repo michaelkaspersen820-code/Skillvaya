@@ -11,6 +11,8 @@ import android.webkit.DownloadListener;
 import android.webkit.CookieManager;
 import android.app.DownloadManager;
 import android.net.Uri;
+import android.provider.MediaStore;
+import androidx.core.content.FileProvider;
 import android.os.Environment;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
@@ -30,6 +32,7 @@ public class MainActivity extends Activity {
     private WebView webView;
     private TextView status;
     private ValueCallback<Uri[]> filePathCallback;
+    private Uri cameraOutputUri;
     private static final int FILE_CHOOSER_REQUEST = 7341;
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -78,14 +81,37 @@ public class MainActivity extends Activity {
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (filePathCallback != null) filePathCallback.onReceiveValue(null);
                 filePathCallback = callback;
+                cameraOutputUri = null;
                 try {
-                    Intent intent = params.createIntent();
+                    if (params.isCaptureEnabled()) {
+                        Intent camera = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                        if (camera.resolveActivity(getPackageManager()) == null) throw new IllegalStateException("No camera app is available.");
+                        File cameraDir = new File(getCacheDir(), "camera");
+                        if (!cameraDir.exists() && !cameraDir.mkdirs()) throw new IllegalStateException("Could not create camera storage.");
+                        File photo = File.createTempFile("skillvaya_profile_", ".jpg", cameraDir);
+                        cameraOutputUri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", photo);
+                        camera.putExtra(MediaStore.EXTRA_OUTPUT, cameraOutputUri);
+                        camera.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                        startActivityForResult(camera, FILE_CHOOSER_REQUEST);
+                        return true;
+                    }
+                    Intent intent;
+                    try { intent = params.createIntent(); }
+                    catch (Exception ignored) { intent = null; }
+                    if (intent == null) {
+                        intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                        intent.addCategory(Intent.CATEGORY_OPENABLE);
+                        intent.setType("*/*");
+                    }
+                    if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                     startActivityForResult(intent, FILE_CHOOSER_REQUEST);
                     return true;
                 } catch (Exception e) {
+                    if (filePathCallback != null) filePathCallback.onReceiveValue(null);
                     filePathCallback = null;
-                    Toast.makeText(MainActivity.this, "Could not open the picture/file picker. Please try again.", Toast.LENGTH_LONG).show();
-                    return false;
+                    cameraOutputUri = null;
+                    Toast.makeText(MainActivity.this, "Could not open the camera or file picker: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    return true;
                 }
             }
         });
@@ -131,17 +157,20 @@ public class MainActivity extends Activity {
         if (requestCode == FILE_CHOOSER_REQUEST) {
             if (filePathCallback == null) return;
             Uri[] results = null;
-            if (resultCode == Activity.RESULT_OK && data != null) {
-                Uri result = data.getData();
-                if (result != null) results = new Uri[]{result};
-                else if (data.getClipData() != null) {
+            if (resultCode == Activity.RESULT_OK) {
+                if (cameraOutputUri != null) {
+                    results = new Uri[]{cameraOutputUri};
+                } else if (data != null && data.getClipData() != null) {
                     int count = data.getClipData().getItemCount();
                     results = new Uri[count];
                     for (int i = 0; i < count; i++) results[i] = data.getClipData().getItemAt(i).getUri();
+                } else if (data != null && data.getData() != null) {
+                    results = new Uri[]{data.getData()};
                 }
             }
             filePathCallback.onReceiveValue(results);
             filePathCallback = null;
+            cameraOutputUri = null;
         }
     }
     private void copyAsset(String name) throws Exception {
