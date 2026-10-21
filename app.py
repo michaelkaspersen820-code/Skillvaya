@@ -836,7 +836,7 @@ class Handler(BaseHTTPRequestHandler):
                                    FROM ratings WHERE target_type='provider' GROUP BY business_id) r ON r.business_id=b.id
                         LEFT JOIN ratings my ON my.business_id=b.id AND my.target_type='provider'
                              AND my.rater_id=? AND my.target_user_id=b.user_id
-                        WHERE b.status='active'""",(rater_id,)).fetchall()
+                        WHERE LOWER(TRIM(COALESCE(b.status,''))) IN ('active','approved','published')""",(rater_id,)).fetchall()
                 items=[dict(x) for x in rows if category_matches(cat, x["category"]) and (not term or term in (x["name"]+" "+x["category"]+" "+x["description"]+" "+category_search_terms(x["category"])).lower()) and (not area or area in x["area"].lower())]
                 for item in items:
                     item["rating"]=round(float(item["rating"] or 0),1); item["rating_count"]=int(item["rating_count"] or 0); item["my_rating"]=int(item["my_rating"] or 0)
