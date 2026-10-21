@@ -1,6 +1,6 @@
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
-import json, sqlite3, hashlib, hmac, secrets, os, datetime, threading, webbrowser, urllib.parse, urllib.request, urllib.error
+import json, sqlite3, hashlib, hmac, secrets, os, datetime, threading, webbrowser, urllib.parse, urllib.request, urllib.error, base64
 from contextlib import contextmanager
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -128,6 +128,9 @@ def init():
         if "pf_payment_id" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN pf_payment_id TEXT")
         if "refunded_amount" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN refunded_amount INTEGER NOT NULL DEFAULT 0")
         if "refund_status" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN refund_status TEXT NOT NULL DEFAULT 'none'")
+        if "payment_gateway" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN payment_gateway TEXT NOT NULL DEFAULT 'payfast'")
+        if "paypal_order_id" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN paypal_order_id TEXT")
+        if "paypal_capture_id" not in pcols: c.execute("ALTER TABLE payments ADD COLUMN paypal_capture_id TEXT")
         if not c.execute("SELECT 1 FROM settings WHERE key='owner_email'").fetchone():
             c.execute("INSERT INTO settings(key,value) VALUES('owner_email','skillvaya@gmail.com')")
         else:
@@ -202,6 +205,37 @@ def payfast_config():
         "host":"sandbox.payfast.co.za" if sandbox else "www.payfast.co.za",
         "api_host":"https://api.sandbox.payfast.co.za" if sandbox else "https://api.payfast.co.za"
     }
+
+def paypal_config():
+    mode=os.environ.get("SKILLVAYA_PAYPAL_MODE","sandbox").strip().lower()
+    sandbox=mode!="live"
+    return {"mode":"sandbox" if sandbox else "live",
+            "client_id":os.environ.get("SKILLVAYA_PAYPAL_CLIENT_ID","").strip(),
+            "secret":os.environ.get("SKILLVAYA_PAYPAL_CLIENT_SECRET","").strip(),
+            "base":"https://api-m.sandbox.paypal.com" if sandbox else "https://api-m.paypal.com",
+            "public_url":os.environ.get("SKILLVAYA_PUBLIC_URL","https://skillvaya.onrender.com").strip().rstrip("/")}
+
+def paypal_api_request(method,path,payload=None):
+    cfg=paypal_config()
+    if not cfg["client_id"] or not cfg["secret"]:
+        raise RuntimeError("PayPal client credentials are not configured in Render.")
+    auth=base64.b64encode((cfg["client_id"]+":"+cfg["secret"]).encode()).decode()
+    req=urllib.request.Request(cfg["base"]+"/v1/oauth2/token",data=b"grant_type=client_credentials",
+        headers={"Authorization":"Basic "+auth,"Content-Type":"application/x-www-form-urlencoded"},method="POST")
+    try:
+        with urllib.request.urlopen(req,timeout=20) as res: token_data=json.loads(res.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("PayPal authentication failed (HTTP "+str(e.code)+"). Check Sandbox credentials and mode.")
+    token=token_data.get("access_token")
+    if not token: raise RuntimeError("PayPal did not return an access token.")
+    body=json.dumps(payload).encode() if payload is not None else None
+    req=urllib.request.Request(cfg["base"]+path,data=body,
+        headers={"Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json"},method=method)
+    try:
+        with urllib.request.urlopen(req,timeout=25) as res: return json.loads(res.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        detail=e.read().decode(errors="replace")[:350]
+        raise RuntimeError("PayPal API request failed (HTTP "+str(e.code)+"): "+detail)
 
 def pf_form_signature(fields, passphrase):
     pairs=[]
