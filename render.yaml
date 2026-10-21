@@ -9,15 +9,13 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
-      - key: SKILLVAYA_PAYFAST_MODE
-        value: sandbox
       - key: SKILLVAYA_PUBLIC_URL
+        value: https://skillvaya.onrender.com
+      - key: SKILLVAYA_PAYPAL_MODE
+        value: sandbox
+      - key: SKILLVAYA_PAYPAL_CLIENT_ID
         sync: false
-      - key: SKILLVAYA_PAYFAST_MERCHANT_ID
-        sync: false
-      - key: SKILLVAYA_PAYFAST_MERCHANT_KEY
-        sync: false
-      - key: SKILLVAYA_PAYFAST_PASSPHRASE
+      - key: SKILLVAYA_PAYPAL_CLIENT_SECRET
         sync: false
       - key: SKILLVAYA_OWNER_EMAIL
         sync: false

@@ -3,8 +3,6 @@ name: Skillvaya QA
 on:
   push:
     branches: [main, free-hosting-postgres]
-  pull_request:
-    branches: [main, free-hosting-postgres]
   workflow_dispatch:
 
 permissions:
@@ -24,16 +22,13 @@ jobs:
       - name: Install application dependencies
         run: python -m pip install -r requirements.txt
       - name: Compile application and verification scripts
-        run: >-
-          python -m py_compile app.py run_local.py desktop_launcher.py
-          qa_one_go.py verify_owner_app_shell.py verify_payfast_checkout.py
-          test_deployment_owner_bootstrap.py test_owner_promotions.py
+        run: python -m py_compile app.py run_local.py desktop_launcher.py qa_one_go.py verify_owner_app_shell.py verify_paypal_checkout.py test_deployment_owner_bootstrap.py test_owner_promotions.py
       - name: Run isolated marketplace end-to-end QA
         run: python qa_one_go.py
-      - name: Verify owner app navigation and payment-readiness messaging
+      - name: Verify owner app navigation and PayPal readiness
         run: python verify_owner_app_shell.py
-      - name: Verify PayFast sandbox checkout safeguards
-        run: python verify_payfast_checkout.py
+      - name: Verify PayPal Sandbox create-order, capture and refund paths (mocked; no payment sent)
+        run: python verify_paypal_checkout.py
       - name: Verify production owner bootstrap and password hashing
         run: python test_deployment_owner_bootstrap.py
       - name: Verify owner promotions
@@ -60,6 +55,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skillvaya
       SKILLVAYA_OWNER_EMAIL: owner-ci@example.com
       SKILLVAYA_OWNER_PASSWORD: ci-test-password-12345
+      SKILLVAYA_PAYPAL_MODE: sandbox
     steps:
       - name: Check out source
         uses: actions/checkout@v4

@@ -31,7 +31,7 @@ def main():
         assert "owner-control" not in app.HTML
         assert "My Businesses & Promotions" in app.OWNER_HTML
         assert 'data-tab="payments"' not in app.OWNER_APP_HTML
-        assert 'data-tab="promotions"' not in app.OWNER_APP_HTML
+        assert 'data-tab="promotions"' in app.OWNER_APP_HTML
         assert 'class="tabs"' in app.OWNER_APP_HTML
         assert 'My businesses & promotions (free)' in app.OWNER_HTML
         created = request("/api/admin/owner-promotions", "POST", {

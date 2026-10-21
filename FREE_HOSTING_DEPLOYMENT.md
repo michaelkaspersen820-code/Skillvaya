@@ -4,8 +4,12 @@ This branch prepares Skillvaya to run on a free Render web service with a separa
 
 ## Important status
 
+- Launch / and /customer always show sign-in. The marketing page is /website, the customer/provider workspace is /customer-app, and installed web apps start at /login.
+
+- Launch / and /customer always show sign-in. The marketing page is /website, the customer/provider workspace is /customer-app, and installed web apps start at /login.
+
 - The code changes are prepared on branch `free-hosting-postgres`; they are not yet merged to `main`.
-- Do not accept real customers or payments until the branch's CI passes, the hosted service starts successfully, database persistence is verified across a restart, and PayFast sandbox callbacks are verified.
+- Do not accept real customers or payments until the branch's CI passes, the hosted service starts successfully, database persistence is verified across a restart, and PayPal Sandbox order/capture/refund paths are verified.
 - Free Render services can sleep when idle. The first visit after sleep may be slow.
 - No paid Render service or database is created by this configuration. Check provider terms and usage limits before relying on a free tier for a business.
 
@@ -24,11 +28,11 @@ This branch prepares Skillvaya to run on a free Render web service with a separa
    - `SKILLVAYA_PUBLIC_URL`: the exact public HTTPS Render URL
    - `SKILLVAYA_OWNER_EMAIL`: an email address controlled by the owner
    - `SKILLVAYA_OWNER_PASSWORD`: a unique random password of at least 14 characters
-   - `SKILLVAYA_PAYFAST_MODE`: keep `sandbox` for now
-   - `SKILLVAYA_PAYFAST_MERCHANT_ID`, `SKILLVAYA_PAYFAST_MERCHANT_KEY`, `SKILLVAYA_PAYFAST_PASSPHRASE`: only the actual credentials issued by PayFast; do not use guessed values for live mode.
+   - `SKILLVAYA_PAYPAL_MODE`: keep `sandbox` for now
+   - `SKILLVAYA_PAYPAL_CLIENT_ID` and `SKILLVAYA_PAYPAL_CLIENT_SECRET`: PayPal Sandbox app credentials; keep them on the server and never commit them.
 4. Deploy and inspect logs. A healthy `/healthz` response alone does not prove database writes or payment callbacks work.
 5. Test registration, login, listing submission, notifications, and admin actions. Restart/redeploy the service and confirm the same records remain in PostgreSQL.
-6. Keep PayFast in sandbox and test checkout plus the ITN callback against the public HTTPS URL. Confirm a subscription stays pending until a valid PayFast notification is verified.
+6. Keep PayPal in Sandbox. Verify OAuth credentials, create an order, approve it using a Sandbox buyer, capture it, and verify the matching ZAR amount/reference activates the plan. Test a partial refund before any live release.
 
 ## Migration and rollback
 
@@ -40,6 +44,6 @@ Local SQLite data is not automatically copied to Neon. Before switching an exist
 - Database backup/export and restore rehearsal
 - Session expiry/revocation, CSRF, rate-limit, logging, and privacy review
 - Verified email delivery
-- PayFast sandbox callback and refund tests, followed by live credentials and PayFast approval
+- PayPal Sandbox buyer-approved checkout, capture, partial/full refund, and replay/idempotency tests before enabling live credentials
 - South African legal review of terms/privacy wording
 - Separate-device onboarding and persistence tests

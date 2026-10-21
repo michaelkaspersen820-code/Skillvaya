@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
                 String cookie = CookieManager.getInstance().getCookie(url);
                 if (cookie != null && !cookie.isEmpty()) request.addRequestHeader("Cookie", cookie);
                 manager.enqueue(request);
-                Toast.makeText(MainActivity.this, "Download started. Check your notifications or Downloads folder.", Toast.LENGTH_LONG).show();
+                Toast.makeText(MainActivity.this, "Download started. Open the APK and confirm installation; Android will register Skillvaya as an installed app.", Toast.LENGTH_LONG).show();
             } catch (Exception e) {
                 Toast.makeText(MainActivity.this, "Could not start download. Open Skillvaya in Chrome and try again.", Toast.LENGTH_LONG).show();
             }
@@ -77,7 +77,9 @@ public class MainActivity extends Activity {
                         return false;
                     }
                 });
-                webView.loadUrl(BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", ""));
+                String baseUrl = BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", "");
+                String loginUrl = baseUrl.endsWith("/login") ? baseUrl : baseUrl + "/login";
+                webView.loadUrl(loginUrl);
                 return;
             }
             for (String name : new String[]{"website.html","icon-192.png","icon-512.png","sv-logo.jpeg"}) copyAsset(name);
@@ -91,7 +93,7 @@ public class MainActivity extends Activity {
                     try {
                         java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL("http://127.0.0.1:8878/healthz").openConnection();
                         c.setConnectTimeout(500); c.setReadTimeout(500); int code=c.getResponseCode(); c.disconnect();
-                        if (code==200) { runOnUiThread(() -> { status.setVisibility(TextView.GONE); webView.setVisibility(WebView.VISIBLE); webView.loadUrl("http://127.0.0.1:8878/"); }); return; }
+                        if (code==200) { runOnUiThread(() -> { status.setVisibility(TextView.GONE); webView.setVisibility(WebView.VISIBLE); webView.loadUrl("http://127.0.0.1:8878/login"); }); return; }
                     } catch (Exception ignored) {}
                     try { Thread.sleep(250); } catch (InterruptedException ignored) { return; }
                 }
