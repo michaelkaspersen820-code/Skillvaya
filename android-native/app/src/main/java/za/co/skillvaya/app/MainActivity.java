@@ -6,6 +6,13 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
+import android.webkit.DownloadListener;
+import android.webkit.CookieManager;
+import android.app.DownloadManager;
+import android.net.Uri;
+import android.os.Environment;
+import android.webkit.URLUtil;
+import android.widget.Toast;
 import android.widget.FrameLayout;
 import android.view.ViewGroup;
 import android.view.Gravity;
@@ -36,6 +43,28 @@ public class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true); settings.setUserAgentString(settings.getUserAgentString() + " SkillvayaNative");
         settings.setDatabaseEnabled(true); settings.setSupportZoom(false);
         settings.setAllowFileAccess(false); settings.setAllowContentAccess(true);
+        webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
+            try {
+                DownloadManager manager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+                String fileName = URLUtil.guessFileName(url, contentDisposition, mimeType);
+                if (fileName == null || fileName.trim().isEmpty()) fileName = "Skillvaya.apk";
+                request.setTitle(fileName);
+                request.setDescription("Downloading from Skillvaya");
+                request.setMimeType(mimeType != null ? mimeType : "application/octet-stream");
+                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                request.setAllowedOverMetered(true);
+                request.setAllowedOverRoaming(true);
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
+                request.addRequestHeader("User-Agent", userAgent != null ? userAgent : "SkillvayaNative");
+                String cookie = CookieManager.getInstance().getCookie(url);
+                if (cookie != null && !cookie.isEmpty()) request.addRequestHeader("Cookie", cookie);
+                manager.enqueue(request);
+                Toast.makeText(MainActivity.this, "Download started. Check your notifications or Downloads folder.", Toast.LENGTH_LONG).show();
+            } catch (Exception e) {
+                Toast.makeText(MainActivity.this, "Could not start download. Open Skillvaya in Chrome and try again.", Toast.LENGTH_LONG).show();
+            }
+        });
         webView.setWebViewClient(new WebViewClient()); webView.setWebChromeClient(new WebChromeClient());
         try {
             if (BuildConfig.PUBLIC_URL != null && !BuildConfig.PUBLIC_URL.trim().isEmpty()) {
