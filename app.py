@@ -108,6 +108,9 @@ CATEGORY_ALIASES = {
 
 def category_matches(requested, stored):
     return requested == "All categories" or stored == requested or stored in CATEGORY_ALIASES.get(requested, set())
+def category_search_terms(stored):
+    aliases = [name for name, targets in CATEGORY_ALIASES.items() if stored in targets]
+    return " ".join([stored, *aliases])
 PLANS = {"local":{"name":"Local","monthly":105},"priority":{"name":"Priority","monthly":210},"plus":{"name":"Business Plus","monthly":500},"spotlight":{"name":"Business Spotlight","monthly":1000}}
 @contextmanager
 def conn():
@@ -834,7 +837,7 @@ class Handler(BaseHTTPRequestHandler):
                         LEFT JOIN ratings my ON my.business_id=b.id AND my.target_type='provider'
                              AND my.rater_id=? AND my.target_user_id=b.user_id
                         WHERE b.status='active'""",(rater_id,)).fetchall()
-                items=[dict(x) for x in rows if category_matches(cat, x["category"]) and (not term or term in (x["name"]+" "+x["category"]+" "+x["description"]).lower()) and (not area or area in x["area"].lower())]
+                items=[dict(x) for x in rows if category_matches(cat, x["category"]) and (not term or term in (x["name"]+" "+x["category"]+" "+x["description"]+" "+category_search_terms(x["category"])).lower()) and (not area or area in x["area"].lower())]
                 for item in items:
                     item["rating"]=round(float(item["rating"] or 0),1); item["rating_count"]=int(item["rating_count"] or 0); item["my_rating"]=int(item["my_rating"] or 0)
                 if sort=="rating": items.sort(key=lambda x:x["rating"] or 0,reverse=True)
