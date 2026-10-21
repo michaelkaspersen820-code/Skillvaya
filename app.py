@@ -72,8 +72,42 @@ def table_columns(c, table):
 HOST = os.environ.get("SKILLVAYA_HOST", "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8877"))
 CATEGORIES = [
-"Builders & construction","Plumbers","Electricians","Painters & decorators","Mechanics & automotive","Cleaning & housekeeping","Gardening & landscaping","Roofing & waterproofing","Carpenters & furniture","Welders & fabricators","Appliance repairs","IT & computer support","Graphic designers","Artists & photographers","Marketing & advertising","Web & software developers","Lawyers & legal services","Private doctors & clinics","Dentists & specialists","Nurses & home care","Accountants & tax","Financial & insurance services","Real estate & property","Tutors & education","Beauty & hair","Catering & chefs","Transport & removals","Security services","Events & entertainment","Tailors & fashion","Pet care & veterinary","Funeral services","Engineering & consulting","Other professional services"
-]
+"Builders & construction","Plumbers","Electricians","Painters & decorators","Mechanics & automotive","Cleaning & housekeeping","Gardening & landscaping","Roofing & waterproofing","Carpenters & furniture","Welders & fabricators","Appliance repairs","IT & computer support","Graphic designers","Artists & photographers","Marketing & advertising","Web & software developers","Lawyers & legal services","Private doctors & clinics","Dentists & specialists","Nurses & home care","Accountants & tax","Financial & insurance services","Real estate & property","Tutors & education","Beauty & hair","Catering & chefs","Transport & removals","Security services","Events & entertainment","Tailors & fashion","Pet care & veterinary","Funeral services","Engineering & consulting","Other professional services","Doctors","Nurses","Mechanics","Gardeners",
+"General practitioners (GPs)","Medical specialists","Dentists","Dental hygienists","Physiotherapists","Psychologists & counsellors","Optometrists","Pharmacists","Veterinarians",
+"Home carers","Elderly care","Childcare & babysitters","Midwives",
+"Auto electricians","Tyre fitters","Panel beaters & spray painters","Car washers & detailing","Motorcycle mechanics","Truck & diesel mechanics",
+"Landscapers","Pool maintenance","Pest control","Tree services",
+"Bricklayers","Plasterers","Tilers","Flooring installers","Glaziers & window fitters","Locksmiths","Solar installers","Air-conditioning & refrigeration","CCTV & alarm installers","Handymen","Quantity surveyors","Architects",
+"Domestic workers","Laundry & ironing","Carpet & upholstery cleaning","Office cleaning","Waste removal",
+"Computer repair","Mobile phone repair","Network technicians","Cybersecurity services","UX/UI designers","Video editors","Videographers","Translators & interpreters","Writers & editors",
+"Consultants","Human resources & recruitment","Bookkeepers","Auditors","Mortgage brokers","Financial advisers","Insurance brokers","Estate agents","Property managers",
+"Teachers","Exam tutors","Music teachers","Driving instructors","Training & coaching",
+"Barbers","Hairdressers","Nail technicians","Make-up artists","Beauty therapists","Massage therapists","Personal trainers","Nutritionists",
+"Chefs & private cooks","Bakers","Food vendors","Event planners","DJs & sound technicians","Musicians","MCs & entertainers","Florists","Wedding services",
+"Fashion designers","Sewing & alterations","Upholstery","Delivery drivers","Moving & removals","Taxi & shuttle services","Tour guides","Courier services",
+"Security guards","Private investigators","Fire safety services","Funeral directors","Cremation services",
+"Civil engineers","Electrical engineers","Mechanical engineers","Environmental consultants","Surveyors","Interior designers","Signage & printing","Craftspeople","Pet groomers","Dog walkers","Animal trainers"
+ ]
+CATEGORY_ALIASES = {
+    "Doctors": {"Private doctors & clinics"}, "General practitioners (GPs)": {"Private doctors & clinics"}, "Medical specialists": {"Private doctors & clinics"},
+    "Nurses": {"Nurses & home care"}, "Home carers": {"Nurses & home care"}, "Elderly care": {"Nurses & home care"}, "Midwives": {"Nurses & home care"},
+    "Mechanics": {"Mechanics & automotive"}, "Auto electricians": {"Mechanics & automotive"}, "Tyre fitters": {"Mechanics & automotive"}, "Panel beaters & spray painters": {"Mechanics & automotive"}, "Car washers & detailing": {"Mechanics & automotive"}, "Motorcycle mechanics": {"Mechanics & automotive"}, "Truck & diesel mechanics": {"Mechanics & automotive"},
+    "Gardeners": {"Gardening & landscaping"}, "Landscapers": {"Gardening & landscaping"}, "Tree services": {"Gardening & landscaping"}, "Pool maintenance": {"Cleaning & housekeeping", "Gardening & landscaping"}, "Pest control": {"Cleaning & housekeeping"},
+    "Dentists": {"Dentists & specialists"}, "Dental hygienists": {"Dentists & specialists"}, "Physiotherapists": {"Dentists & specialists"}, "Psychologists & counsellors": {"Private doctors & clinics"}, "Optometrists": {"Dentists & specialists"}, "Pharmacists": {"Private doctors & clinics"}, "Veterinarians": {"Pet care & veterinary"},
+    "Bricklayers": {"Builders & construction"}, "Plasterers": {"Builders & construction"}, "Tilers": {"Builders & construction"}, "Flooring installers": {"Builders & construction"}, "Glaziers & window fitters": {"Builders & construction"}, "Locksmiths": {"Other professional services"}, "Solar installers": {"Electricians"}, "Air-conditioning & refrigeration": {"Appliance repairs", "Electricians"}, "CCTV & alarm installers": {"Security services", "Electricians"}, "Handymen": {"Builders & construction"}, "Quantity surveyors": {"Engineering & consulting"}, "Architects": {"Engineering & consulting"},
+    "Domestic workers": {"Cleaning & housekeeping"}, "Laundry & ironing": {"Cleaning & housekeeping"}, "Carpet & upholstery cleaning": {"Cleaning & housekeeping"}, "Office cleaning": {"Cleaning & housekeeping"}, "Waste removal": {"Cleaning & housekeeping", "Transport & removals"},
+    "Computer repair": {"IT & computer support"}, "Mobile phone repair": {"IT & computer support"}, "Network technicians": {"IT & computer support"}, "Cybersecurity services": {"IT & computer support"}, "UX/UI designers": {"Graphic designers", "Web & software developers"}, "Video editors": {"Artists & photographers"}, "Videographers": {"Artists & photographers"}, "Translators & interpreters": {"Other professional services"}, "Writers & editors": {"Marketing & advertising"},
+    "Consultants": {"Engineering & consulting"}, "Human resources & recruitment": {"Other professional services"}, "Bookkeepers": {"Accountants & tax"}, "Auditors": {"Accountants & tax"}, "Mortgage brokers": {"Financial & insurance services"}, "Financial advisers": {"Financial & insurance services"}, "Insurance brokers": {"Financial & insurance services"}, "Estate agents": {"Real estate & property"}, "Property managers": {"Real estate & property"},
+    "Teachers": {"Tutors & education"}, "Exam tutors": {"Tutors & education"}, "Music teachers": {"Tutors & education", "Events & entertainment"}, "Driving instructors": {"Tutors & education"}, "Training & coaching": {"Tutors & education"},
+    "Barbers": {"Beauty & hair"}, "Hairdressers": {"Beauty & hair"}, "Nail technicians": {"Beauty & hair"}, "Make-up artists": {"Beauty & hair"}, "Beauty therapists": {"Beauty & hair"}, "Massage therapists": {"Beauty & hair"}, "Personal trainers": {"Other professional services"}, "Nutritionists": {"Other professional services"},
+    "Chefs & private cooks": {"Catering & chefs"}, "Bakers": {"Catering & chefs"}, "Food vendors": {"Catering & chefs"}, "Event planners": {"Events & entertainment"}, "DJs & sound technicians": {"Events & entertainment"}, "Musicians": {"Events & entertainment"}, "MCs & entertainers": {"Events & entertainment"}, "Florists": {"Events & entertainment"}, "Wedding services": {"Events & entertainment"},
+    "Fashion designers": {"Tailors & fashion"}, "Sewing & alterations": {"Tailors & fashion"}, "Upholstery": {"Carpenters & furniture"}, "Delivery drivers": {"Transport & removals"}, "Moving & removals": {"Transport & removals"}, "Taxi & shuttle services": {"Transport & removals"}, "Tour guides": {"Transport & removals"}, "Courier services": {"Transport & removals"},
+    "Security guards": {"Security services"}, "Private investigators": {"Security services"}, "Fire safety services": {"Security services"}, "Funeral directors": {"Funeral services"}, "Cremation services": {"Funeral services"},
+    "Civil engineers": {"Engineering & consulting"}, "Electrical engineers": {"Engineering & consulting", "Electricians"}, "Mechanical engineers": {"Engineering & consulting"}, "Environmental consultants": {"Engineering & consulting"}, "Surveyors": {"Engineering & consulting"}, "Interior designers": {"Painters & decorators", "Graphic designers"}, "Signage & printing": {"Graphic designers", "Marketing & advertising"}, "Craftspeople": {"Artists & photographers"}, "Pet groomers": {"Pet care & veterinary"}, "Dog walkers": {"Pet care & veterinary"}, "Animal trainers": {"Pet care & veterinary"},
+}
+
+def category_matches(requested, stored):
+    return requested == "All categories" or stored == requested or stored in CATEGORY_ALIASES.get(requested, set())
 PLANS = {"local":{"name":"Local","monthly":105},"priority":{"name":"Priority","monthly":210},"plus":{"name":"Business Plus","monthly":500},"spotlight":{"name":"Business Spotlight","monthly":1000}}
 @contextmanager
 def conn():
@@ -800,7 +834,7 @@ class Handler(BaseHTTPRequestHandler):
                         LEFT JOIN ratings my ON my.business_id=b.id AND my.target_type='provider'
                              AND my.rater_id=? AND my.target_user_id=b.user_id
                         WHERE b.status='active'""",(rater_id,)).fetchall()
-                items=[dict(x) for x in rows if (cat=="All categories" or x["category"]==cat) and (not term or term in (x["name"]+" "+x["category"]+" "+x["description"]).lower()) and (not area or area in x["area"].lower())]
+                items=[dict(x) for x in rows if category_matches(cat, x["category"]) and (not term or term in (x["name"]+" "+x["category"]+" "+x["description"]).lower()) and (not area or area in x["area"].lower())]
                 for item in items:
                     item["rating"]=round(float(item["rating"] or 0),1); item["rating_count"]=int(item["rating_count"] or 0); item["my_rating"]=int(item["my_rating"] or 0)
                 if sort=="rating": items.sort(key=lambda x:x["rating"] or 0,reverse=True)
