@@ -28,12 +28,15 @@ if DATABASE_URL:
             return super().__getitem__(key)
 
     def hybrid_row(cursor):
-        # psycopg also asks for a row factory while executing statements with no result set.
-        # Such cursors have no description; returning a tuple row maker avoids a crash.
-        if cursor.description is None:
-            return lambda values: values
-        columns = [d.name for d in cursor.description]
-        return lambda values: HybridRow(columns, values)
+        # psycopg calls the row-factory with the cursor before the SQL statement runs,
+        # so description is not available yet. Resolve column names lazily when a row
+        # is actually produced; statements without result sets never invoke this maker.
+        def make_row(values):
+            description = cursor.description
+            if description is None:
+                return values
+            return HybridRow([d.name for d in description], values)
+        return make_row
 
     class PgConnection:
         def __init__(self, raw):
@@ -101,6 +104,7 @@ def init():
         CREATE TABLE IF NOT EXISTS analytics(id BIGSERIAL PRIMARY KEY, event TEXT NOT NULL, user_id INTEGER, detail TEXT DEFAULT '', created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS notifications(id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL, emailed_at TEXT, recipient TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
+        CREATE TABLE IF NOT EXISTS auth_sessions(token TEXT PRIMARY KEY, user_id BIGINT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS subscriptions(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, user_id INTEGER NOT NULL, plan TEXT NOT NULL, billing TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', started_at TEXT NOT NULL, expires_at TEXT NOT NULL, cancelled_at TEXT, UNIQUE(business_id));
         CREATE TABLE IF NOT EXISTS owner_promotions(
             id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'ad',
@@ -184,6 +188,41 @@ def send_owner_email(subject, body, recipient=None):
         return True
     except Exception:
         return False
+def send_customer_receipt(payment, customer_name, customer_email, capture_id):
+    """Email a customer receipt only after PayPal confirms a completed capture."""
+    if not customer_email:
+        return False
+    subject = "Payment receipt " + str(payment["reference"])
+    lines = [
+        "Hello " + (customer_name or "Skillvaya customer") + ",",
+        "",
+        "Skillvaya has received confirmation of your PayPal payment.",
+        "",
+        "INVOICE / PAYMENT RECEIPT",
+        "Invoice reference: " + str(payment["reference"]),
+        "Payment status: PAID ? confirmed by PayPal",
+        "Plan: " + str(payment["plan"]),
+        "Billing period: " + str(payment["billing"]),
+        "Amount paid: R" + format(float(payment["amount"]), ",.2f"),
+        "Payment date (UTC): " + str(payment["verified_at"] or now()),
+        "PayPal capture reference: " + str(capture_id),
+        "",
+        "Keep this email for your records. Your plan is activated only after provider confirmation.",
+        "For billing questions, contact skillvaya@gmail.com.",
+        "",
+        "Thank you for using Skillvaya.",
+    ]
+    sent = send_owner_email(subject, "\n".join(lines), customer_email)
+    if sent:
+        with conn() as c:
+            c.execute("INSERT INTO notifications(kind,subject,body,status,created_at,emailed_at,recipient) VALUES(?,?,?,?,?,?,?)",
+                      ("payment_receipt", subject, "Receipt emailed for " + str(payment["reference"]), "emailed", now(), now(), customer_email))
+    else:
+        with conn() as c:
+            c.execute("INSERT INTO notifications(kind,subject,body,status,created_at,recipient) VALUES(?,?,?,?,?,?)",
+                      ("payment_receipt", subject, "Receipt pending email delivery for " + str(payment["reference"]), "email_pending", now(), customer_email))
+    return sent
+
 def notify(kind, subject, body, recipient=""):
     with conn() as c:
         cur=c.execute("INSERT INTO notifications(kind,subject,body,created_at,recipient) VALUES(?,?,?,?,?) RETURNING id",(kind,subject,body,now(),recipient))
@@ -455,6 +494,13 @@ let installPrompt=null;window.addEventListener('beforeinstallprompt',e=>{install
 if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(console.warn);
 </script></body></html>'''
 SESSIONS={}
+def issue_session(user):
+    token=secrets.token_urlsafe(32)
+    expires=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(days=7)).isoformat()
+    with conn() as c:
+        c.execute("INSERT INTO auth_sessions(token,user_id,expires_at,created_at) VALUES(?,?,?,?)",(token,user["id"],expires,now()))
+    SESSIONS[token]=user
+    return token
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*a): pass
     def sendj(self,obj,status=200):
@@ -465,7 +511,18 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(n) or b"{}")
     def user(self):
         t=self.headers.get("Authorization","").removeprefix("Bearer ").strip()
-        return SESSIONS.get(t)
+        if not t: return None
+        # Always validate the durable session and expiry, even if this worker has a cached user.
+        # Sessions live in the database so a Render restart does not silently log users out.
+        with conn() as c:
+            row=c.execute("SELECT u.id,u.name,u.email,u.phone,u.role,s.expires_at FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.token=?",(t,)).fetchone()
+        if not row: return None
+        if row["expires_at"] <= now():
+            with conn() as c: c.execute("DELETE FROM auth_sessions WHERE token=?",(t,))
+            return None
+        user={"id":row["id"],"name":row["name"],"email":row["email"],"phone":row["phone"] or "","role":row["role"]}
+        SESSIONS[t]=user
+        return user
     def require(self,role=None):
         u=self.user()
         local_only = (role == "admin" and self.client_address[0] in ("127.0.0.1", "::1")
@@ -724,8 +781,11 @@ class Handler(BaseHTTPRequestHandler):
                     if fresh["status"]=="verified": return self.sendj({"ok":True,"already_verified":True,"status":"verified"})
                     activate_payment(c,fresh,capture_id)
                     c.execute("UPDATE payments SET payment_gateway='paypal',paypal_capture_id=?,pf_payment_id=? WHERE id=?",(capture_id,capture_id,row["id"]))
+                    paid_payment=c.execute("SELECT * FROM payments WHERE id=?",(row["id"],)).fetchone()
+                    customer=c.execute("SELECT name,email FROM users WHERE id=?",(row["user_id"],)).fetchone()
                 notify("payment_verified","PayPal payment verified","Provider ID: "+str(u["id"])+"; plan: "+row["plan"]+"; amount: R"+str(row["amount"])+"; reference: "+row["reference"]+"; PayPal capture: "+capture_id+".")
-                return self.sendj({"ok":True,"status":"verified","reference":row["reference"],"plan":row["plan"]})
+                receipt_sent=send_customer_receipt(paid_payment,customer["name"] if customer else "",customer["email"] if customer else "",capture_id)
+                return self.sendj({"ok":True,"status":"verified","reference":row["reference"],"plan":row["plan"],"receipt_email_sent":receipt_sent})
             if path=="/api/analytics":
                 event=d.get("event","")
                 if event not in ("visit","install"): return self.sendj({"error":"Unsupported event."},400)
@@ -768,7 +828,7 @@ class Handler(BaseHTTPRequestHandler):
                 with conn() as c:
                     try: uid=c.execute("INSERT INTO users(name,email,password_hash,role,created_at,phone,accepted_terms_version,accepted_terms_at) VALUES(?,?,?,?,?,?,?,?) RETURNING id",(name,email,hashpw(pw),role,now(),phone,terms_version,now())).fetchone()["id"]
                     except DBIntegrityError: return self.sendj({"error":"An account with that email already exists."},409)
-                u={"id":uid,"name":name,"email":email,"phone":phone,"role":role}; t=secrets.token_urlsafe(32); SESSIONS[t]=u
+                u={"id":uid,"name":name,"email":email,"phone":phone,"role":role}; t=issue_session(u)
                 notify("new_account","New Skillvaya account","New "+role+" account created: "+name+" <"+email+">.")
                 return self.sendj({"token":t,"user":u})
             if path=="/api/login":
@@ -782,7 +842,7 @@ class Handler(BaseHTTPRequestHandler):
                 if d.get("accept_terms") is True:
                     terms_version=setting("terms_version",TERMS_VERSION)
                     with conn() as c: c.execute("UPDATE users SET accepted_terms_version=?,accepted_terms_at=? WHERE id=?",(terms_version,now(),row["id"]))
-                u={"id":row["id"],"name":row["name"],"email":row["email"],"phone":row["phone"] if "phone" in row.keys() else "", "role":row["role"]}; t=secrets.token_urlsafe(32); SESSIONS[t]=u; return self.sendj({"token":t,"user":u})
+                u={"id":row["id"],"name":row["name"],"email":row["email"],"phone":row["phone"] if "phone" in row.keys() else "", "role":row["role"]}; t=issue_session(u); return self.sendj({"token":t,"user":u})
             if path=="/api/businesses":
                 u=self.require("provider")
                 name=d.get("name","").strip(); category=d.get("category",""); area=d.get("area","").strip(); phone=d.get("phone","").strip(); desc=d.get("description","").strip()

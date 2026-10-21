@@ -28,12 +28,15 @@ if DATABASE_URL:
             return super().__getitem__(key)
 
     def hybrid_row(cursor):
-        # psycopg also asks for a row factory while executing statements with no result set.
-        # Such cursors have no description; returning a tuple row maker avoids a crash.
-        if cursor.description is None:
-            return lambda values: values
-        columns = [d.name for d in cursor.description]
-        return lambda values: HybridRow(columns, values)
+        # psycopg calls the row-factory with the cursor before the SQL statement runs,
+        # so description is not available yet. Resolve column names lazily when a row
+        # is actually produced; statements without result sets never invoke this maker.
+        def make_row(values):
+            description = cursor.description
+            if description is None:
+                return values
+            return HybridRow([d.name for d in description], values)
+        return make_row
 
     class PgConnection:
         def __init__(self, raw):
