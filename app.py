@@ -184,6 +184,41 @@ def send_owner_email(subject, body, recipient=None):
         return True
     except Exception:
         return False
+def send_customer_receipt(payment, customer_name, customer_email, capture_id):
+    """Email a customer receipt only after PayPal confirms a completed capture."""
+    if not customer_email:
+        return False
+    subject = "Payment receipt " + str(payment["reference"])
+    lines = [
+        "Hello " + (customer_name or "Skillvaya customer") + ",",
+        "",
+        "Skillvaya has received confirmation of your PayPal payment.",
+        "",
+        "INVOICE / PAYMENT RECEIPT",
+        "Invoice reference: " + str(payment["reference"]),
+        "Payment status: PAID ? confirmed by PayPal",
+        "Plan: " + str(payment["plan"]),
+        "Billing period: " + str(payment["billing"]),
+        "Amount paid: R" + format(float(payment["amount"]), ",.2f"),
+        "Payment date (UTC): " + str(payment["verified_at"] or now()),
+        "PayPal capture reference: " + str(capture_id),
+        "",
+        "Keep this email for your records. Your plan is activated only after provider confirmation.",
+        "For billing questions, contact skillvaya@gmail.com.",
+        "",
+        "Thank you for using Skillvaya.",
+    ]
+    sent = send_owner_email(subject, "\n".join(lines), customer_email)
+    if sent:
+        with conn() as c:
+            c.execute("INSERT INTO notifications(kind,subject,body,status,created_at,emailed_at,recipient) VALUES(?,?,?,?,?,?,?)",
+                      ("payment_receipt", subject, "Receipt emailed for " + str(payment["reference"]), "emailed", now(), now(), customer_email))
+    else:
+        with conn() as c:
+            c.execute("INSERT INTO notifications(kind,subject,body,status,created_at,recipient) VALUES(?,?,?,?,?,?)",
+                      ("payment_receipt", subject, "Receipt pending email delivery for " + str(payment["reference"]), "email_pending", now(), customer_email))
+    return sent
+
 def notify(kind, subject, body, recipient=""):
     with conn() as c:
         cur=c.execute("INSERT INTO notifications(kind,subject,body,created_at,recipient) VALUES(?,?,?,?,?) RETURNING id",(kind,subject,body,now(),recipient))
@@ -724,8 +759,11 @@ class Handler(BaseHTTPRequestHandler):
                     if fresh["status"]=="verified": return self.sendj({"ok":True,"already_verified":True,"status":"verified"})
                     activate_payment(c,fresh,capture_id)
                     c.execute("UPDATE payments SET payment_gateway='paypal',paypal_capture_id=?,pf_payment_id=? WHERE id=?",(capture_id,capture_id,row["id"]))
+                    paid_payment=c.execute("SELECT * FROM payments WHERE id=?",(row["id"],)).fetchone()
+                    customer=c.execute("SELECT name,email FROM users WHERE id=?",(row["user_id"],)).fetchone()
                 notify("payment_verified","PayPal payment verified","Provider ID: "+str(u["id"])+"; plan: "+row["plan"]+"; amount: R"+str(row["amount"])+"; reference: "+row["reference"]+"; PayPal capture: "+capture_id+".")
-                return self.sendj({"ok":True,"status":"verified","reference":row["reference"],"plan":row["plan"]})
+                receipt_sent=send_customer_receipt(paid_payment,customer["name"] if customer else "",customer["email"] if customer else "",capture_id)
+                return self.sendj({"ok":True,"status":"verified","reference":row["reference"],"plan":row["plan"],"receipt_email_sent":receipt_sent})
             if path=="/api/analytics":
                 event=d.get("event","")
                 if event not in ("visit","install"): return self.sendj({"error":"Unsupported event."},400)
