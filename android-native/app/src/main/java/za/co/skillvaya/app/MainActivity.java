@@ -42,6 +42,9 @@ public class MainActivity extends Activity {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true); settings.setUserAgentString(settings.getUserAgentString() + " SkillvayaNative");
         settings.setDatabaseEnabled(true); settings.setSupportZoom(false);
+        // Always fetch the current hosted app instead of retaining stale WebView assets.
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        webView.clearCache(true);
         settings.setAllowFileAccess(false); settings.setAllowContentAccess(true);
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
             try {
@@ -78,8 +81,9 @@ public class MainActivity extends Activity {
                     }
                 });
                 String baseUrl = BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", "");
-                String loginUrl = baseUrl.endsWith("/login") ? baseUrl : baseUrl + "/login";
-                webView.loadUrl(loginUrl);
+                // Open the public directory first. The standalone /login gateway hides the
+                // customer category list, so account actions should be entered from the app UI.
+                webView.loadUrl(baseUrl + "/?native_refresh=" + System.currentTimeMillis());
                 return;
             }
             for (String name : new String[]{"website.html","icon-192.png","icon-512.png","sv-logo.jpeg"}) copyAsset(name);
