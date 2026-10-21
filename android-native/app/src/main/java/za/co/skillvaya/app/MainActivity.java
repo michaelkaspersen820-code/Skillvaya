@@ -1,5 +1,6 @@
 package za.co.skillvaya.app;
 import android.app.Activity;
+import android.content.Intent;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.webkit.WebView;
@@ -12,6 +13,8 @@ import android.app.DownloadManager;
 import android.net.Uri;
 import android.os.Environment;
 import android.webkit.URLUtil;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient.FileChooserParams;
 import android.widget.Toast;
 import android.widget.FrameLayout;
 import android.view.ViewGroup;
@@ -26,6 +29,8 @@ import com.chaquo.python.android.AndroidPlatform;
 public class MainActivity extends Activity {
     private WebView webView;
     private TextView status;
+    private ValueCallback<Uri[]> filePathCallback;
+    private static final int FILE_CHOOSER_REQUEST = 7341;
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(Color.rgb(7,20,38));
@@ -68,7 +73,22 @@ public class MainActivity extends Activity {
                 Toast.makeText(MainActivity.this, "Could not start download. Open Skillvaya in Chrome and try again.", Toast.LENGTH_LONG).show();
             }
         });
-        webView.setWebViewClient(new WebViewClient()); webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebViewClient(new WebViewClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (filePathCallback != null) filePathCallback.onReceiveValue(null);
+                filePathCallback = callback;
+                try {
+                    Intent intent = params.createIntent();
+                    startActivityForResult(intent, FILE_CHOOSER_REQUEST);
+                    return true;
+                } catch (Exception e) {
+                    filePathCallback = null;
+                    Toast.makeText(MainActivity.this, "Could not open the picture/file picker. Please try again.", Toast.LENGTH_LONG).show();
+                    return false;
+                }
+            }
+        });
         try {
             if (BuildConfig.PUBLIC_URL != null && !BuildConfig.PUBLIC_URL.trim().isEmpty()) {
                 status.setText("Connecting to Skillvaya…");
@@ -104,6 +124,25 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> status.setText("Skillvaya startup timed out. Close and reopen the app."));
             }, "SkillvayaHealthCheck").start();
         } catch (Exception e) { status.setText("Skillvaya setup failed. Please reinstall the app."); }
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == FILE_CHOOSER_REQUEST) {
+            if (filePathCallback == null) return;
+            Uri[] results = null;
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                Uri result = data.getData();
+                if (result != null) results = new Uri[]{result};
+                else if (data.getClipData() != null) {
+                    int count = data.getClipData().getItemCount();
+                    results = new Uri[count];
+                    for (int i = 0; i < count; i++) results[i] = data.getClipData().getItemAt(i).getUri();
+                }
+            }
+            filePathCallback.onReceiveValue(results);
+            filePathCallback = null;
+        }
     }
     private void copyAsset(String name) throws Exception {
         File out=new File(getFilesDir(),name); if(out.exists()&&out.length()>0)return;
