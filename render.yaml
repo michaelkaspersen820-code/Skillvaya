@@ -1,27 +1,21 @@
-﻿services:
+services:
   - type: web
     name: skillvaya
     runtime: python
-    plan: starter
-    buildCommand: python -m py_compile app.py
+    plan: free
+    buildCommand: pip install -r requirements.txt && python -m py_compile app.py
     startCommand: python app.py
     healthCheckPath: /healthz
-    disk:
-      name: skillvaya-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
-      - key: SKILLVAYA_DB_PATH
-        value: /var/data/skillvaya.sqlite3
-      - key: SKILLVAYA_PAYFAST_MODE
-        value: sandbox
+      - key: DATABASE_URL
+        sync: false
       - key: SKILLVAYA_PUBLIC_URL
+        value: https://skillvaya.onrender.com
+      - key: SKILLVAYA_PAYPAL_MODE
+        value: sandbox
+      - key: SKILLVAYA_PAYPAL_CLIENT_ID
         sync: false
-      - key: SKILLVAYA_PAYFAST_MERCHANT_ID
-        sync: false
-      - key: SKILLVAYA_PAYFAST_MERCHANT_KEY
-        sync: false
-      - key: SKILLVAYA_PAYFAST_PASSPHRASE
+      - key: SKILLVAYA_PAYPAL_CLIENT_SECRET
         sync: false
       - key: SKILLVAYA_OWNER_EMAIL
         sync: false

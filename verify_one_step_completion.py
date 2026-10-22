@@ -17,12 +17,13 @@ assert get("/owner-control")[0]==200
 assert get("/manifest.json")[0]==200
 status,body=get("/api/categories")
 assert status==200 and "Builders & construction" in body
-# A local checkout must be safely refused until a public HTTPS callback exists.
+# PayFast is intentionally retired: the old payment route must stay disabled,
+# while PayPal remains the only supported checkout provider.
 req=urllib.request.Request(base+"/api/payments",data=json.dumps({"plan":"local","billing":"monthly"}).encode(),headers={"Content-Type":"application/json"},method="POST")
 try:
  urllib.request.urlopen(req,timeout=4)
- raise AssertionError("Provider auth unexpectedly succeeded")
+ raise AssertionError("Retired PayFast route unexpectedly accepted a payment")
 except urllib.error.HTTPError as e:
- assert e.code==401
+ assert e.code==410
 server.shutdown()
-print("PASS: Python compile/import, database migration, PayFast signature rejection, root/customer/owner routes, manifest/categories, unauthenticated payment denial")
+print("PASS: Python compile/import, database migration, PayFast signature rejection, root/customer/owner routes, manifest/categories, retired PayFast checkout stays disabled (HTTP 410)")
