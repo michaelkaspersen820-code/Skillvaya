@@ -128,10 +128,11 @@ try:
     check("PayPal partial refund is saved only after provider confirmation", lambda: (_ for _ in ()).throw(AssertionError((refund,tuple(refund_row)))) if refund.get("refund_status") != "partial" or tuple(refund_row) != (20000,"partial") else None)
 
     before = db_one("SELECT count(*) FROM payments")[0]
-    request("/api/payments", "POST", {"plan":"local","billing":"monthly"}, token=token, expected=410)
+    retired_checkout = request("/api/payments", "POST", {"plan":"local","billing":"monthly"}, token=token, expected=410)
+    assert "Sandbox" not in retired_checkout.get("error", "") and "PayPal" in retired_checkout.get("error", ""), retired_checkout
     request("/api/payfast/itn", "POST", {}, expected=410)
     after = db_one("SELECT count(*) FROM payments")[0]
-    check("Legacy PayFast checkout and callback do not create payment rows", lambda: (_ for _ in ()).throw(AssertionError((before,after))) if before != after else None)
+    check("Legacy PayFast endpoints remain retired without misleading PayPal Sandbox instructions", lambda: (_ for _ in ()).throw(AssertionError((before,after))) if before != after else None)
     print("RESULT %d PayPal flow checks passed; calls to PayPal were mocked, so no real payment was sent." % len(passed))
 finally:
     server.shutdown()
