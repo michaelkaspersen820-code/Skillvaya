@@ -913,9 +913,12 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                     self.send_response(302); self.send_header("Location","/owner-app"); self.send_header("Cache-Control","no-store"); self.end_headers(); return
                 owner_html = OWNER_HTML.encode()
                 self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(owner_html))); self.end_headers(); self.wfile.write(owner_html); return
-            if path in ("/", "/index.html", "/login"):
-                # The Android APK starts at /login. Serve the real app shell so saved sessions
-                # can be restored instead of forcing the standalone login gateway on every launch.
+            if path in ("/", "/index.html"):
+                # Public root is the informational/download website; do not expose the working app shell here.
+                with open(os.path.join(ROOT, "website.html"), "rb") as f: public_site = f.read()
+                self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Cache-Control", "no-cache"); self.send_header("Content-Length", str(len(public_site))); self.end_headers(); self.wfile.write(public_site); return
+            if path == "/login":
+                # Installed app entry remains separate so existing app sessions continue to work.
                 customer_html = HTML.encode()
                 self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Cache-Control", "no-cache"); self.send_header("Content-Length", str(len(customer_html))); self.end_headers(); self.wfile.write(customer_html); return
             if path in ("/payment/return","/payment/cancel"):
