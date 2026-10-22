@@ -1006,8 +1006,11 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
             if path=="/owner-app":
                 owner_app_html = OWNER_APP_HTML.encode()
                 self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(owner_app_html))); self.end_headers(); self.wfile.write(owner_app_html); return
-            if path=="/terms":
-                b=TERMS_PAGE_HTML.encode("utf-8")
+            if path in ("/terms","/privacy","/refund","/cancellation","/delivery"):
+                try:
+                    with open(os.path.join(ROOT,"policies.html"),"rb") as f: b=f.read()
+                except OSError:
+                    return self.sendj({"error":"Policy pages are temporarily unavailable"},503)
                 self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
             if path=="/website":
                 with open(os.path.join(ROOT,"website.html"),"rb") as f: customer_html = f.read()
