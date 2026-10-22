@@ -746,7 +746,7 @@ function openProvider(id){
  const contact=['<button type="button" class="primary" onclick="contact('+Number(b.id)+')">Message in Skillvaya</button>'];
  if(b.whatsapp)contact.push('<a class="studio-action" target="_blank" rel="noopener noreferrer" href="https://wa.me/'+esc(String(b.whatsapp).replace(/\\D/g,''))+'">☎ WhatsApp</a>');
  if(b.email)contact.push('<a class="studio-action" href="mailto:'+esc(b.email)+'">✉ Email</a>');
- if(b.website&&/^https?:\\/\\//i.test(b.website))contact.push('<a class="studio-action" target="_blank" rel="noopener noreferrer" href="'+esc(b.website)+'">↗ Website</a>');
+ if(b.website&&/^https?:\/\//i.test(b.website))contact.push('<a class="studio-action" target="_blank" rel="noopener noreferrer" href="'+esc(b.website)+'">↗ Website</a>');
  contact.push('<button class="studio-action" type="button" onclick="report('+Number(b.id)+')">⚑ Report listing</button>');
  const services=['Graphic Design','Branding & Identity','Web Design','Website Development','Coding & Custom Software','Android Apps','AI Solutions','UI/UX Design','Testing & Debugging','IT Support & Troubleshooting'];
  const icons=['✎','◇','▣','</>','⚙','▯','✺','▤','⌕','🔧'];
