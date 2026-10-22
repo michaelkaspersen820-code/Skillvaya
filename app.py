@@ -1119,7 +1119,7 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                     if u["role"]=="admin":
                         rows=c.execute("SELECT m.*,b.name business_name,cu.name customer_name,cu.email customer_email FROM messages m JOIN businesses b ON b.id=m.business_id JOIN users cu ON cu.id=m.customer_id ORDER BY m.created_at DESC LIMIT 300").fetchall()
                     elif u["role"]=="provider":
-                        rows=c.execute("SELECT m.*,b.name business_name,cu.name customer_name,cu.email customer_email FROM messages m JOIN businesses b ON b.id=m.business_id JOIN users cu ON cu.id=m.customer_id WHERE b.user_id=? ORDER BY m.created_at DESC LIMIT 300",(u["id"],)).fetchall()
+                        rows=c.execute("SELECT m.*,b.name business_name,cu.name customer_name,cu.email customer_email FROM messages m JOIN businesses b ON b.id=m.business_id JOIN users cu ON cu.id=m.customer_id WHERE b.user_id=? OR m.sender_id=? ORDER BY m.created_at DESC LIMIT 300",(u["id"],u["id"])).fetchall()
                     else:
                         rows=c.execute("SELECT m.*,b.name business_name,cu.name customer_name,cu.email customer_email FROM messages m JOIN businesses b ON b.id=m.business_id JOIN users cu ON cu.id=m.customer_id WHERE m.customer_id=? ORDER BY m.created_at DESC LIMIT 300",(u["id"],)).fetchall()
                 return self.sendj({"items":[dict(x) for x in rows]})
