@@ -418,6 +418,12 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/owner-app":
                 owner_app_html = OWNER_APP_HTML.encode()
                 self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(owner_app_html))); self.end_headers(); self.wfile.write(owner_app_html); return
+            if path in ("/terms","/privacy","/refund","/cancellation","/delivery"):
+                try:
+                    with open(os.path.join(ROOT,"policies.html"),"rb") as f: policy_html=f.read()
+                except OSError:
+                    return self.sendj({"error":"Policy pages are temporarily unavailable"},503)
+                self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(policy_html))); self.end_headers(); self.wfile.write(policy_html); return
             if path=="/customer":
                 customer_html = HTML.encode()
                 self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(customer_html))); self.end_headers(); self.wfile.write(customer_html); return
