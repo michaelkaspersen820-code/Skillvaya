@@ -16,6 +16,7 @@
 - Category navigation: all 143 category buttons clicked and verified on both desktop and mobile (286 category actions total); category screen/back navigation passed with no JS errors, HTTP 5xx responses, or horizontal overflow.
 - Public provider-detail flow: 9 checks passed for search, detail navigation, safe WhatsApp/email/website links, back navigation, and sign-in gates for save/message/report actions.
 - Responsive sweep: 27 route/viewport checks passed across 320, 360, 390, 430, 768, 1024, 1280, 1365 and 1920px widths for the customer site, owner app and owner control; no horizontal overflow or uncaught JS errors.
+- Owner-route security regression: an unauthenticated request to `/owner-control` redirects to `/owner-app`, and owner promotion/payment APIs return HTTP 401 without an owner session.
 - Owner promotion regression tests now verify contact fields and synchronization with the public directory.
 - Backend regression suites passed: 37 one-go checks, 17 job-hub checks, owner-promotion regression, owner terms, profile-photo end-to-end, owner-bootstrap, and 10 mocked PayPal checkout checks. Legacy owner-promotion migration/backfill regression also passed.
 - No live order, capture, refund, mode switch, or credential change was performed. The configured live PayPal OAuth path and a real buyer-approved transaction are not certified by this release; the mode-sensitive label was verified with a local live-mode/no-credentials test.
