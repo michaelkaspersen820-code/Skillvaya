@@ -913,6 +913,11 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                     self.send_response(302); self.send_header("Location","/owner-app"); self.send_header("Cache-Control","no-store"); self.end_headers(); return
                 owner_html = OWNER_HTML.encode()
                 self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(owner_html))); self.end_headers(); self.wfile.write(owner_html); return
+            if path in ("/", "/index.html") and "SkillvayaNative" in self.headers.get("User-Agent", ""):
+                # Older installed Android builds open the configured base URL (/) directly.
+                # Keep the public website unchanged for browsers, but route the native WebView
+                # into the real customer app so existing installations recover without reinstalling.
+                self.send_response(302); self.send_header("Location", "/customer-app"); self.send_header("Cache-Control", "no-store"); self.end_headers(); return
             if path in ("/", "/index.html"):
                 # Public root is the informational/download website; do not expose the working app shell here.
                 with open(os.path.join(ROOT, "website.html"), "rb") as f: public_site = f.read()
