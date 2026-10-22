@@ -1,6 +1,7 @@
 package za.co.skillvaya.app;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.os.Bundle;
 import android.os.Handler;
@@ -9,6 +10,7 @@ import android.graphics.Color;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebChromeClient;
+import android.webkit.PermissionRequest;
 import android.webkit.WebSettings;
 import android.webkit.DownloadListener;
 import android.webkit.CookieManager;
@@ -60,6 +62,7 @@ public class MainActivity extends Activity {
     };
     private ValueCallback<Uri[]> filePathCallback;
     private Uri cameraOutputUri;
+    private PermissionRequest pendingWebPermission;
     private File cameraOutputFile;
     private static final int FILE_CHOOSER_REQUEST = 7341;
     @Override public void onCreate(Bundle savedInstanceState) {
@@ -131,13 +134,28 @@ public class MainActivity extends Activity {
         });
         webView.setWebViewClient(new WebViewClient());
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override public void onPermissionRequest(PermissionRequest request) {
+                // Only grant web permissions for the hosted Skillvaya origin; native camera
+                // capture itself is handled by the Android camera app through ACTION_IMAGE_CAPTURE.
+                runOnUiThread(() -> {
+                    if (request != null && request.getOrigin() != null && BuildConfig.PUBLIC_URL != null
+                            && request.getOrigin().toString().startsWith(BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", ""))) {
+                        request.grant(request.getResources());
+                    } else if (request != null) request.deny();
+                });
+            }
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (filePathCallback != null) filePathCallback.onReceiveValue(null);
                 filePathCallback = callback;
                 cameraOutputUri = null;
                 cameraOutputFile = null;
                 try {
-                    if (params.isCaptureEnabled()) {
+                    boolean wantsCapture = params.isCaptureEnabled();
+                    String[] acceptTypes = params.getAcceptTypes();
+                    if (!wantsCapture && acceptTypes != null) {
+                        for (String type : acceptTypes) if (type != null && type.startsWith("image/")) wantsCapture = false;
+                    }
+                    if (wantsCapture) {
                         Intent camera = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
                         // Do not gate camera launch on resolveActivity(): Android 11+ package
                         // visibility can hide installed camera apps unless they are declared in <queries>.
@@ -149,8 +167,19 @@ public class MainActivity extends Activity {
                         camera.putExtra(MediaStore.EXTRA_OUTPUT, cameraOutputUri);
                         camera.setClipData(ClipData.newRawUri("Skillvaya profile photo", cameraOutputUri));
                         camera.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-                        startActivityForResult(camera, FILE_CHOOSER_REQUEST);
-                        return true;
+                        try {
+                            startActivityForResult(camera, FILE_CHOOSER_REQUEST);
+                            return true;
+                        } catch (ActivityNotFoundException noCamera) {
+                            if (cameraOutputFile != null) cameraOutputFile.delete();
+                            cameraOutputFile = null; cameraOutputUri = null;
+                            // Some OEMs don't expose a camera intent; fall back to the system
+                            // picker so users can still select an image rather than a dead button.
+                            Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                            picker.addCategory(Intent.CATEGORY_OPENABLE); picker.setType("image/*");
+                            startActivityForResult(picker, FILE_CHOOSER_REQUEST);
+                            return true;
+                        }
                     }
                     // Use Android's system document picker directly. This avoids WebView-generated
                     // chooser intents that can behave inconsistently across Android versions.
@@ -177,8 +206,15 @@ public class MainActivity extends Activity {
                     }
                     if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    startActivityForResult(intent, FILE_CHOOSER_REQUEST);
-                    return true;
+                    try {
+                        startActivityForResult(intent, FILE_CHOOSER_REQUEST);
+                        return true;
+                    } catch (ActivityNotFoundException noPicker) {
+                        Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
+                        fallback.addCategory(Intent.CATEGORY_OPENABLE); fallback.setType("image/*");
+                        startActivityForResult(Intent.createChooser(fallback, "Choose profile picture"), FILE_CHOOSER_REQUEST);
+                        return true;
+                    }
                 } catch (Exception e) {
                     if (filePathCallback != null) filePathCallback.onReceiveValue(null);
                     filePathCallback = null;
