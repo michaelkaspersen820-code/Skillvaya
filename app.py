@@ -1175,21 +1175,16 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                 u=self.require()
                 name=str(d.get("name",u.get("name", ""))).strip()[:120]; phone=str(d.get("phone",u.get("phone", ""))).strip()[:40]
                 photo=str(d.get("profile_photo",u.get("profile_photo", ""))).strip()
-                requested_role=str(d.get("role",u.get("role", "customer"))).strip().lower()
-                # Self-service opt-in is one-way: customers may become providers, but
-                # this endpoint cannot demote providers/admins or grant administrator access.
-                # Profile-only requests may omit role. Preserve existing provider/admin roles;
-                # never allow a customer to self-assign provider or administrator privileges here.
-                allowed_roles=("customer","provider","admin")
-                if requested_role not in allowed_roles or (u.get("role") in ("provider","admin") and requested_role!=u.get("role")) or (u.get("role")=="customer" and requested_role not in ("customer","provider")):
-                    return self.sendj({"error":"That account-type change is not permitted."},403)
+                # Profile edits must never change account privileges. The profile UI can
+                # submit a stale/default role value; ignore it and preserve the authenticated
+                # account's existing role. Role changes require a separate authorized workflow.
                 if len(name)<2: return self.sendj({"error":"Enter a name of at least 2 characters."},400)
                 if photo and (not photo.startswith(("data:image/png;base64,","data:image/jpeg;base64,","data:image/webp;base64,")) or len(photo)>2800000):
                     return self.sendj({"error":"Profile picture must be a PNG, JPG or WebP image no larger than 2 MB."},400)
                 with conn() as c:
-                    c.execute("UPDATE users SET name=?,phone=?,profile_photo=?,role=? WHERE id=?",(name,phone,photo,requested_role,u["id"]))
+                    c.execute("UPDATE users SET name=?,phone=?,profile_photo=? WHERE id=?",(name,phone,photo,u["id"]))
                     row=c.execute("SELECT id,name,email,phone,role,profile_photo FROM users WHERE id=?",(u["id"],)).fetchone()
-                return self.sendj({"ok":True,"user":dict(row) if row else {**u,"name":name,"phone":phone,"profile_photo":photo,"role":requested_role}})
+                return self.sendj({"ok":True,"user":dict(row) if row else {**u,"name":name,"phone":phone,"profile_photo":photo}})
             if path=="/api/account/password":
                 u=self.require(); current=str(d.get("current_password", "")); new_password=str(d.get("new_password", ""))
                 if len(new_password)<8: return self.sendj({"error":"Your new password must be at least 8 characters."},400)
