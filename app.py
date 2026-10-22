@@ -756,6 +756,21 @@ body{background:var(--design-surface);color:var(--design-ink)}
  .design-section-heading h2{font-size:22px}
 }
 
+
+/* Remove the legacy redundant directory tab on mobile; the new Home tab provides that route. */
+@media(max-width:800px){.hero-actions-wrap{display:none!important}}
+@media(max-width:480px){
+ #hero{padding:12px 0 14px}
+ #hero h1{font-size:23px;line-height:1.1;margin:7px 0}
+ #hero p{font-size:12px;line-height:1.4;margin:6px 0 9px}
+ .search{gap:4px;padding:5px}
+ .search input{min-height:34px!important;padding:6px 9px!important}
+ .search button{min-height:36px!important}
+ .design-section-heading h2{font-size:20px}
+ .design-section-heading p{font-size:11px;white-space:nowrap}
+ .design-category-panel{padding:13px!important}
+}
+
 </style></head><body>
 <div id="svSplash" class="sv-splash" role="status" aria-live="polite"><div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div><div class="sv-loading-dots" aria-hidden="true"><i></i><i></i><i></i></div></div>
 <header class="top"><div class="wrap nav"><div class="brandlock"><img class="sv-logo" src="/sv-logo.jpeg" alt="SV Skillvaya logo"><div><div class="brand">Skillvaya</div><div class="studio-header-subtitle">Digital &amp; Creative Studio</div><div class="tiny studio-header-tagline">Professional. Simple. Powerful.</div></div></div></div></header>
