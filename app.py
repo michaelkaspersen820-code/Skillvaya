@@ -1012,7 +1012,11 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                 try:
                     with open(os.path.join(ROOT,"policies.html"),"rb") as f: b=f.read()
                 except OSError:
-                    return self.sendj({"error":"Policy pages are temporarily unavailable"},503)
+                    try:
+                        from policy_page import POLICY_PAGE_HTML
+                        b=POLICY_PAGE_HTML.encode("utf-8")
+                    except Exception:
+                        return self.sendj({"error":"Policy pages are temporarily unavailable"},503)
                 self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
             if path=="/website":
                 with open(os.path.join(ROOT,"website.html"),"rb") as f: customer_html = f.read()
