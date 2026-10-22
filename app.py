@@ -773,7 +773,7 @@ body{background:var(--design-surface);color:var(--design-ink)}
 
 
 /* Featured studio card from the approved home dashboard; CTA routes to the live studio listing or graphic-design search. */
-.design-promo-card{display:flex;align-items:center;gap:13px;margin-top:15px;margin-bottom:3px;padding:14px 16px;border-radius:18px;background:linear-gradient(115deg,#101b43,#17285c);border:1px solid #273c78;box-shadow:0 10px 26px rgba(8,15,43,.13);color:#fff}
+.design-promo-card.hidden,.design-category-panel.hidden,#hero.hidden{display:none!important}.design-promo-card{display:flex;align-items:center;gap:13px;margin-top:15px;margin-bottom:3px;padding:14px 16px;border-radius:18px;background:linear-gradient(115deg,#101b43,#17285c);border:1px solid #273c78;box-shadow:0 10px 26px rgba(8,15,43,.13);color:#fff}
 .design-promo-icon{width:42px;height:42px;display:grid;place-items:center;flex:0 0 42px;border-radius:13px;background:linear-gradient(140deg,#2864f5,#7655f4);color:#fff;font-size:23px}
 .design-promo-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px}.design-promo-copy strong{font-size:14px;color:#fff}.design-promo-copy span{font-size:12px;line-height:1.35;color:#c7d5f8}
 .design-promo-button{display:flex;align-items:center;gap:6px;flex:0 0 auto;border:0;border-radius:11px;padding:11px 13px;background:linear-gradient(115deg,#2864f5,#7655f4);color:#fff;font-weight:800;font-size:12px}
