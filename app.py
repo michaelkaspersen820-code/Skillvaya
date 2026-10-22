@@ -738,6 +738,24 @@ body{background:var(--design-surface);color:var(--design-ink)}
 @media(max-width:850px){.design-category-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.design-category-tile{min-height:75px}.search{flex-wrap:wrap}.search input{flex:1 1 40%;min-width:130px}.search button{flex:1 1 100%;width:100%}}
 @media(max-width:480px){.brandlock .sv-logo{width:43px;height:43px}.top .wrap{padding-top:10px;padding-bottom:10px}#hero{padding:24px 0 28px}#hero h1{font-size:29px;letter-spacing:-.7px}.design-category-panel{margin:13px 0 18px!important}.design-category-tiles{gap:8px}.design-category-tile{padding:10px 8px;gap:8px}.design-category-icon{width:34px;height:34px;flex-basis:34px;font-size:18px}.design-category-copy strong{font-size:11px}.design-category-copy small{font-size:9px}.design-category-arrow{font-size:20px}.design-section-heading{align-items:flex-start}.design-section-heading .ghost{white-space:nowrap}.bottom-tabbar{gap:3px}.bottom-tabbar button{font-size:10px!important;padding:7px 2px!important}}
 
+
+/* Mobile layout refinement: keep search and the first category cards visible without scrolling through a tall hero. */
+@media(max-width:480px){
+ #hero{padding:17px 0 19px}
+ #hero h1{font-size:25px;line-height:1.13;letter-spacing:-.55px;margin:9px 0}
+ #hero p{font-size:13px;line-height:1.45;margin:8px 0 12px;max-width:100%}
+ #hero .tag{font-size:10px;padding:5px 9px}
+ .search{padding:6px;gap:6px;border-radius:14px}
+ .search input{flex:1 1 100%;width:100%;min-height:38px!important;font-size:13px;padding:8px 10px!important}
+ .search button{flex:1 1 100%;min-height:42px!important;font-size:14px}
+ .hero-actions-wrap .wrap{padding-top:8px;padding-bottom:0}
+ .hero-actions{padding:0}
+ .hero-actions button{min-height:40px;font-size:12px}
+ .design-category-panel{margin:10px 0 16px!important;padding:15px!important}
+ .design-section-heading{margin-bottom:12px}
+ .design-section-heading h2{font-size:22px}
+}
+
 </style></head><body>
 <div id="svSplash" class="sv-splash" role="status" aria-live="polite"><div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div><div class="sv-loading-dots" aria-hidden="true"><i></i><i></i><i></i></div></div>
 <header class="top"><div class="wrap nav"><div class="brandlock"><img class="sv-logo" src="/sv-logo.jpeg" alt="SV Skillvaya logo"><div><div class="brand">Skillvaya</div><div class="studio-header-subtitle">Digital &amp; Creative Studio</div><div class="tiny studio-header-tagline">Professional. Simple. Powerful.</div></div></div></div></header>
