@@ -1731,12 +1731,14 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
         except Exception as e: return self.sendj({"error":str(e)},400)
 def main():
     init()
-    expire_subscriptions()
+    print("Skillvaya database initialized; starting HTTP server",flush=True)
+    # Subscription expiry can send multiple SMTP notifications. Run it off the
+    # startup path so Render can detect the bound HTTP port immediately.
     def expiry_loop():
         while True:
-            threading.Event().wait(3600)
             try: expire_subscriptions()
             except Exception as e: print("Subscription expiry check failed:",e,flush=True)
+            threading.Event().wait(3600)
     threading.Thread(target=expiry_loop,daemon=True).start()
     server=ThreadingHTTPServer((HOST,PORT),Handler)
     print("Skillvaya server listening on %s:%d"%(HOST,PORT),flush=True)
