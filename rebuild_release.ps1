@@ -3,6 +3,7 @@ $root = 'C:\Users\user\Documents\Codex\Skillvaya'
 Set-Location $root
 $py = 'C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe'
 Copy-Item 'app.py' 'android-native\app\src\main\python\app.py' -Force
+Copy-Item 'policies.html' 'android-native\app\src\main\python\policies.html' -Force
 Copy-Item 'website.html' 'android-native\app\src\main\assets\website.html' -Force
 Copy-Item 'sv-logo.jpeg' 'android-native\app\src\main\assets\sv-logo.jpeg' -Force
 Copy-Item 'icon-192.png' 'android-native\app\src\main\assets\icon-192.png' -Force
