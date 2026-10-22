@@ -3,6 +3,8 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.ClipData;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.graphics.Color;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -23,6 +25,7 @@ import android.widget.FrameLayout;
 import android.view.ViewGroup;
 import android.view.Gravity;
 import android.widget.TextView;
+import android.widget.LinearLayout;
 import java.io.File;
 import java.io.InputStream;
 import java.io.FileOutputStream;
@@ -32,6 +35,29 @@ import com.chaquo.python.android.AndroidPlatform;
 public class MainActivity extends Activity {
     private WebView webView;
     private TextView status;
+    private TextView loadingDots;
+    private final Handler loadingHandler = new Handler(Looper.getMainLooper());
+    private int loadingDotCount = 1;
+    private int hostedRetryCount = 0;
+    private boolean hostedAppReady = false;
+    private final Runnable loadingAnimation = new Runnable() {
+        @Override public void run() {
+            if (loadingDots == null || hostedAppReady) return;
+            StringBuilder dots = new StringBuilder();
+            for (int i = 0; i < loadingDotCount; i++) dots.append(".");
+            loadingDots.setText(dots.toString());
+            loadingDotCount = loadingDotCount >= 3 ? 1 : loadingDotCount + 1;
+            loadingHandler.postDelayed(this, 420);
+        }
+    };
+    private final Runnable retryHostedPage = new Runnable() {
+        @Override public void run() {
+            if (!hostedAppReady && webView != null && hostedRetryCount < 80) {
+                hostedRetryCount++;
+                webView.loadUrl(BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", "") + "/?native_refresh=" + System.currentTimeMillis());
+            }
+        }
+    };
     private ValueCallback<Uri[]> filePathCallback;
     private Uri cameraOutputUri;
     private File cameraOutputFile;
@@ -43,12 +69,37 @@ public class MainActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.rgb(7,20,38));
         webView = new WebView(this);
+        LinearLayout loadingPanel = new LinearLayout(this);
+        loadingPanel.setOrientation(LinearLayout.VERTICAL);
+        loadingPanel.setGravity(Gravity.CENTER);
+        loadingPanel.setPadding(24, 24, 24, 24);
+        loadingPanel.setBackgroundColor(Color.rgb(7,20,38));
+        TextView brand = new TextView(this);
+        brand.setText("Skillvaya");
+        brand.setTextColor(Color.WHITE);
+        brand.setTextSize(32);
+        brand.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        brand.setGravity(Gravity.CENTER);
+        loadingPanel.addView(brand, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         status = new TextView(this);
-        status.setText("Starting Skillvaya…"); status.setTextColor(Color.WHITE);
-        status.setTextSize(18); status.setGravity(Gravity.CENTER);
+        status.setText("Loading");
+        status.setTextColor(Color.rgb(218,232,244));
+        status.setTextSize(17);
+        status.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        statusParams.topMargin = 12;
+        loadingPanel.addView(status, statusParams);
+        loadingDots = new TextView(this);
+        loadingDots.setText(".");
+        loadingDots.setTextColor(Color.rgb(34,211,204));
+        loadingDots.setTextSize(30);
+        loadingDots.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams dotsParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 48);
+        loadingPanel.addView(loadingDots, dotsParams);
         root.addView(webView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        root.addView(status, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(loadingPanel, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root); webView.setVisibility(WebView.GONE);
+        loadingHandler.post(loadingAnimation);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true); settings.setUserAgentString(settings.getUserAgentString() + " SkillvayaNative");
         settings.setDatabaseEnabled(true); settings.setSupportZoom(false);
@@ -140,10 +191,27 @@ public class MainActivity extends Activity {
         });
         try {
             if (BuildConfig.PUBLIC_URL != null && !BuildConfig.PUBLIC_URL.trim().isEmpty()) {
-                status.setText("Connecting to Skillvaya…");
+                status.setText("Loading");
                 webView.setWebViewClient(new WebViewClient() {
                     @Override public void onPageFinished(WebView view, String url) {
-                        status.setVisibility(TextView.GONE); webView.setVisibility(ViewGroup.VISIBLE);
+                        // Render can briefly return its own wake-up/status page while the service starts.
+                        // Keep the branded Skillvaya splash visible until the real app document is loaded.
+                        view.evaluateJavascript("(function(){var t=(document.title||'').toLowerCase();var b=document.body?document.body.innerText:'';return t.indexOf('skillvaya')>=0 && b.length>20 && t.indexOf('render')<0;})()", value -> {
+                            if ("true".equals(value)) {
+                                hostedAppReady = true;
+                                loadingHandler.removeCallbacks(retryHostedPage);
+                                loadingHandler.removeCallbacks(loadingAnimation);
+                                status.setText("Ready");
+                                ViewGroup parent = (ViewGroup) status.getParent();
+                                if (parent != null) {
+                                    parent.setVisibility(ViewGroup.GONE);
+                                }
+                                webView.setVisibility(ViewGroup.VISIBLE);
+                            } else if (!hostedAppReady) {
+                                loadingHandler.removeCallbacks(retryHostedPage);
+                                loadingHandler.postDelayed(retryHostedPage, 2200);
+                            }
+                        });
                     }
                     @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
                         return false;
@@ -166,7 +234,7 @@ public class MainActivity extends Activity {
                     try {
                         java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL("http://127.0.0.1:8878/healthz").openConnection();
                         c.setConnectTimeout(500); c.setReadTimeout(500); int code=c.getResponseCode(); c.disconnect();
-                        if (code==200) { runOnUiThread(() -> { status.setVisibility(TextView.GONE); webView.setVisibility(WebView.VISIBLE); webView.loadUrl("http://127.0.0.1:8878/login"); }); return; }
+                        if (code==200) { runOnUiThread(() -> { loadingHandler.removeCallbacks(loadingAnimation); ((ViewGroup) status.getParent().getParent()).setVisibility(ViewGroup.GONE); webView.setVisibility(WebView.VISIBLE); webView.loadUrl("http://127.0.0.1:8878/login"); }); return; }
                     } catch (Exception ignored) {}
                     try { Thread.sleep(250); } catch (InterruptedException ignored) { return; }
                 }
