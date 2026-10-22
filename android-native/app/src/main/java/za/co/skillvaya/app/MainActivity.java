@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
         @Override public void run() {
             if (!hostedAppReady && webView != null && hostedRetryCount < 80) {
                 hostedRetryCount++;
-                webView.loadUrl(BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", "") + "/?native_refresh=" + System.currentTimeMillis());
+                webView.loadUrl(BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", "") + "/customer-app?native_refresh=" + System.currentTimeMillis());
             }
         }
     };
@@ -232,7 +232,7 @@ public class MainActivity extends Activity {
                     @Override public void onPageFinished(WebView view, String url) {
                         // Render can briefly return its own wake-up/status page while the service starts.
                         // Keep the branded Skillvaya splash visible until the real app document is loaded.
-                        view.evaluateJavascript("(function(){var t=(document.title||'').toLowerCase();var b=document.body?document.body.innerText:'';return t.indexOf('skillvaya')>=0 && b.length>20 && t.indexOf('render')<0;})()", value -> {
+                        view.evaluateJavascript("(function(){var t=(document.title||'').toLowerCase();var b=document.body?document.body.innerText:'';return t.indexOf('skillvaya')>=0 && b.length>20 && t.indexOf('render')<0 && location.pathname.indexOf('/customer-app')===0;})()", value -> {
                             if ("true".equals(value)) {
                                 hostedAppReady = true;
                                 loadingHandler.removeCallbacks(retryHostedPage);
@@ -256,7 +256,7 @@ public class MainActivity extends Activity {
                 String baseUrl = BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", "");
                 // Open the public directory first. The standalone /login gateway hides the
                 // customer category list, so account actions should be entered from the app UI.
-                webView.loadUrl(baseUrl + "/?native_refresh=" + System.currentTimeMillis());
+                webView.loadUrl(baseUrl + "/customer-app?native_refresh=" + System.currentTimeMillis());
                 return;
             }
             for (String name : new String[]{"website.html","icon-192.png","icon-512.png","sv-logo.jpeg"}) copyAsset(name);
