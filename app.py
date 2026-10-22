@@ -106,8 +106,23 @@ CATEGORY_ALIASES = {
     "Civil engineers": {"Engineering & consulting"}, "Electrical engineers": {"Engineering & consulting", "Electricians"}, "Mechanical engineers": {"Engineering & consulting"}, "Environmental consultants": {"Engineering & consulting"}, "Surveyors": {"Engineering & consulting"}, "Interior designers": {"Painters & decorators", "Graphic designers"}, "Signage & printing": {"Graphic designers", "Marketing & advertising"}, "Craftspeople": {"Arts & crafts", "Artists & photographers"}, "Handmade crafts & gifts": {"Arts & crafts"}, "Pottery & ceramics": {"Arts & crafts"}, "Jewellery makers": {"Arts & crafts"}, "Textile arts & weaving": {"Arts & crafts"}, "Knitting & crochet": {"Arts & crafts"}, "Woodcraft & carving": {"Arts & crafts"}, "Leathercraft": {"Arts & crafts"}, "Candle & soap makers": {"Arts & crafts"}, "Artisan makers": {"Arts & crafts"}, "Art & craft workshops": {"Arts & crafts"}, "Pet groomers": {"Pet care & veterinary"}, "Dog walkers": {"Pet care & veterinary"}, "Animal trainers": {"Pet care & veterinary"},
 }
 
+SKILLVAYA_CATEGORY_SERVICES = {
+    "Graphic designers": {"Graphic Design", "Branding & Identity", "UI/UX Design"},
+    "Artists & photographers": {"Graphic Design", "Branding & Identity", "UI/UX Design"},
+    "Marketing & advertising": {"Branding & Identity", "Graphic Design", "Web Design"},
+    "Web & software developers": {"Web Design", "Website Development", "Coding & Custom Software", "Android Apps", "AI Solutions", "UI/UX Design", "Testing & Debugging"},
+    "IT & computer support": {"IT Support & Troubleshooting", "Testing & Debugging", "Coding & Custom Software", "Android Apps", "AI Solutions"},
+    "Other professional services": {"IT Support & Troubleshooting", "Testing & Debugging", "AI Solutions", "Coding & Custom Software"},
+}
 def category_matches(requested, stored):
     return requested == "All categories" or stored == requested or stored in CATEGORY_ALIASES.get(requested, set())
+def skillvaya_matches_category(requested, business):
+    if requested == "All categories":
+        return False
+    name = str(business.get("name") or "").strip().casefold()
+    if name != "skillvaya digital & creative studio".casefold():
+        return False
+    return requested in SKILLVAYA_CATEGORY_SERVICES
 def category_search_terms(stored):
     aliases = [name for name, targets in CATEGORY_ALIASES.items() if stored in targets]
     return " ".join([stored, *aliases])
@@ -1163,7 +1178,7 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                         LEFT JOIN ratings my ON my.business_id=b.id AND my.target_type='provider'
                              AND my.rater_id=? AND my.target_user_id=b.user_id
                         WHERE LOWER(TRIM(COALESCE(b.status,''))) IN ('active','approved','published')""",(rater_id,)).fetchall()
-                items=[dict(x) for x in rows if category_matches(cat, x["category"]) and (not term or term in (x["name"]+" "+x["category"]+" "+x["description"]+" "+category_search_terms(x["category"])).lower()) and (not area or area in x["area"].lower())]
+                items=[dict(x) for x in rows if (category_matches(cat, x["category"]) or skillvaya_matches_category(cat, dict(x))) and (not term or term in (x["name"]+" "+x["category"]+" "+x["description"]+" "+category_search_terms(x["category"])).lower()) and (not area or area in x["area"].lower())]
                 for item in items:
                     item["rating"]=round(float(item["rating"] or 0),1); item["rating_count"]=int(item["rating_count"] or 0); item["my_rating"]=int(item["my_rating"] or 0)
                 if sort=="rating": items.sort(key=lambda x:x["rating"] or 0,reverse=True)
