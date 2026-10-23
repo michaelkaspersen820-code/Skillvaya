@@ -908,6 +908,9 @@ body.messages-screen-mode #hero,body.messages-screen-mode .top,body.messages-scr
 #messagesScreen #messagesStatus{padding:0 14px;color:#63748a;font-size:12px}
 @media(min-width:700px){#messagesScreen .contacts-workspace{padding:18px 16px}#messagesScreen #messagesCard.messages-app-card{border:1px solid #dce5ef;border-radius:22px;min-height:calc(100dvh - 180px)}#messagesScreen .message-conversation-screen{min-height:calc(100dvh - 180px);height:calc(100dvh - 180px);border-radius:18px}}
 @media(max-width:520px){#messagesScreen .contacts-workspace{padding:0}#messagesScreen #messagesCard.messages-app-card{min-height:calc(100dvh - 138px);border-radius:0;border-left:0;border-right:0}#messagesScreen .messages-app-header{padding:15px 16px}#messagesScreen .messages-app-title h1{font-size:20px}#messagesScreen .conversation-list-item{padding:12px 14px;min-height:76px}#messagesScreen .conversation-avatar{width:48px;height:48px;flex-basis:48px}#messagesScreen .message-conversation-screen{height:calc(100dvh - 138px);min-height:calc(100dvh - 138px)}#messagesScreen .message-bubbles{padding:12px 9px}}
+/* Contacts-only promo card isolation: verified against Samsung wireless screenshot. */
+.design-promo-card{display:none!important}
+body.messages-screen-mode #designPromoCard{display:flex!important}
 </style></head><body>
 <div id="svSplash" class="sv-splash" role="status" aria-live="polite"><div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div><div class="sv-loading-dots" aria-hidden="true"><i></i><i></i><i></i></div></div>
 <header class="top"><div class="wrap nav"><div class="brandlock"><img class="sv-logo" src="/sv-logo.jpeg" alt="SV Skillvaya logo"><div><div class="brand">Skillvaya</div><div class="studio-header-subtitle">Digital &amp; Creative Studio</div><div class="tiny studio-header-tagline">Professional. Simple. Powerful.</div></div></div></div></header>
