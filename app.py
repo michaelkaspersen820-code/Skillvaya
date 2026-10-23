@@ -1083,7 +1083,7 @@ async function viewMessages(){
   if(mount&&card){mount.appendChild(card);card.classList.remove('hidden');card.classList.add('messages-workspace-card');}
   const root=document.getElementById('messagesList');
   if(!me){
-    if(root)root.innerHTML='<div class="messages-empty-state"><div class="conversation-avatar large">✉</div><h2>Welcome to Messages</h2><p>Sign in to see your private conversations. Each person you contact will have a separate conversation here.</p><button type="button" class="primary" onclick="view(\'settings\');profileAuthMode(\\'signin\\')">Sign in to continue</button><button type="button" class="ghost" onclick="view(\'settings\');profileAuthMode(\\'signup\\')">Create profile</button></div>';
+    if(root)root.innerHTML='<div class="messages-empty-state"><div class="conversation-avatar large">✉</div><h2>Welcome to Messages</h2><p>Sign in to see your private conversations. Each person you contact will have a separate conversation here.</p><button type="button" class="primary" onclick="view(\'settings\');profileAuthMode(\'signin\')">Sign in to continue</button><button type="button" class="ghost" onclick="view(\'settings\');profileAuthMode(\'signup\')">Create profile</button></div>';
     return;
   }
   await loadMessageThreads();
