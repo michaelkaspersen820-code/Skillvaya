@@ -1066,7 +1066,7 @@ async function sendJobQuote(id){const amount=prompt('Quote amount in South Afric
 async function acceptJobQuote(jobId,quoteId){if(!confirm('Accept this quote? The other quotes for this job will be declined.'))return;try{await api('/api/jobs/'+jobId+'/accept',{method:'POST',body:JSON.stringify({quote_id:quoteId})});await loadJobs()}catch(e){alert(e.message)}}
 async function updateJobStatus(id,status){if(!confirm('Change job status to '+status.replaceAll('_',' ')+'?'))return;try{await api('/api/jobs/'+id+'/status',{method:'POST',body:JSON.stringify({status})});await loadJobs()}catch(e){alert(e.message)}}
 document.getElementById('jobRequestForm').onsubmit=async e=>{e.preventDefault();const st=document.getElementById('jobRequestStatus');const d=Object.fromEntries(new FormData(e.target));st.textContent='Sending job request…';try{const result=await api('/api/jobs',{method:'POST',body:JSON.stringify(d)});st.textContent=result.message||'Job request sent.';e.target.reset();await loadJobs()}catch(err){st.textContent='Request not sent: '+err.message}};
-async async function viewMessages(){
+async function viewMessages(){
   // Always navigate to the dedicated Messages workspace before loading data.
   document.body.classList.remove('category-screen-mode','account-screen-mode','provider-detail-mode');
   view('settings');
