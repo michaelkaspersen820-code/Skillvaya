@@ -1073,18 +1073,25 @@ async function acceptJobQuote(jobId,quoteId){if(!confirm('Accept this quote? The
 async function updateJobStatus(id,status){if(!confirm('Change job status to '+status.replaceAll('_',' ')+'?'))return;try{await api('/api/jobs/'+id+'/status',{method:'POST',body:JSON.stringify({status})});await loadJobs()}catch(e){alert(e.message)}}
 document.getElementById('jobRequestForm').onsubmit=async e=>{e.preventDefault();const st=document.getElementById('jobRequestStatus');const d=Object.fromEntries(new FormData(e.target));st.textContent='Sending job request…';try{const result=await api('/api/jobs',{method:'POST',body:JSON.stringify(d)});st.textContent=result.message||'Job request sent.';e.target.reset();await loadJobs()}catch(err){st.textContent='Request not sent: '+err.message}};
 function showMessagesScreen(){
+  // Clear every modal/subspace before routing, then force the destination state.
   if(typeof accountSubspaceCurrent!=='undefined'&&accountSubspaceCurrent)closeAccountSubspace();
+  const subspace=document.getElementById('accountSubspace');
+  if(subspace)subspace.classList.add('hidden');
   view('messages');
   document.body.classList.remove('category-screen-mode','account-screen-mode','provider-detail-mode','provider-screen-mode');
   document.body.classList.add('messages-screen-mode');
   const screen=document.getElementById('messagesScreen');
-  if(screen){screen.classList.remove('hidden');screen.style.display='block';screen.style.visibility='visible';}
+  if(screen){screen.classList.remove('hidden');screen.removeAttribute('hidden');screen.style.setProperty('display','block','important');screen.style.setProperty('visibility','visible','important');}
+  // Keep the bottom navigation available above the workspace.
+  const nav=document.querySelector('.bottom-tabbar');
+  if(nav){nav.style.display='grid';nav.style.zIndex='5000';}
   const mount=document.getElementById('messagesWorkspaceMount');
   const card=document.getElementById('messagesCard');
-  if(mount&&card){mount.appendChild(card);card.classList.remove('hidden');card.classList.add('messages-workspace-card');card.style.display='block';}
+  if(mount&&card){mount.appendChild(card);card.classList.remove('hidden');card.classList.add('messages-workspace-card');card.style.setProperty('display','block','important');}
   const root=document.getElementById('messagesList');
   if(!me){
     if(root)root.innerHTML=`<div class="messages-empty-state"><div class="conversation-avatar large">✉</div><h2>Welcome to Messages</h2><p>Sign in to see your private conversations. Each person you contact will have a separate conversation here.</p><button type="button" class="primary" onclick="view('settings');profileAuthMode('signin')">Sign in to continue</button><button type="button" class="ghost" onclick="view('settings');profileAuthMode('signup')">Create profile</button></div>`;
+    window.scrollTo({top:0,behavior:'auto'});
     return;
   }
   loadMessageThreads().catch(e=>{if(root)root.textContent='Could not load conversations: '+e.message;});
