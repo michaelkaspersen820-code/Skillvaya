@@ -924,61 +924,14 @@ let providerDetailReturnView='customer',categoryReturnView='customer';
 let cats=[],chosen='All categories',directorySearchActive=false,token=localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token')||sessionStorage.getItem('skillvaya_token')||sessionStorage.getItem('sv_token')||'',me=null,allBusinesses=[],favoriteIds=[];
 const planInfo=[['local','Local',105,'Business profile, category listing, customer enquiries'],['priority','Priority',210,'Higher category placement and priority badge'],['plus','Business Plus',500,'Blue profile, featured category section, portfolio, basic insights'],['spotlight','Business Spotlight',1000,'Plus features, homepage rotation, enhanced portfolio, analytics, priority support']];
 function openProviderOnboarding(){
-  if(!me){view('settings');profileAuthMode('signin');const pane=document.getElementById('signinPane');if(pane)pane.scrollIntoView({behavior:'smooth',block:'start'});return;}
+  if(!me){view('settings');profileAuthMode('signin');return;}
   view('provider');
+  const oldBanner=document.getElementById('providerFlowProgress');if(oldBanner)oldBanner.remove();
+  const heading=document.getElementById('providerStudioHeading');if(heading)heading.classList.add('hidden');
   const plans=document.getElementById('providerPlansCard');
-  if(plans){const heading=plans.querySelector('h3');if(heading)heading.textContent='Step 1 of 3 · Choose your provider plan';plans.scrollIntoView({behavior:'smooth',block:'start'});}
-  const notice=document.getElementById('providerProfileNotice');
-  if(notice)notice.textContent='Step 2 of 3 · After your payment is verified, complete your professional profile. Your listing will not activate before payment confirmation.';
-  const layout=document.getElementById('providerStudioLayout');
-  if(layout&&!document.getElementById('providerFlowProgress')){
-    const progress=document.createElement('div');progress.id='providerFlowProgress';progress.className='destination-card';
-    progress.style.cssText='margin:0 0 18px;padding:18px 20px;border-radius:18px;background:linear-gradient(125deg,#071426,#123d67);color:#fff';
-    progress.innerHTML='<div style="font-size:11px;letter-spacing:1.5px;font-weight:800;color:#8ddcf5">PROVIDER ONBOARDING</div><div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px"><div style="border-bottom:3px solid #42d3c8;padding-bottom:9px"><b>01</b><div style="font-size:12px">Choose plan</div></div><div style="border-bottom:3px solid #42617d;padding-bottom:9px"><b>02</b><div style="font-size:12px">Your profile</div></div><div style="border-bottom:3px solid #42617d;padding-bottom:9px"><b>03</b><div style="font-size:12px">Review & activate</div></div></div><p style="color:#d1e2f5;font-size:13px;margin:12px 0 0">Your progress is tied to the signed-in account. A paid plan activates only after the payment provider confirms it.</p>';
-    layout.prepend(progress);
-  }
+  if(plans){const title=plans.querySelector('h3');if(title)title.textContent='Step 1 of 3 · Choose your provider plan';}
+  window.scrollTo({top:0,behavior:'auto'});
 }
-function setHomeChrome(visible){for(const id of ['hero','designCategoryPanel','designPromoCard','hero-actions-wrap']){const el=document.getElementById(id);if(el)el.classList.toggle('hidden',!visible)}}
-function view(v){
- if(v==='admin'){location.href='/owner-app';return}
- const valid=['customer','provider','account','settings','terms','providerDetailScreen','servicesTabScreen','contactUsScreen','services','contact'];
- if(!valid.includes(v))v='customer';
- const screenIds=['customer','categoryScreen','provider','account','settings','terms','providerDetailScreen','servicesTabScreen','contactUsScreen'];
- screenIds.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('hidden')});
- const targetId=({services:'servicesTabScreen',contact:'contactUsScreen'})[v]||v;const target=document.getElementById(targetId);if(target)target.classList.remove('hidden');
- document.body.classList.remove('category-screen-mode','account-screen-mode','messages-screen-mode','provider-detail-mode');['platformRatingCard','platform-rating-card','rateSkillvayaCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.toggle('hidden',v!=='customer')});if(v==='settings')document.body.classList.add('account-screen-mode');const profileView=v==='settings';const customerDirectory=document.getElementById('customer');if(customerDirectory)customerDirectory.classList.toggle('hidden',v!=='customer');const categoryDirectory=document.getElementById('categoryScreen');if(categoryDirectory)categoryDirectory.classList.add('hidden');
-  setHomeChrome(v==='customer');
-  const servicesView=v==='services';
-  const contactView=v==='contact';
-  const sectionForView={services:'servicesTabScreen',contact:'contactUsScreen'};
-  for(const [route,id] of Object.entries(sectionForView)){const node=document.getElementById(id);if(node)node.classList.toggle('hidden',v!==route);}
- document.querySelectorAll('.bottom-tabbar button').forEach(n=>n.classList.toggle('active',profileView?n.id==='nav-settings':v==='customer'?n.id==='nav-customer-bottom':v==='settings'?n.id==='nav-settings':servicesView?n.id==='nav-provider':false));
- const categoryScreen=document.getElementById('categoryScreen');if(categoryScreen)categoryScreen.classList.add('hidden');
- const ownerPublic=document.getElementById('owner-promotions-public');if(ownerPublic)ownerPublic.classList.toggle('hidden',v!=='customer');
-  document.querySelectorAll('[id*=platformRating],[id*=platform-rating],[id*=rateSkillvaya]').forEach(rating=>{if(document.getElementById('settings').contains(rating))rating.classList.add('hidden');else rating.classList.toggle('hidden',v!=='customer')});
-  for(const id of ['platformRatingCard','platform-rating-card','rateSkillvayaCard']){const rating=document.getElementById(id);if(rating)rating.classList.toggle('hidden',v!=='customer')}
- const hero=document.getElementById('hero');if(hero)hero.classList.toggle('hidden',v!=='customer');
- const customerNav=document.getElementById('nav-customer');if(customerNav)customerNav.classList.toggle('active',v==='customer');
- if(profileView)sessionInfo().catch(e=>console.warn('Profile refresh failed:',e.message));
- if(v==='provider')refreshProviderGate().catch(e=>console.warn('Provider studio refresh failed:',e.message));
-  if(servicesView){renderServicesTab();loadBusinesses().then(renderServicesTab).catch(e=>console.warn('Services directory refresh failed:',e.message));}
-  if(contactView){const status=document.getElementById('platformContactStatus');if(status)status.textContent='';}
- window.scrollTo(0,0);
-}
-
-let servicesCategoriesExpanded=false;
-function renderServicesTab(){
- const root=document.getElementById('servicesTabCategories');if(!root)return;
- const all=Array.isArray(cats)?cats:[],items=servicesCategoriesExpanded?all:all.slice(0,8);
- root.innerHTML=items.map(c=>'<button type="button" class="design-category-tile" onclick="pickCat('+JSON.stringify(c).replace(/</g,'\\u003c').replace(/\"/g,'&quot;')+')" aria-label="Browse '+esc(c)+'"><span class="design-category-icon" aria-hidden="true">'+designCategoryIcon(c)+'</span><span class="design-category-copy"><strong>'+esc(c)+'</strong><small>View providers</small></span><span class="design-category-arrow" aria-hidden="true">›</span></button>').join('')||'<p class="muted">Categories are temporarily unavailable.</p>';
- const more=document.getElementById('servicesViewAll');if(more)more.textContent=servicesCategoriesExpanded?'Show featured':'View all';
- const list=document.getElementById('servicesTabProviders');if(!list)return;
- const providers=Array.isArray(allBusinesses)?allBusinesses:[];
- list.innerHTML=providers.slice(0,12).map(b=>'<button type="button" class="services-provider-card" onclick="openProvider('+Number(b.id)+')"><span class="services-provider-avatar">'+esc((b.name||'S').trim().charAt(0).toUpperCase())+'</span><span class="services-provider-info"><strong>'+esc(b.name)+'</strong><small>'+esc(b.category||'Service provider')+' · '+esc(b.area||'South Africa')+'</small><span>'+esc((b.description||'View this provider profile and contact options.').slice(0,110))+'</span></span><b aria-hidden="true">›</b></button>').join('')||'<p class="muted">No provider listings are available yet. Try another category or contact Skillvaya.</p>';
-}
-function toggleServicesCategories(){servicesCategoriesExpanded=!servicesCategoriesExpanded;renderServicesTab()}
-function searchFromServices(){const input=document.getElementById('servicesSearchInput'),q=document.getElementById('q');if(q&&input)q.value=input.value.trim();view('customer');searchDirectory()}
-function submitPlatformContact(event){event.preventDefault();const f=event.currentTarget,data=new FormData(f);const name=String(data.get('name')||'').trim(),email=String(data.get('email')||'').trim(),topic=String(data.get('topic')||'General enquiry'),message=String(data.get('message')||'').trim();if(!name||!email||message.length<5){document.getElementById('platformContactStatus').textContent='Please complete all required fields.';return}const subject=encodeURIComponent('Skillvaya contact: '+topic);const body=encodeURIComponent('Name: '+name+'\\nReply email: '+email+'\\nTopic: '+topic+'\\n\\n'+message);document.getElementById('platformContactStatus').textContent='Opening your email app with your enquiry ready to send.';window.location.href='mailto:skillvaya@gmail.com?subject='+subject+'&body='+body}
 function scrollAccountSection(id){const target=document.getElementById(id);if(!target)return;document.querySelectorAll('#settings .account-link').forEach(b=>b.classList.toggle('active',b.getAttribute('onclick')&&b.getAttribute('onclick').includes(id)));if(id==='passwordForm'){target.scrollIntoView({behavior:'smooth',block:'center'});target.querySelector('input')?.focus({preventScroll:true});return}target.scrollIntoView({behavior:'smooth',block:'start'})}
 function profileAuthMode(mode){const signed=!!me;document.getElementById('profileAuthTabs').classList.toggle('hidden',signed);document.getElementById('signinPane').classList.toggle('hidden',signed||mode!=='signin');document.getElementById('signupPane').classList.toggle('hidden',signed||mode!=='signup');document.getElementById('profileSigninTab').className=mode==='signin'?'primary':'ghost';document.getElementById('profileSignupTab').className=mode==='signup'?'primary':'ghost';document.getElementById('profileSettingsCard').classList.toggle('hidden',!signed)}
 
