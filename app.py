@@ -971,6 +971,8 @@ function renderDesignCategoryTiles(){const root=document.getElementById('designC
 function toggleDesignCategories(){designCategoriesExpanded=!designCategoriesExpanded;renderDesignCategoryTiles()}
 function contactFeaturedStudio(){const studio=(allBusinesses||[]).find(b=>String(b.name||'').trim()==='Skillvaya Digital & Creative Studio');if(studio){openProvider(studio.id);return}const q=document.getElementById('q');if(q)q.value='Graphic designers';searchDirectory()}
 function view(v){
+ // Switching destinations must close any account subspace overlay first, or it can cover every bottom tab.
+ if(typeof accountSubspaceCurrent!=='undefined'&&accountSubspaceCurrent)closeAccountSubspace();
  if(v==='admin'){location.href='/owner-app';return}
  const valid=['customer','provider','account','settings','terms','providerDetailScreen','servicesTabScreen','contactUsScreen','services','contact'];
  if(!valid.includes(v))v='customer';
