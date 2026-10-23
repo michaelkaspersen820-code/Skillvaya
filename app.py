@@ -971,6 +971,29 @@ function designCategoryIcon(name){const n=String(name||'').toLowerCase();if(/gra
 function renderDesignCategoryTiles(){const root=document.getElementById('designCategoryTiles');if(!root)return;const all=Array.isArray(cats)?cats:[];const items=designCategoriesExpanded?all:all.slice(0,8);root.innerHTML=items.map((c,i)=>'<button type="button" class="design-category-tile" onclick="pickCat('+JSON.stringify(c).replace(/</g,'\\u003c').replace(/\"/g,'&quot;')+')" aria-label="Browse '+esc(c)+'"><span class="design-category-icon" aria-hidden="true">'+designCategoryIcon(c)+'</span><span class="design-category-copy"><strong>'+esc(c)+'</strong><small>View services</small></span><span class="design-category-arrow" aria-hidden="true">›</span></button>').join('')||'<p class="muted">Categories are temporarily unavailable.</p>';const btn=document.getElementById('toggleDesignCategories');if(btn){btn.textContent=designCategoriesExpanded?'Show featured':'View all';btn.setAttribute('aria-expanded',String(designCategoriesExpanded))}}
 function toggleDesignCategories(){designCategoriesExpanded=!designCategoriesExpanded;renderDesignCategoryTiles()}
 function contactFeaturedStudio(){const studio=(allBusinesses||[]).find(b=>String(b.name||'').trim()==='Skillvaya Digital & Creative Studio');if(studio){openProvider(studio.id);return}const q=document.getElementById('q');if(q)q.value='Graphic designers';searchDirectory()}
+
+// Defensive shared layout helpers: these are called by every main navigation route.
+function setHomeChrome(isHome){
+  const top=document.querySelector('.top');if(top)top.classList.toggle('hidden',!isHome);
+  const hero=document.getElementById('hero');if(hero)hero.classList.toggle('hidden',!isHome);
+}
+function renderServicesTab(){
+  const host=document.getElementById('servicesTabProviders');if(!host)return;
+  const list=Array.isArray(allBusinesses)?allBusinesses:[];
+  if(!list.length){host.innerHTML='<div class="card"><h3>No providers to show yet</h3><p class="muted">Search the Home directory or check back as providers publish their profiles.</p><button type="button" class="primary" onclick="view(\'customer\')">Browse Home directory</button></div>';return;}
+  host.innerHTML=list.map(b=>'<article class="card biz '+esc(b.plan||'local')+'" role="button" tabindex="0" onclick="openProvider('+Number(b.id)+')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openProvider('+Number(b.id)+')}"><h3>'+esc(b.name||'Service provider')+'</h3><p class="muted tiny">'+esc(b.category||'Services')+' · '+esc(b.area||'South Africa')+'</p><p>'+esc(b.description||'View this provider profile and contact options.')+'</p><button type="button" class="primary" onclick="event.stopPropagation();openProvider('+Number(b.id)+')">View provider</button></article>').join('');
+}
+function searchFromServices(){
+  const field=document.getElementById('servicesSearchInput'),q=document.getElementById('q');
+  if(q&&field)q.value=field.value.trim();
+  const cat=document.getElementById('categories');if(cat)cat.value='All categories';chosen='All categories';
+  loadBusinesses().then(()=>{renderServicesTab();}).catch(e=>console.warn('Service search failed',e));
+}
+function toggleServicesCategories(){
+  // Global category browsing belongs to Home only; keep this directory category-free.
+  const card=document.getElementById('servicesCategoriesCard');if(card){card.classList.add('hidden');card.style.display='none';}
+}
+
 function view(v){
  // Switching destinations must close any account subspace overlay first, or it can cover every bottom tab.
  if(typeof accountSubspaceCurrent!=='undefined'&&accountSubspaceCurrent)closeAccountSubspace();
