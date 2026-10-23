@@ -924,6 +924,19 @@ body.messages-screen-mode #hero,body.messages-screen-mode .top,body.messages-scr
 let providerDetailReturnView='customer',categoryReturnView='customer';
 let cats=[],chosen='All categories',directorySearchActive=false,token=localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token')||sessionStorage.getItem('skillvaya_token')||sessionStorage.getItem('sv_token')||'',me=null,allBusinesses=[],favoriteIds=[];
 const planInfo=[['local','Local',105,'Business profile, category listing, customer enquiries'],['priority','Priority',210,'Higher category placement and priority badge'],['plus','Business Plus',500,'Blue profile, featured category section, portfolio, basic insights'],['spotlight','Business Spotlight',1000,'Plus features, homepage rotation, enhanced portfolio, analytics, priority support']];
+// Capture-phase fallback for the Account dashboard shortcut, in case nested account overlays swallow inline clicks.
+document.addEventListener('click',function(e){
+  const button=e.target&&e.target.closest?e.target.closest('#settings .account-dashboard-links .account-link'):null;
+  if(!button)return;
+  const label=(button.innerText||button.textContent||'').trim().toLowerCase();
+  if(label.includes('provider')){
+    e.preventDefault();e.stopPropagation();
+    openProviderOnboarding();
+  }else if(label.includes('messages')){
+    e.preventDefault();e.stopPropagation();
+    viewMessages();
+  }
+},true);
 function openProviderOnboarding(){
   // Always open the Provider screen first. Authentication belongs inside the flow,
   // not as a silent detour back to Account.
