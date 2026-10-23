@@ -827,7 +827,7 @@ body{background:var(--design-surface);color:var(--design-ink)}
 #settings .account-eyebrow{display:block;margin-bottom:8px;color:#9fc8ff;font-size:10px;letter-spacing:2px;font-weight:850}
 #settings .profile-heading h2{font-size:clamp(27px,5vw,36px)!important;letter-spacing:-.8px}
 #settings #accountHeroSubtitle{margin:7px 0 0;color:#d5e5fb;font-size:13px;line-height:1.55;max-width:460px}
-#settings .account-dashboard-links{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;padding:16px clamp(14px,3vw,26px);border-bottom:1px solid #e7edf6;background:#f8faff}
+#settings .account-dashboard-links{position:relative;z-index:20010;pointer-events:auto;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;padding:16px clamp(14px,3vw,26px);border-bottom:1px solid #e7edf6;background:#f8faff}
 #settings .account-link{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-width:0;text-align:left;padding:13px 12px;border:1px solid #e0e8f4;border-radius:15px;background:#fff;color:#1b2e4c;box-shadow:0 3px 10px rgba(16,35,63,.025)}
 #settings .account-link>span{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:#edf3ff;color:#245dcc;font-size:18px}
 #settings .account-link strong{font-size:12px}
@@ -928,6 +928,10 @@ function openProviderOnboarding(){
   // Always open the Provider screen first. Authentication belongs inside the flow,
   // not as a silent detour back to Account.
   providerOnboardingPlanFirst=true;
+  // Clear any stale account overlay before routing into the provider flow.
+  const overlay=document.getElementById('accountSubspace');
+  if(overlay)overlay.classList.add('hidden');
+  document.body.classList.remove('account-subspace-open','account-screen-mode','messages-screen-mode','category-screen-mode');
   view('provider');
   const heading=document.getElementById('providerStudioHeading');if(heading)heading.classList.add('hidden');
   const plans=document.getElementById('providerPlansCard');
