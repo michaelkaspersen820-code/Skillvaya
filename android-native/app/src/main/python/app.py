@@ -256,8 +256,10 @@ def init():
                 ("business", studio_name, studio_name, "Web & software developers", studio_description, "", "", "active", 1, now(), now(), studio_id))
         else:
             studio_id = studio["id"]
-            c.execute("UPDATE businesses SET area=?,phone=?,whatsapp=?,email=?,website='',description=?,status='active',payment_status='verified',plan='local' WHERE id=?",
-                ("Worldwide (Online & Remote)", "+27 83 787 45 69", "+27 83 787 45 69", "Skillvaya@gmail.com", studio_description, studio_id))
+            # Keep owner-edited public profile fields intact across Render restarts.
+            # Only reassert the owner's fee-exempt basic plan; never reset area, contacts,
+            # website, description, or a deliberately paused/removed listing.
+            c.execute("UPDATE businesses SET payment_status='verified',plan='local',billing='monthly' WHERE id=?", (studio_id,))
             promo = c.execute("SELECT id FROM owner_promotions WHERE directory_business_id=? LIMIT 1", (studio_id,)).fetchone()
             if not promo:
                 c.execute("INSERT INTO owner_promotions(kind,business_name,title,category,description,target_url,image_url,status,owner_free,created_at,updated_at,directory_business_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
