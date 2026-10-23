@@ -940,22 +940,50 @@ document.addEventListener('click',function(e){
     viewMessages();
   }
 },true);
-function openProviderOnboarding(){
-  // Always open the Provider screen first. Authentication belongs inside the flow,
-  // not as a silent detour back to Account.
-  providerOnboardingPlanFirst=true;
-  // Clear any stale account overlay before routing into the provider flow.
+async function openProviderOnboarding(){
+  // Resolve the persisted session before deciding whether this person needs checkout.
+  // The owner must never be sent to plan selection while /api/me is still loading.
   const overlay=document.getElementById('accountSubspace');
   if(overlay)overlay.classList.add('hidden');
   document.body.classList.remove('account-subspace-open','account-screen-mode','messages-screen-mode','category-screen-mode');
-  view('provider');
-  const heading=document.getElementById('providerStudioHeading');if(heading)heading.classList.add('hidden');
-  const plans=document.getElementById('providerPlansCard');
-  if(plans){plans.classList.remove('hidden');const title=plans.querySelector('h3');if(title)title.textContent='Step 1 of 3 · Choose your provider plan';}
-  const card=document.getElementById('providerProfileCard');if(card)card.classList.add('hidden');
+  if(!me)await sessionInfo();
+  if(!me){
+    view('settings');
+    profileAuthMode('signin');
+    const identity=document.getElementById('loginMsg');
+    if(identity){identity.className='notice';identity.textContent='Sign in to open your existing provider studio, or create an account if you are a new provider.';}
+    window.scrollTo({top:0,behavior:'auto'});
+    return;
+  }
+  providerOnboardingPlanFirst=false;
   const banner=document.getElementById('providerFlowProgress');if(banner)banner.remove();
+  view('provider');
+  if(me.role==='admin'){
+    // Owner's existing studio profile: no payment, no new listing.
+    await refreshProviderGate();
+    const heading=document.getElementById('providerStudioHeading');if(heading)heading.classList.add('hidden');
+    const plans=document.getElementById('providerPlansCard');if(plans)plans.classList.add('hidden');
+    const card=document.getElementById('providerProfileCard');if(card)card.classList.remove('hidden');
+    const notice=document.getElementById('providerProfileNotice');
+    if(notice){notice.classList.remove('hidden');notice.classList.add('good');notice.textContent='OWNER FREE ACCESS: manage your existing Skillvaya Digital & Creative Studio profile here. No subscription or payment is required.';}
+    window.scrollTo({top:0,behavior:'auto'});
+    return;
+  }
+  if(me.role==='provider'){
+    // Existing providers go straight to their own listing editor if eligible;
+    // refreshProviderGate retains the payment-verification requirement otherwise.
+    await refreshProviderGate();
+    window.scrollTo({top:0,behavior:'auto'});
+    return;
+  }
+  // A signed-in customer must explicitly opt into provider status before checkout.
+  const card=document.getElementById('providerProfileCard');if(card)card.classList.add('hidden');
+  const plans=document.getElementById('providerPlansCard');if(plans)plans.classList.add('hidden');
+  const heading=document.getElementById('providerStudioHeading');if(heading)heading.classList.remove('hidden');
   const notice=document.getElementById('providerProfileNotice');
-  if(notice&&!me){notice.classList.remove('hidden','good');notice.textContent='Step 1 of 3 · Choose a provider plan. Sign in or create your provider account when prompted to continue to checkout and profile setup.';}
+  if(notice){notice.classList.remove('hidden','good');notice.textContent='To offer services, first activate provider access. Then choose a plan and complete verified payment before creating your profile.';}
+  await becomeServiceProvider();
+  if(me&&me.role==='provider')await refreshProviderGate();
   window.scrollTo({top:0,behavior:'auto'});
 }
 function scrollAccountSection(id){const target=document.getElementById(id);if(!target)return;document.querySelectorAll('#settings .account-link').forEach(b=>b.classList.toggle('active',b.getAttribute('onclick')&&b.getAttribute('onclick').includes(id)));if(id==='passwordForm'){target.scrollIntoView({behavior:'smooth',block:'center'});target.querySelector('input')?.focus({preventScroll:true});return}target.scrollIntoView({behavior:'smooth',block:'start'})}
