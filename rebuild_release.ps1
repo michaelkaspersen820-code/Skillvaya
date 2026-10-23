@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$root = 'C:\Users\user\Documents\Codex\Skillvaya'
+$root = 'C:\Users\user\Documents\Codex\Skillvaya-release-current'
 Set-Location $root
 $py = 'C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe'
 Copy-Item 'app.py' 'android-native\app\src\main\python\app.py' -Force

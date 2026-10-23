@@ -65,6 +65,24 @@ public class MainActivity extends Activity {
     private PermissionRequest pendingWebPermission;
     private File cameraOutputFile;
     private static final int FILE_CHOOSER_REQUEST = 7341;
+    private boolean handleExternalNavigation(String rawUrl) {
+        if (rawUrl == null || rawUrl.trim().isEmpty()) return true;
+        Uri uri = Uri.parse(rawUrl);
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
+        if (("http".equals(scheme) || "https".equals(scheme)) && BuildConfig.PUBLIC_URL != null) {
+            Uri base = Uri.parse(BuildConfig.PUBLIC_URL.trim());
+            if (base.getHost() != null && base.getHost().equalsIgnoreCase(uri.getHost())) return false;
+        }
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, uri));
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, "No app is available to open this contact link. You can copy the provider's number and open WhatsApp manually.", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Could not open this contact link.", Toast.LENGTH_LONG).show();
+        }
+        return true;
+    }
+
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(Color.rgb(7,20,38));
@@ -250,7 +268,7 @@ public class MainActivity extends Activity {
                         });
                     }
                     @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                        return false;
+                        return handleExternalNavigation(url);
                     }
                 });
                 String baseUrl = BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", "");
