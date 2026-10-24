@@ -80,8 +80,8 @@ public class MainActivity extends Activity {
                     intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
                     intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
                     intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false);
-                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L);
-                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L);
+                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 180000L);
+                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 180000L);
                     nativeSpeechRecognizer.startListening(intent);
                 }
             } catch (Exception e) {
@@ -140,8 +140,8 @@ public class MainActivity extends Activity {
             intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
             intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false);
-            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L);
-            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 180000L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 180000L);
             nativeSpeechRecognizer.startListening(intent);
         } catch (Exception e) {
             nativeVoiceActive = false;
