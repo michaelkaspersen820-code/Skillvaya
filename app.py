@@ -1943,6 +1943,7 @@ class Handler(BaseHTTPRequestHandler):
         if not u and local_only:
             return {"id": 0, "name": "Local Developer", "email": "local-owner@skillvaya.local", "role": "admin"}
         if not u: raise PermissionError("Please sign in first.")
+        if u.get("role")=="suspended": raise PermissionError("This account has been suspended.")
         if role and u["role"]!=role: raise PermissionError("This action requires a "+role+" account.")
         return u
     def do_OPTIONS(self):
