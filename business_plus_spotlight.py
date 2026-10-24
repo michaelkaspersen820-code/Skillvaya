@@ -160,7 +160,30 @@ def _profile_page(business):
     return ('''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#10233f"><title>''' + name + ''' · Skillvaya Spotlight</title><style>
     body{margin:0;background:#f4f7fb;color:#19283b;font:16px/1.6 "Segoe UI",Arial,sans-serif}.top{background:#10233f;color:white;padding:18px 22px}.brand{font-size:23px;font-weight:850}.brand span{color:#75b7ff}.wrap{max-width:900px;margin:32px auto;padding:0 16px}.hero{background:linear-gradient(125deg,#10233f,#1c4b83);color:white;border-radius:20px;padding:clamp(22px,5vw,48px);box-shadow:0 14px 36px #10233f20}.badge{display:inline-block;background:#d9ebff;color:#174c91;border-radius:99px;padding:5px 11px;font-size:12px;font-weight:800}.hero h1{font-size:clamp(30px,5vw,46px);line-height:1.1;margin:15px 0 6px}.hero p{color:#e1edfb}.card{background:white;border:1px solid #e1e8f1;border-radius:16px;padding:22px;margin-top:16px}.button{display:inline-block;text-decoration:none;background:#2365d8;color:white;padding:10px 15px;border-radius:9px;font-weight:700;margin:5px 7px 0 0}.secondary{background:#eaf0f8;color:#10233f}</style></head><body><header class="top"><div class="brand">skill<span>vaya</span> · Spotlight</div></header><main class="wrap"><section class="hero"><span class="badge">BUSINESS SPOTLIGHT</span><h1>''' + name + '''</h1><p>''' + category + ''' · ''' + area + '''</p><p>''' + description + '''</p><div>''' + phone_link + link + '''</div></section><section class="card"><h2>Contact this provider</h2><p>Skillvaya helps customers discover providers. Confirm the scope, price, timing and terms directly with the business before work begins.</p><a class="button secondary" href="/customer">Back to Skillvaya marketplace</a></section></main></body></html>''')
 
+TEST_LAB_PAGE = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Skillvaya Subscription Test Lab</title><style>
+body{margin:0;background:#f4f7fb;color:#19283b;font:15px/1.5 "Segoe UI",Arial,sans-serif}header{background:#10233f;color:white;padding:20px}.wrap{max-width:900px;margin:auto;padding:20px}.card{background:white;border:1px solid #e1e8f1;border-radius:14px;padding:18px;margin:14px 0}select{font:inherit;padding:10px;border:1px solid #cbd6e4;border-radius:8px;min-width:220px}.notice{background:#fff4d8;color:#77500a;border-radius:9px;padding:12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.pill{display:inline-block;padding:5px 9px;border-radius:20px;background:#eaf2ff;color:#174c91;margin:4px;font-size:13px}button{border:0;border-radius:9px;padding:10px 14px;background:#2365d8;color:white;font:inherit;font-weight:650;cursor:pointer}
+</style></head><body><header><h1 style="margin:0">Skillvaya · Subscription Test Lab</h1><div>Read-only plan and feature preview</div></header><main class="wrap"><div class="notice"><strong>Simulation only.</strong> This lab does not create or change subscriptions, activate customer accounts, call PayFast, create payment requests, or charge money.</div><section class="card"><label for="plan">Preview a plan</label><p><select id="plan"></select></p><h2 id="title"></h2><p id="price"></p><div id="features"></div><p id="summary"></p></section><button onclick="location.href='/owner-control'">← Back to Owner Control</button></main><script>
+async function init(){let r=await fetch('/api/subscription-test-lab',{headers:{Authorization:'Bearer '+(localStorage.getItem('sv_token')||'')}});let d=await r.json();if(!r.ok){document.querySelector('main').innerHTML='<div class="notice">'+(d.error||'Owner access required')+'</div>';return}let s=document.getElementById('plan');s.innerHTML=d.plans.map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');s.onchange=()=>draw(d.plans.find(p=>p.id===s.value));draw(d.plans[0])}
+function draw(p){document.getElementById('title').textContent=p.name;document.getElementById('price').textContent='R'+p.monthly.toLocaleString('en-ZA')+' per month';document.getElementById('features').innerHTML=p.features.length?p.features.map(x=>'<span class="pill">'+x.replace(/_/g,' ')+'</span>').join(''):'<p>No paid-feature entitlements.</p>';document.getElementById('summary').textContent=p.id==='spotlight'?'Premium growth tools and the Plus operating suite.':p.id==='plus'?'Business operations and customer-management tools.':p.id==='priority'?'Priority placement and performance insights.':'Standard local listing features.'}
+init();
+</script></body></html>'''
+
 def handle_get(handler, path, app):
+    if path == "/subscription-test-lab":
+        handler.require("admin")
+        body = TEST_LAB_PAGE.encode("utf-8")
+        handler.send_response(200)
+        handler.send_header("Content-Type", "text/html; charset=utf-8")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+        return True
+    if path == "/api/subscription-test-lab":
+        handler.require("admin")
+        from subscription_entitlements import FEATURES
+        plans = [{"id": key, "name": app.PLANS[key]["name"], "monthly": app.PLANS[key]["monthly"], "features": sorted(FEATURES[key])} for key in ("local", "priority", "plus", "spotlight")]
+        _json(handler, {"plans": plans, "simulation_only": True, "payments_enabled": False, "mutations_enabled": False})
+        return True
     if path.startswith("/business-profile/"):
         try:
             business_id = int(path.rsplit("/", 1)[1])
