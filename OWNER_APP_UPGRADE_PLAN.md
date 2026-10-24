@@ -61,3 +61,13 @@ Footer/quick actions: Ban Users & Providers, Complete User Control, Real-Time In
 - Android release APK build: SUCCESS. APK SHA256: `21F9072F30CF816D1A2B8BB7720CB97F55794FAD54CB76544D3DEF5FE0151065`.
 - APK installed on connected Samsung A14; `za.co.skillvaya.app/.MainActivity` launch verified.
 - NOT YET COMPLETE: browser-level verification of every owner area, actual ban/suspend action flow and audit trail; full DB-backed regression suite (requires isolated PostgreSQL `DATABASE_URL`); production deployment/Render verification. Do not call this release finished or deploy until those checks pass.
+
+## Native control replacement checkpoint — 2026-10-24
+- Replaced the old Owner App iframe/legacy controller navigation with native panels rendered directly in the new Owner App shell. No iframe is present in `owner_app_redesign.html`.
+- Native sections: Dashboard; Customers & Providers; Reports/Complaints; Payments & Subscriptions; Email Centre & Inbox; Advertising & Promotions; Platform Settings.
+- Sections call the existing authenticated `/api/admin/*` APIs directly. Existing owner backend/template remains available as a fallback route but is no longer embedded or shown in the new Owner App.
+- Expanded account suspension endpoint: any customer/provider account can be suspended (not only paid subscribers), admin accounts remain protected, required reason is recorded in the owner notifications/inbox, active sessions are revoked, and account/payment records are preserved. Restore access restores the original role and records the action.
+- Verification: Python compile PASS; owner route/auth test PASS (anonymous owner APIs remain unauthorized); `git diff --check` PASS; JavaScript syntax `node --check` PASS; static assertion confirms native sections exist and no iframe is used.
+- Full unittest discovery from this worktree is NOT a valid green result: it failed because `test_job_hub` was imported from the separate original `Skillvaya` checkout; the 17 Job Hub checks themselves reported PASS before discovery failed. Rerun the intended tests from their proper project roots and run PostgreSQL-backed regression tests in the isolated test environment.
+- Android release build SUCCESS; APK SHA256 `E020B0EAFEA0930B4BD20DFBA60F45F1F8F809DBAD589FE718A54815C56232DC`; APK installed on connected Samsung A14 and app launch was triggered. UI sign-in and every panel/action still need real authenticated end-to-end testing.
+- NOT deployed to production. Do not mark release complete until authenticated browser verification, account suspension/restore integration tests, and broader regression checks pass.
