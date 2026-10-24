@@ -110,6 +110,14 @@ def main():
         request("/api/business-tools/announcements", "POST", {
             "title": "Holiday hours", "message": "We are open for emergency call-outs.",
         }, token=token, expected=201)
+        customer = request("/api/signup", "POST", {
+            "name": "Campaign Customer", "email": "campaign-customer@example.invalid",
+            "password": "SafePass789", "role": "customer", "accept_terms": True,
+        }, expected=200)
+        request("/api/enquiries", "POST", {
+            "business_id": data["business"]["id"], "message": "I found this through the campaign",
+            "lead_source": "Spring plumbing offer",
+        }, token=customer["token"], expected=201)
         data = request("/api/business-tools/data", token=token)
         assert len(data["jobs"]) == 2
         assert any(x["status"] == "booked" for x in data["jobs"])
@@ -121,7 +129,7 @@ def main():
         profile = request("/business-profile/%d" % data["business"]["id"])
         assert "Spring discount" in profile and "SPRINGQA" in profile
         assert "Holiday hours" in profile and "emergency call-outs" in profile
-        assert data["campaigns"][0]["tracked_leads"] == 1
+        assert data["campaigns"][0]["tracked_leads"] == 2
         assert data["campaigns"][0]["tracked_estimated_value_cents"] == 30000
 
         no_token = request("/api/business-tools/data", expected=401)
