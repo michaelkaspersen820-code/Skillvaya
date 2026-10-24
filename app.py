@@ -3407,7 +3407,7 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                         if owner and owner["role"]=="admin":
                             c.execute("UPDATE provider_campaigns SET business_id=? WHERE user_id=? AND business_id=0",(business_id,biz["user_id"]))
                     package_rows=c.execute("SELECT id,name,description,price_cents,add_ons FROM provider_service_packages WHERE business_id=? AND status='active' ORDER BY created_at DESC,id DESC LIMIT 12",(business_id,)).fetchall()
-                    offer_rows=c.execute("SELECT id,title,code,description,discount_type,discount_value,starts_on,ends_on FROM provider_offers WHERE business_id=? AND status='active' AND (starts_on='' OR starts_on<=?) AND (ends_on='' OR ends_on>=?) ORDER BY created_at DESC,id DESC LIMIT 8",(business_id,today,today)).fetchall()
+                    offer_rows=c.execute("SELECT id,title,code,description,discount_type,discount_value,starts_on,ends_on FROM provider_offers WHERE business_id=? AND status='active' AND (starts_on='' OR starts_on<=?) AND (ends_on='' OR ends_on>=?) AND (usage_limit=0 OR usage_count<usage_limit) ORDER BY created_at DESC,id DESC LIMIT 8",(business_id,today,today)).fetchall()
                     campaign_rows=c.execute("SELECT id,title,description,starts_on,ends_on FROM provider_campaigns WHERE business_id=? AND status='active' AND (starts_on='' OR starts_on<=?) AND (ends_on='' OR ends_on>=?) ORDER BY updated_at DESC,id DESC LIMIT 3",(business_id,today,today)).fetchall()
                 packages=[]
                 for row in package_rows:

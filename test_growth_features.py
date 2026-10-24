@@ -94,6 +94,9 @@ try:
     req("/api/marketing/track","POST",{"business_id":spot_id,"event_type":"campaign_click","campaign_id":cid,"source":"provider-profile","visitor_key":"growth-e2e-visitor"},expected=201)
     spot_marketing=req("/api/provider/growth/marketing",token=spotlight["token"])
     check("Public visitor events are counted by Spotlight analytics",lambda: (_ for _ in ()).throw(AssertionError(spot_marketing)) if spot_marketing["stats"]["profile_views"]<1 or spot_marketing["stats"]["campaign_views"]<1 or spot_marketing["stats"]["campaign_clicks"]<1 else None)
+    for _ in range(5):req("/api/provider/growth/offers","POST",{"action":"redeem","id":offer["id"]},spotlight["token"])
+    exhausted=req("/api/businesses/%d/growth"%spot_id)
+    check("Public growth endpoint hides offers once usage limits are reached",lambda: (_ for _ in ()).throw(AssertionError(exhausted.get("offers"))) if any(x["code"]=="WELCOME10" for x in exhausted["offers"]) else None)
     check("Marketing dashboard includes campaign and exposure stats",lambda: (_ for _ in ()).throw(AssertionError("marketing stats missing")) if "stats" not in req("/api/provider/growth/marketing",token=spotlight["token"]) else None)
     # Team invitation, matching-email acceptance, job assignment and staff-only work view.
     invite=req("/api/provider/growth/team","POST",{"action":"invite","name":"Growth Staff","email":"staff-growth@example.test","team_role":"staff"},spotlight["token"],201)
