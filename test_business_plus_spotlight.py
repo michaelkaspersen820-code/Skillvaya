@@ -107,6 +107,9 @@ def main():
             "title": "Spring discount", "code": "SPRINGQA", "discount_text": "10% off",
             "redemption_limit": 20,
         }, token=token, expected=201)
+        request("/api/business-tools/announcements", "POST", {
+            "title": "Holiday hours", "message": "We are open for emergency call-outs.",
+        }, token=token, expected=201)
         data = request("/api/business-tools/data", token=token)
         assert len(data["jobs"]) == 2
         assert any(x["status"] == "booked" for x in data["jobs"])
@@ -114,6 +117,10 @@ def main():
         assert len(data["customers"]) == 1 and len(data["quotes"]) == 1
         assert data["invoices"][0]["status"] == "paid"
         assert len(data["packages"]) == 1 and len(data["campaigns"]) == 1 and len(data["offers"]) == 1
+        assert len(data["announcements"]) == 1
+        profile = request("/business-profile/%d" % data["business"]["id"])
+        assert "Spring discount" in profile and "SPRINGQA" in profile
+        assert "Holiday hours" in profile and "emergency call-outs" in profile
         assert data["campaigns"][0]["tracked_leads"] == 1
         assert data["campaigns"][0]["tracked_estimated_value_cents"] == 30000
 
