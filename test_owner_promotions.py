@@ -32,9 +32,12 @@ def main():
         assert "My Businesses & Promotions" in app.OWNER_HTML
         # Current owner app intentionally keeps Payments & refunds in its own
         # top-level area; free owner listings/promotions live in the Owner Control.
-        assert 'data-tab="payments"' in app.OWNER_APP_HTML
-        assert 'My Free App' in app.OWNER_APP_HTML
-        assert 'class="tabs"' in app.OWNER_APP_HTML
+        # The current native owner shell exposes the same functions through named control areas.
+        assert "showArea('payments')" in app.OWNER_APP_HTML
+        assert "showArea('owner-promotions')" in app.OWNER_APP_HTML
+        assert 'function renderPromotions' in app.OWNER_APP_HTML
+        assert 'id="ownerNav"' in app.OWNER_APP_HTML and 'data-area="payments"' in app.OWNER_APP_HTML
+        assert 'Advertising & Promotions' in app.OWNER_APP_HTML
         assert 'My businesses & promotions (free)' in app.OWNER_HTML
         created = request("/api/admin/owner-promotions", "POST", {
             "kind": "app", "business_name": "Test Studio", "title": "Test App",

@@ -70,7 +70,7 @@ class OwnerControlPostgresTests(unittest.TestCase):
         handler.path = f"/api/admin/accounts/{user_id}/access"
         handler.client_address = ("127.0.0.1", 12345)
         handler.server = DummyServer()
-        handler.body = lambda: {"action": action}
+        handler.body = lambda: {"action": action, "reason": "Automated regression test"}
         handler.user = lambda: {"id": self.ids["admin"], "role": "admin"}
         handler.sendj = lambda payload, status=200: (payload, status)
         return handler.do_POST()
@@ -101,9 +101,14 @@ class OwnerControlPostgresTests(unittest.TestCase):
             role = c.execute("SELECT role FROM users WHERE id=?", (self.ids["admin"],)).fetchone()["role"]
         self.assertEqual(role, "admin")
 
-    def test_unpaid_provider_is_rejected(self):
+    def test_owner_can_suspend_and_restore_unpaid_provider(self):
         payload, status = self.post_access(self.ids["provider"], "suspend")
-        self.assertEqual(status, 400)
+        self.assertEqual(status, 200, payload)
+        with app.conn() as c:
+            role = c.execute("SELECT role FROM users WHERE id=?", (self.ids["provider"],)).fetchone()["role"]
+        self.assertEqual(role, "suspended")
+        payload, status = self.post_access(self.ids["provider"], "restore")
+        self.assertEqual(status, 200, payload)
         with app.conn() as c:
             role = c.execute("SELECT role FROM users WHERE id=?", (self.ids["provider"],)).fetchone()["role"]
         self.assertEqual(role, "provider")
