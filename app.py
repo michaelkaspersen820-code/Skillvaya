@@ -2725,6 +2725,7 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                 email=d.get("email","").lower().strip(); pw=d.get("password","")
                 with conn() as c: row=c.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone()
                 if not row or not verify_password(row["password_hash"],pw):return self.sendj({"error":"Email or password is incorrect."},401)
+                if row["role"]=="suspended": return self.sendj({"error":"This account is suspended. Contact Skillvaya support if you believe this is a mistake."},403)
                 if row["role"]!="admin" and d.get("accept_terms") is not True:
                     return self.sendj({"error":"Please read the current Terms, Conditions, Rules & Safety and tick the agreement box before signing in.","terms_required":True,"terms_url":"/terms"},400)
                 if not row["password_hash"].startswith("pbkdf2_sha256$"):
