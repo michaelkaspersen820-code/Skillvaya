@@ -34,11 +34,16 @@ def main():
         except urllib.error.HTTPError as exc:
             status, raw = exc.code, exc.read()
         assert status == expected, (method, path, status, raw[:400])
-        if path.startswith("/business-profile/"):
+        if path.startswith("/business-profile/") or path == "/subscription-test-lab":
             return raw.decode("utf-8", errors="replace")
         return json.loads(raw) if raw else {}
 
     try:
+        lab = request("/api/subscription-test-lab")
+        assert lab["simulation_only"] is True and lab["payments_enabled"] is False and lab["mutations_enabled"] is False
+        assert {x["id"] for x in lab["plans"]} == {"local", "priority", "plus", "spotlight"}
+        lab_page = request("/subscription-test-lab")
+        assert "Simulation only" in lab_page and "PayFast" in lab_page
         provider = request("/api/signup", "POST", {
             "name": "Plus QA", "email": "plus-qa@example.invalid",
             "password": "SafePass123", "role": "provider", "accept_terms": True,
