@@ -187,7 +187,26 @@ function draw(p){document.getElementById('title').textContent=p.name;document.ge
 init();
 </script></body></html>'''
 
+def _review_page(token, business_name):
+    return ("""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Review provider · Skillvaya</title><style>
+    body{margin:0;background:#f4f7fb;color:#19283b;font:16px/1.5 "Segoe UI",Arial,sans-serif}.wrap{max-width:620px;margin:35px auto;padding:16px}.card{background:white;border:1px solid #e1e8f1;border-radius:16px;padding:22px}input,textarea,select{width:100%;box-sizing:border-box;padding:11px;border:1px solid #cbd6e4;border-radius:8px;font:inherit;margin:5px 0 12px}button{border:0;border-radius:9px;background:#2365d8;color:white;padding:12px 16px;font:inherit;font-weight:700;cursor:pointer}.notice{padding:12px;background:#eaf2ff;border-radius:9px;margin:10px 0}</style></head><body><main class="wrap"><section class="card"><div style="font-weight:850;color:#2365d8">skillvaya</div><h1>Review """ + escape(str(business_name)) + """</h1><p>Your feedback helps customers make informed choices. Please review the completed work fairly and honestly.</p><form id="review"><label>Your name</label><input name="customer_name" maxlength="120" required><label>Rating</label><select name="rating" required><option value="">Choose a rating</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="3">3 · Okay</option><option value="2">2 · Poor</option><option value="1">1 · Very poor</option></select><label>Your review</label><textarea name="review_text" minlength="5" maxlength="2000" required></textarea><button>Submit review</button></form><div id="result" class="notice" aria-live="polite"></div></section></main><script>const token=""" + json.dumps(token) + """;document.getElementById('review').onsubmit=async e=>{e.preventDefault();let data=Object.fromEntries(new FormData(e.target));let r=await fetch('/api/review/'+token,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});let d=await r.json().catch(()=>({error:'Request failed'}));document.getElementById('result').textContent=r.ok?'Thank you. Your review has been submitted.':(d.error||'Could not submit review.');if(r.ok)e.target.remove()};</script></body></html>""")
+
 def handle_get(handler, path, app):
+    if path.startswith("/review/"):
+        token = path.rsplit("/", 1)[1]
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        with app.conn() as connection:
+            row = connection.execute("SELECT b.name,b.subscription_expires_at FROM sv_business_review_requests r JOIN businesses b ON b.id=r.business_id WHERE r.token_hash=? AND r.status='requested' AND b.status='active' AND b.payment_status='verified'", (digest,)).fetchone()
+        if not row or (row["subscription_expires_at"] and row["subscription_expires_at"] <= app.now()):
+            handler.send_error(404)
+            return True
+        body = _review_page(token, row["name"]).encode("utf-8")
+        handler.send_response(200)
+        handler.send_header("Content-Type", "text/html; charset=utf-8")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+        return True
     if path == "/subscription-test-lab":
         handler.require("admin")
         body = TEST_LAB_PAGE.encode("utf-8")
