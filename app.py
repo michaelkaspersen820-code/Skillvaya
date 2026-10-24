@@ -1643,14 +1643,14 @@ function openProvider(id){document.body.classList.remove('category-screen-mode',
   providerDetailReturnView=serviceScreen&&!serviceScreen.classList.contains('hidden')?'services':categoryScreenNow&&!categoryScreenNow.classList.contains('hidden')?'category':'customer';
   setHomeChrome(false);
  const b=allBusinesses.find(x=>Number(x.id)===Number(id));if(!b)return;
- const studio=String(b.name||'').trim()==='Skillvaya Digital & Creative Studio';
+ const studio=Boolean(b.owner_studio);
  const contact=['<button type="button" class="primary" onclick="contact('+Number(b.id)+')">＋ Make contact</button>'];
  if(b.email)contact.push('<a class="studio-action" href="mailto:'+esc(b.email)+'">✉ Email</a>');
  if(b.website&&(String(b.website).toLowerCase().indexOf('http://')===0||String(b.website).toLowerCase().indexOf('https://')===0))contact.push('<a class="studio-action" target="_blank" rel="noopener noreferrer" href="'+esc(b.website)+'">↗ Website</a>');
  contact.push('<button class="studio-action" type="button" onclick="report('+Number(b.id)+')">⚑ Report listing</button>');
  const services=['Graphic Design','Branding & Identity','Web Design','Website Development','Coding & Custom Software','Android Apps','AI Solutions','UI/UX Design','Testing & Debugging','IT Support & Troubleshooting'];
  const icons=['✎','◇','▣','</>','⚙','▯','✺','▤','⌕','🔧'];
- const about=b.description||'Skillvaya Digital & Creative Studio is a full-service digital solutions provider focused on helping individuals and businesses bring their ideas to life. We combine creativity, technology and practical problem-solving to deliver high-quality, reliable and affordable solutions. Whether you need a stunning design, a professional website, a custom app, or advanced AI solutions, we’ve got you covered. We also offer ongoing support and troubleshooting to keep your systems running smoothly.';
+ const about=String(b.description||'').trim();
  if(studio){
  document.getElementById('providerDetailContent').innerHTML='<article class="studio-profile"><div class="studio-banner"><div class="studio-logo">S</div><div class="studio-brand"><h1>Skillvaya</h1><h2>Digital &amp; Creative Studio</h2><p>Ideas <b>·</b> Design <b>·</b> Code <b>·</b> Build <b>·</b> Support</p></div><div class="studio-slogan">Your Vision.<br>Our Skills.<br>Real Results.</div></div><div class="studio-facts"><div><span>▣</span><div><small>Business Type</small><strong>Digital &amp; Creative Studio</strong></div></div><div><span>📍</span><div><small>Service Area</small><strong>Online &amp; Remote</strong></div></div></div><div class="studio-contactfacts"><a href="tel:'+esc(String(b.phone||'+27 83 787 45 69').replace(/[^+0-9]/g,''))+'"><span>☎</span><div><small>Phone</small><strong>'+esc(b.phone||'+27 83 787 45 69')+'</strong></div></a><a href="mailto:'+esc(b.email||'Skillvaya@gmail.com')+'"><span>✉</span><div><small>Email</small><strong>'+esc(b.email||'Skillvaya@gmail.com')+'</strong></div></a></div><h2 class="studio-sectiontitle">Our Services</h2><div class="studio-services">'+services.map((x,i)=>'<div class="studio-service"><span class="studio-service-icon icon-'+i+'">'+icons[i]+'</span><strong>'+esc(x)+'</strong></div>').join('')+'</div><h2 class="studio-sectiontitle">About Us</h2><p class="studio-about">'+about+'</p><div class="studio-motto"><span>◎</span><div>Our goal is simple:<strong>Your success is our success.</strong></div></div><div class="studio-actions">'+contact.join('')+'</div><div class="studio-extra-actions"><button type="button" class="studio-action" onclick="toggleFavorite('+Number(b.id)+')">♡ Save provider</button><button type="button" class="studio-action" onclick="contact('+Number(b.id)+')">✉ Request a service</button>'+ratingMarkup(b.id,b.rating,b.rating_count,b.my_rating)+'</div></article>';
  }else{
@@ -2391,6 +2391,7 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                 rater_id=viewer["id"] if viewer and viewer["role"]=="customer" else -1
                 with conn() as c:
                     rows=c.execute("""SELECT b.*,
+                        CASE WHEN LOWER(TRIM(COALESCE(b.name,'')))='skillvaya digital & creative studio' AND EXISTS (SELECT 1 FROM users owner_user WHERE owner_user.id=b.user_id AND owner_user.role='admin') THEN 1 ELSE 0 END AS owner_studio,
                         COALESCE(r.average,0) AS rating, COALESCE(r.rating_count,0) AS rating_count,
                         COALESCE(my.stars,0) AS my_rating
                         FROM businesses b
