@@ -95,6 +95,8 @@ try:
     spot_marketing=req("/api/provider/growth/marketing",token=spotlight["token"])
     check("Public visitor events are counted by Spotlight analytics",lambda: (_ for _ in ()).throw(AssertionError(spot_marketing)) if spot_marketing["stats"]["profile_views"]<1 or spot_marketing["stats"]["campaign_views"]<1 or spot_marketing["stats"]["campaign_clicks"]<1 else None)
     for _ in range(5):req("/api/provider/growth/offers","POST",{"action":"redeem","id":offer["id"]},spotlight["token"])
+    blocked_redemption=req("/api/provider/growth/offers","POST",{"action":"redeem","id":offer["id"]},spotlight["token"],409)
+    check("Offer redemption is rejected after its usage cap",lambda: (_ for _ in ()).throw(AssertionError(blocked_redemption)) if "limit" not in blocked_redemption.get("error","").lower() else None)
     exhausted=req("/api/businesses/%d/growth"%spot_id)
     check("Public growth endpoint hides offers once usage limits are reached",lambda: (_ for _ in ()).throw(AssertionError(exhausted.get("offers"))) if any(x["code"]=="WELCOME10" for x in exhausted["offers"]) else None)
     check("Marketing dashboard includes campaign and exposure stats",lambda: (_ for _ in ()).throw(AssertionError("marketing stats missing")) if "stats" not in req("/api/provider/growth/marketing",token=spotlight["token"]) else None)
