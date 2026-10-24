@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.Locale;
 import android.content.pm.PackageManager;
 import android.Manifest;
-import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.os.Bundle;
 import android.os.Handler;
