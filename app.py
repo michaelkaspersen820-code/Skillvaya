@@ -672,8 +672,8 @@ async function load(tab){let p=document.getElementById('panel');try{if(tab==='su
  return;
  }
  if(tab==='owner-subscribers'){
- const [c,p]=await Promise.all([api('/api/admin/clients'),api('/api/admin/payments')]);
- const users=c.items||[],payments=p.items||[];
+ const [c,payResp]=await Promise.all([api('/api/admin/clients'),api('/api/admin/payments')]);
+ const users=c.items||[],payments=payResp.items||[];
  const paid=users.filter(u=>payments.some(x=>String(x.user_id)===String(u.id)&&x.status==='verified'));
  p.innerHTML='<h2>Paid subscribers</h2><p class="muted">Accounts with at least one verified payment. Payment status comes from the existing verified-payment records.</p>'+table(['Account','Email','Role','Verified payments','Paid amount','Account status'],paid.map(u=>{const ps=payments.filter(x=>String(x.user_id)===String(u.id)&&x.status==='verified');return [u.name,u.email,u.role,ps.length,'R'+ps.reduce((n,x)=>n+Number(x.amount||0),0),u.role==='suspended'?'Suspended':'Active']}))+'<p><button onclick="load(\'owner-accounts\')">Manage account access</button></p>';
  return;
