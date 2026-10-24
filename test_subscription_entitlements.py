@@ -15,7 +15,7 @@ class SubscriptionEntitlementsTests(unittest.TestCase):
         for feature in (
             "lead_pipeline", "customer_booking_calendar", "crm",
             "quotation_followups", "invoice_payment_tracking",
-            "customer_service_packages", "advanced_analytics",
+            "customer_service_packages", "customer_review_tools", "advanced_analytics",
         ):
             with self.subTest(feature=feature):
                 self.assertTrue(has_feature("plus", feature))
