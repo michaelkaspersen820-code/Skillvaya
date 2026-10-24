@@ -147,7 +147,38 @@ def _data(connection, business_id, app):
             result["campaign_analytics"].append({"campaign": campaign["title"], "leads": row["leads"], "estimated_value_cents": row["value_cents"]})
     return result
 
+def _profile_page(business):
+    name = escape(str(business["name"] or ""))
+    category = escape(str(business["category"] or ""))
+    area = escape(str(business["area"] or ""))
+    description = escape(str(business["description"] or ""))
+    phone = escape(str(business["phone"] or ""), quote=True)
+    website = str(business["website"] or "").strip()
+    safe_website = escape(website, quote=True) if website.startswith(("https://", "http://")) else ""
+    link = ('<a class="button" href="' + safe_website + '" target="_blank" rel="noopener noreferrer">Visit website</a>') if safe_website else ""
+    phone_link = ('<a class="button" href="tel:' + phone + '">Call business</a>') if phone else ""
+    return ('''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#10233f"><title>''' + name + ''' · Skillvaya Spotlight</title><style>
+    body{margin:0;background:#f4f7fb;color:#19283b;font:16px/1.6 "Segoe UI",Arial,sans-serif}.top{background:#10233f;color:white;padding:18px 22px}.brand{font-size:23px;font-weight:850}.brand span{color:#75b7ff}.wrap{max-width:900px;margin:32px auto;padding:0 16px}.hero{background:linear-gradient(125deg,#10233f,#1c4b83);color:white;border-radius:20px;padding:clamp(22px,5vw,48px);box-shadow:0 14px 36px #10233f20}.badge{display:inline-block;background:#d9ebff;color:#174c91;border-radius:99px;padding:5px 11px;font-size:12px;font-weight:800}.hero h1{font-size:clamp(30px,5vw,46px);line-height:1.1;margin:15px 0 6px}.hero p{color:#e1edfb}.card{background:white;border:1px solid #e1e8f1;border-radius:16px;padding:22px;margin-top:16px}.button{display:inline-block;text-decoration:none;background:#2365d8;color:white;padding:10px 15px;border-radius:9px;font-weight:700;margin:5px 7px 0 0}.secondary{background:#eaf0f8;color:#10233f}</style></head><body><header class="top"><div class="brand">skill<span>vaya</span> · Spotlight</div></header><main class="wrap"><section class="hero"><span class="badge">BUSINESS SPOTLIGHT</span><h1>''' + name + '''</h1><p>''' + category + ''' · ''' + area + '''</p><p>''' + description + '''</p><div>''' + phone_link + link + '''</div></section><section class="card"><h2>Contact this provider</h2><p>Skillvaya helps customers discover providers. Confirm the scope, price, timing and terms directly with the business before work begins.</p><a class="button secondary" href="/customer">Back to Skillvaya marketplace</a></section></main></body></html>''')
+
 def handle_get(handler, path, app):
+    if path.startswith("/business-profile/"):
+        try:
+            business_id = int(path.rsplit("/", 1)[1])
+        except ValueError:
+            handler.send_error(404)
+            return True
+        with app.conn() as connection:
+            row = connection.execute("SELECT * FROM businesses WHERE id=? AND status='active' AND payment_status='verified' AND plan='spotlight'", (business_id,)).fetchone()
+        if not row or (row["subscription_expires_at"] and row["subscription_expires_at"] <= app.now()):
+            handler.send_error(404)
+            return True
+        body = _profile_page(dict(row)).encode("utf-8")
+        handler.send_response(200)
+        handler.send_header("Content-Type", "text/html; charset=utf-8")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+        return True
     if path == "/business-tools":
         body = PAGE.encode("utf-8")
         handler.send_response(200)
