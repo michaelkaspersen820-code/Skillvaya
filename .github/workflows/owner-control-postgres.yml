@@ -1,0 +1,43 @@
+name: Owner Control PostgreSQL integration
+
+on:
+  pull_request:
+    branches: [free-hosting-postgres]
+  push:
+    branches: [owner-control-isolated-2026-10-24]
+
+permissions:
+  contents: read
+
+jobs:
+  owner-control-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: skillvaya_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d skillvaya_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skillvaya_test
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install app dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+      - name: Compile application
+        run: python -m py_compile app.py
+      - name: Run PostgreSQL Owner Control integration tests
+        run: python -m unittest discover -s tests -p "test_owner_control_postgres.py" -v
