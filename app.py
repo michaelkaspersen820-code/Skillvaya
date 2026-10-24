@@ -1226,7 +1226,13 @@ function view(v){
  if(v==='provider')refreshProviderGate().catch(e=>console.warn('Provider studio refresh failed:',e.message));
   if(servicesView){renderServicesTab();loadBusinesses().then(renderServicesTab).catch(e=>console.warn('Services directory refresh failed:',e.message));}
   if(contactView){const status=document.getElementById('platformContactStatus');if(status)status.textContent='';}
- window.scrollTo(0,0);
+ // Normalize scroll after the destination DOM and async layout settle. Contacts can change
+ // document height; a single immediate scrollTo can run before that change completes.
+ const resetDestinationScroll=()=>{window.scrollTo({top:0,left:0,behavior:'instant'});document.documentElement.scrollTop=0;document.body.scrollTop=0;};
+ resetDestinationScroll();
+ requestAnimationFrame(()=>{resetDestinationScroll();requestAnimationFrame(resetDestinationScroll);});
+ setTimeout(resetDestinationScroll,80);
+ setTimeout(resetDestinationScroll,260);
 }
 
 
