@@ -90,15 +90,22 @@ def main():
         request("/api/business-tools/campaigns/%d" % campaign["id"], "POST", {
             "status": "active",
         }, token=token)
+        request("/api/business-tools/jobs", "POST", {
+            "title": "Campaign lead", "customer_name": "Attributed customer",
+            "lead_source": "Spring plumbing offer", "amount": "300",
+        }, token=token, expected=201)
         request("/api/business-tools/offers", "POST", {
             "title": "Spring discount", "code": "SPRINGQA", "discount_text": "10% off",
             "redemption_limit": 20,
         }, token=token, expected=201)
         data = request("/api/business-tools/data", token=token)
-        assert len(data["jobs"]) == 1 and data["jobs"][0]["status"] == "booked"
+        assert len(data["jobs"]) == 2
+        assert any(x["status"] == "booked" for x in data["jobs"])
         assert len(data["customers"]) == 1 and len(data["quotes"]) == 1
         assert data["invoices"][0]["status"] == "paid"
         assert len(data["packages"]) == 1 and len(data["campaigns"]) == 1 and len(data["offers"]) == 1
+        assert data["campaigns"][0]["tracked_leads"] == 1
+        assert data["campaigns"][0]["tracked_estimated_value_cents"] == 30000
 
         no_token = request("/api/business-tools/data", expected=401)
         assert "error" in no_token
