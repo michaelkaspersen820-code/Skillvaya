@@ -66,6 +66,28 @@ public class MainActivity extends Activity {
         }
         if (notifyPage) voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(true)");
     }
+    private void scheduleNativeVoiceRestart() {
+        if (!nativeVoiceActive) return;
+        loadingHandler.postDelayed(() -> {
+            if (!nativeVoiceActive || isFinishing() || isDestroyed()) return;
+            try {
+                if (nativeSpeechRecognizer != null) {
+                    Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                    intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                    intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag());
+                    intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+                    intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L);
+                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L);
+                    nativeSpeechRecognizer.startListening(intent);
+                }
+            } catch (Exception e) {
+                nativeVoiceActive = false;
+                voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(false)");
+                voiceJs("window.svNativeVoiceError && window.svNativeVoiceError('Android could not continue listening. Tap the microphone to try again.')");
+            }
+        }, 350);
+    }
     private void startNativeVoice() {
         if (nativeVoiceActive) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -87,20 +109,22 @@ public class MainActivity extends Activity {
                 @Override public void onEndOfSpeech() {}
                 @Override public void onError(int error) {
                     if (!nativeVoiceActive) return;
-                    // Do not restart in a tight loop: that causes repeated system chimes and duplicate text.
+                    // Resume only for normal silence/no-match timeouts. Other errors need explicit user action.
+                    if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                        scheduleNativeVoiceRestart();
+                        return;
+                    }
                     nativeVoiceActive = false;
                     if (nativeSpeechRecognizer != null) { try { nativeSpeechRecognizer.destroy(); } catch (Exception ignored) {} nativeSpeechRecognizer = null; }
                     voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(false)");
-                    voiceJs("window.svNativeVoiceError && window.svNativeVoiceError(" + org.json.JSONObject.quote("Android speech recognition ended (error " + error + "). Tap the microphone to try again.") + ")");
+                    voiceJs("window.svNativeVoiceError && window.svNativeVoiceError(" + org.json.JSONObject.quote("Android speech recognition stopped (error " + error + "). Tap the microphone to try again.") + ")");
                 }
                 @Override public void onResults(Bundle results) {
                     if (!nativeVoiceActive) return;
                     ArrayList<String> matches = results == null ? null : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null && !matches.isEmpty()) voiceJs("window.svNativeVoiceResult && window.svNativeVoiceResult(" + org.json.JSONObject.quote(matches.get(0)) + ",true)");
-                    // Android has ended this recognition session. Never restart automatically.
-                    nativeVoiceActive = false;
-                    if (nativeSpeechRecognizer != null) { try { nativeSpeechRecognizer.destroy(); } catch (Exception ignored) {} nativeSpeechRecognizer = null; }
-                    voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(false)");
+                    // Each Android recognition segment ends normally; start the next segment while the user session remains active.
+                    scheduleNativeVoiceRestart();
                 }
                 @Override public void onPartialResults(Bundle partialResults) {
                     if (!nativeVoiceActive || partialResults == null) return;
