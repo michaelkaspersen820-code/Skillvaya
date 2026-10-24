@@ -1236,6 +1236,24 @@ function view(v){
 }
 
 
+// Fix only the Home-tab return path: a delayed destination/layout callback can restore the old scroll offset after view('customer').
+document.addEventListener('click',function(e){
+  const home=e.target&&e.target.closest?e.target.closest('#nav-customer-bottom'):null;
+  if(!home)return;
+  const resetHomeScroll=()=>{
+    const html=document.documentElement,body=document.body;
+    const oldBehavior=html.style.scrollBehavior;
+    html.style.scrollBehavior='auto';
+    window.scrollTo(0,0);
+    if(html)html.scrollTop=0;
+    if(body)body.scrollTop=0;
+    requestAnimationFrame(()=>{window.scrollTo(0,0);if(html)html.scrollTop=0;if(body)body.scrollTop=0;html.style.scrollBehavior=oldBehavior;});
+  };
+  resetHomeScroll();
+  setTimeout(resetHomeScroll,80);
+  setTimeout(resetHomeScroll,320);
+},true);
+
 function pickCat(c){const priorServices=document.getElementById('servicesTabScreen');categoryReturnView=priorServices&&!priorServices.classList.contains('hidden')?'services':'customer';document.body.classList.remove('account-screen-mode','messages-screen-mode');document.body.classList.add('category-screen-mode');['platformRatingCard','platform-rating-card','rateSkillvayaCard','owner-promotions-public'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('hidden')});directorySearchActive=false;const raw=String(c||'All categories').trim();const canonical=(cats||[]).find(x=>String(x).toLocaleLowerCase()===raw.toLocaleLowerCase())||raw;chosen=canonical;const select=document.getElementById('categories');if(select)select.value=canonical;if(canonical==='All categories'){backToCategories();return}setHomeChrome(false);for(const id of ['customer','servicesTabScreen','contactUsScreen','providerDetailScreen','provider','account','settings','terms','admin','services','contact']){const el=document.getElementById(id);if(el)el.classList.add('hidden')}const category=document.getElementById('categoryScreen');if(category)category.classList.remove('hidden');const title=document.getElementById('categoryScreenTitle');if(title)title.textContent=canonical;const count=document.getElementById('categoryScreenCount');if(count)count.textContent='Loading service providers.';const sort=document.getElementById('categoryScreenSort'),homeSort=document.getElementById('sort');if(sort&&homeSort)sort.value=homeSort.value;window.scrollTo(0,0);loadBusinesses()}
 function searchDirectory(){document.body.classList.remove('account-screen-mode','messages-screen-mode');document.body.classList.add('category-screen-mode');setHomeChrome(false);directorySearchActive=true;const field=document.getElementById('q'),raw=(field.value||'').trim(),key=raw.toLocaleLowerCase().replace(/[^a-z0-9]+/g,' ').trim();const aliases={'plumber':'Plumbers','plumbing':'Plumbers','electrician':'Electricians','doctor':'Doctors','private doctor':'Private doctors & clinics','private doctors':'Private doctors & clinics','clinic':'Private doctors & clinics','nurse':'Nurses','mechanic':'Mechanics','gardener':'Gardeners','gardeners':'Gardeners','landscaper':'Landscapers','lawyer':'Lawyers & legal services','lawyers':'Lawyers & legal services','graphic designer':'Graphic designers','builder':'Builders & construction','painter':'Painters & decorators','dentist':'Dentists','carpenter':'Carpenters & furniture'};const exact=(cats||[]).find(c=>c.toLocaleLowerCase().replace(/[^a-z0-9]+/g,' ').trim()===key);const service=exact||aliases[key];if(service){chosen=service;field.value='';}else{chosen='All categories';}document.getElementById('categories').value=chosen;document.getElementById('customer').classList.add('hidden');document.getElementById('categoryScreen').classList.remove('hidden');document.getElementById('categoryScreenSort').value=document.getElementById('sort').value;const area=(document.getElementById('area').value||'').trim();document.getElementById('categoryScreenTitle').textContent=service?service+(area?' in '+area:''):(raw?(area?'Search results for '+raw+' in '+area:'Search results for '+raw):(area?'Service providers in '+area:'All service providers'));document.getElementById('categoryScreenCount').textContent='Searching…';loadBusinesses();window.scrollTo(0,0)}
 document.getElementById('categories').addEventListener('change',e=>pickCat(e.target.value));
