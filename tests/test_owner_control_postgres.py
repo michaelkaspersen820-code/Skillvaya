@@ -70,7 +70,7 @@ class OwnerControlPostgresTests(unittest.TestCase):
         handler.path = f"/api/admin/accounts/{user_id}/access"
         handler.client_address = ("127.0.0.1", 12345)
         handler.server = DummyServer()
-        handler.body = lambda: {"action": action}
+        handler.body = lambda: {"action": action, "reason": "Automated regression test"}
         handler.user = lambda: {"id": self.ids["admin"], "role": "admin"}
         handler.sendj = lambda payload, status=200: (payload, status)
         return handler.do_POST()
