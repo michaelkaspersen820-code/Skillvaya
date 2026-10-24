@@ -4,6 +4,7 @@ The workspace is deliberately isolated from existing marketplace and owner route
 Every data request is scoped to the signed-in provider's active, verified paid listing.
 """
 import json
+import hashlib
 from html import escape
 
 class SubscriptionAccessError(PermissionError):
@@ -66,6 +67,16 @@ CREATE TABLE IF NOT EXISTS sv_business_announcements (
  id INTEGER PRIMARY KEY, business_id INTEGER NOT NULL, title TEXT NOT NULL,
  message TEXT NOT NULL, starts_on TEXT DEFAULT '', ends_on TEXT DEFAULT '',
  status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sv_business_review_requests (
+ id INTEGER PRIMARY KEY, business_id INTEGER NOT NULL, job_id INTEGER NOT NULL,
+ token_hash TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'requested',
+ created_at TEXT NOT NULL, UNIQUE(business_id, job_id)
+);
+CREATE TABLE IF NOT EXISTS sv_business_reviews (
+ id INTEGER PRIMARY KEY, business_id INTEGER NOT NULL, job_id INTEGER NOT NULL,
+ customer_name TEXT NOT NULL, rating INTEGER NOT NULL, review_text TEXT NOT NULL,
+ created_at TEXT NOT NULL, UNIQUE(business_id, job_id)
 );
 """
 
