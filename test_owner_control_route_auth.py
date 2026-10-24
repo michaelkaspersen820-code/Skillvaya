@@ -32,7 +32,7 @@ try:
     assert headers.get('Cache-Control') == 'no-store', headers
     assert b'PayPal payment requests' not in body, body[:200]
     status, headers, body = request('/owner-app')
-    assert status == 200 and b'Owner sign-in' in body, (status, body[:200])
+    assert status == 200 and b'Skillvaya | Owner App' in body and b'Full Platform Control' in body, (status, body[:200])
     status, headers, body = request('/api/admin/owner-promotions')
     assert status == 401, (status, body[:200])
     status, headers, body = request('/api/admin/payments')
