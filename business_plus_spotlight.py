@@ -267,6 +267,52 @@ def handle_get(handler, path, app):
     return True
 
 def handle_post(handler, path, payload, app):
+    if path.startswith("/api/review/"):
+        token = path.rsplit("/", 1)[1]
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        name = str(payload.get("customer_name", "")).strip()[:120]
+        review_text = str(payload.get("review_text", "")).strip()[:2000]
+        try:
+            rating = int(payload.get("rating", 0))
+        except (TypeError, ValueError):
+            rating = 0
+        if not name or len(review_text) < 5 or rating not in (1, 2, 3, 4, 5):
+            _json(handler, {"error": "Enter your name, a rating from 1 to 5, and a review of at least 5 characters."}, 400)
+            return True
+        with app.conn() as connection:
+            request_row = connection.execute("SELECT r.id,r.business_id,r.job_id FROM sv_business_review_requests r JOIN businesses b ON b.id=r.business_id WHERE r.token_hash=? AND r.status='requested' AND b.status='active' AND b.payment_status='verified'", (digest,)).fetchone()
+            if not request_row:
+                _json(handler, {"error": "This review link is invalid or has already been used."}, 404)
+                return True
+            connection.execute("INSERT INTO sv_business_reviews(business_id,job_id,customer_name,rating,review_text,created_at) VALUES(?,?,?,?,?,?)", (request_row["business_id"], request_row["job_id"], name, rating, review_text, app.now()))
+            connection.execute("UPDATE sv_business_review_requests SET status='submitted' WHERE id=?", (request_row["id"],))
+            average = connection.execute("SELECT avg(rating) FROM sv_business_reviews WHERE business_id=?", (request_row["business_id"],)).fetchone()[0]
+            connection.execute("UPDATE businesses SET rating=? WHERE id=?", (round(float(average or 0), 2), request_row["business_id"]))
+        _json(handler, {"ok": True, "message": "Review submitted."}, 201)
+        return True
+    if path == "/api/business-tools/review-links":
+        user = handler.require("provider")
+        try:
+            job_id = int(payload.get("job_id", 0))
+        except (TypeError, ValueError):
+            job_id = 0
+        with app.conn() as connection:
+            business = _business(connection, user["id"], app)
+            if not business:
+                _json(handler, {"error": "An active, verified Business Plus or Spotlight subscription is required."}, 403)
+                return True
+            from subscription_entitlements import has_feature
+            if not has_feature(business["plan"], "customer_review_tools"):
+                raise SubscriptionAccessError("Customer review tools require Business Plus or Business Spotlight.")
+            job = connection.execute("SELECT id,customer_name,status FROM sv_business_jobs WHERE id=? AND business_id=?", (job_id, business["id"])).fetchone()
+            if not job or job["status"] != "completed":
+                _json(handler, {"error": "A review link can only be created for a completed job belonging to your business."}, 400)
+                return True
+            token = app.secrets.token_urlsafe(32)
+            digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+            connection.execute("INSERT INTO sv_business_review_requests(business_id,job_id,token_hash,status,created_at) VALUES(?,?,?,'requested',?) ON CONFLICT(business_id,job_id) DO UPDATE SET token_hash=excluded.token_hash,status='requested',created_at=excluded.created_at", (business["id"], job_id, digest, app.now()))
+        _json(handler, {"ok": True, "review_url": "/review/" + token}, 201)
+        return True
     parts = path.strip("/").split("/")
     if len(parts) < 3 or parts[:2] != ["api", "business-tools"]:
         return False
