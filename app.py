@@ -1231,6 +1231,11 @@ body.subscription-test-screen-mode #ownerEditionBar{display:none!important}
 .sv-subtest-test-portfolio-item small{display:block;margin-top:4px;color:#6a7e96;font-size:10px}
 .sv-subtest-file-label{display:block;margin:14px 0 7px;color:#2d4766;font-size:12px;font-weight:850}
 #svTestPortfolioFiles{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px dashed #b6cae3;border-radius:11px;background:#f7faff;color:#284b74;font-size:12px}
+
+/* Style the native picker control to match Skillvaya while retaining the actual system file chooser. */
+#svTestPortfolioFiles::file-selector-button,#svTestPortfolioFiles::-webkit-file-upload-button{-webkit-appearance:none;appearance:none;margin:0 12px 0 0;padding:10px 15px;min-height:42px;border:1px solid #1959aa;border-radius:10px;background:linear-gradient(110deg,#1c63c7,#377fe0);color:#fff;font-family:inherit;font-size:13px;font-weight:850;line-height:1.2;cursor:pointer}
+#svTestPortfolioFiles::file-selector-button:hover,#svTestPortfolioFiles::-webkit-file-upload-button:hover{background:linear-gradient(110deg,#174f9f,#286ac4)}
+#svTestPortfolioFiles::file-selector-button:focus-visible,#svTestPortfolioFiles::-webkit-file-upload-button:focus-visible{outline:3px solid #9fc5ff;outline-offset:2px}
 @media(max-width:640px){.sv-subtest-profile-hero{padding:22px 18px;border-radius:18px}.sv-subtest-test-portfolio-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 @media(max-width:640px){.sv-subtest-plan-grid,.sv-subtest-feature-grid{grid-template-columns:1fr}.sv-subtest-plan{padding:16px}.sv-subtest-hero{border-radius:18px;padding:22px 18px}.sv-subtest-plan-header{margin:14px 0}.sv-subtest-testbar select{max-width:100%;flex:1 1 160px}}
