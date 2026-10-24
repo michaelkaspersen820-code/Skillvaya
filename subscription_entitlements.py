@@ -20,6 +20,7 @@ FEATURES: dict[str, FrozenSet[str]] = {
         "quotation_followups",
         "invoice_payment_tracking",
         "customer_service_packages",
+        "customer_review_tools",
         "advanced_analytics",
     }),
     "spotlight": frozenset({
@@ -30,6 +31,7 @@ FEATURES: dict[str, FrozenSet[str]] = {
         "quotation_followups",
         "invoice_payment_tracking",
         "customer_service_packages",
+        "customer_review_tools",
         "advanced_analytics",
         "featured_placement",
         "campaign_management",
