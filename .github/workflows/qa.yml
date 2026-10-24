@@ -26,6 +26,7 @@ jobs:
           python -m py_compile app.py run_local.py desktop_launcher.py
           qa_one_go.py verify_owner_app_shell.py verify_payfast_checkout.py
           test_deployment_owner_bootstrap.py test_owner_promotions.py
+          subscription_entitlements.py test_subscription_entitlements.py
       - name: Run isolated marketplace end-to-end QA
         run: python qa_one_go.py
       - name: Verify owner app navigation and payment-readiness messaging
@@ -36,3 +37,5 @@ jobs:
         run: python test_deployment_owner_bootstrap.py
       - name: Verify owner promotions
         run: python test_owner_promotions.py
+      - name: Verify subscription entitlement rules
+        run: python test_subscription_entitlements.py
