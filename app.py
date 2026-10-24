@@ -664,7 +664,7 @@ async function load(tab){let p=document.getElementById('panel');try{if(tab==='su
  if(tab==='owner-statistics'){
  const a=await api('/api/admin/analytics'),s=a.stats||{};
  const c=await api('/api/admin/clients'),users=c.items||[];
- const p=await api('/api/admin/payments'),payments=p.items||[];
+ const payResp=await api('/api/admin/payments'),payments=payResp.items||[];
  const paidUsers=new Set(payments.filter(x=>x.status==='verified').map(x=>String(x.user_id)));
  const metrics={'Total accounts':s.accounts||0,'Customers':users.filter(x=>x.role==='customer').length,'Providers':s.providers||0,'Paid accounts':paidUsers.size,'Verified payments':s.verified_payments||0,'Verified revenue':'R'+Number(s.revenue||0).toLocaleString('en-ZA')};
  document.getElementById('stats').innerHTML=Object.entries(metrics).map(([k,v])=>'<div class="card"><div class="muted">'+esc(k)+'</div><div class="stat">'+esc(v)+'</div></div>').join('');
