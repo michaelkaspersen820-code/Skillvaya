@@ -1,6 +1,15 @@
 package za.co.skillvaya.app;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.Context;
+import android.content.ActivityNotFoundException;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
+import android.speech.RecognitionListener;
+import android.os.SystemClock;
+import android.webkit.JavascriptInterface;
+import java.util.ArrayList;
+import java.util.Locale;
 import android.content.pm.PackageManager;
 import android.Manifest;
 import android.content.ActivityNotFoundException;
@@ -37,6 +46,84 @@ import com.chaquo.python.Python;
 import com.chaquo.python.android.AndroidPlatform;
 
 public class MainActivity extends Activity {
+    private SpeechRecognizer nativeSpeechRecognizer;
+    private boolean nativeVoiceActive = false;
+    private long lastVoiceStartAt = 0L;
+    private static final int NATIVE_VOICE_PERMISSION_REQUEST = 7343;
+    private NativeVoiceBridge nativeVoiceBridge;
+    public final class NativeVoiceBridge {
+        @JavascriptInterface public void start() { runOnUiThread(() -> startNativeVoice()); }
+        @JavascriptInterface public void stop() { runOnUiThread(() -> stopNativeVoice(true)); }
+    }
+    private void voiceJs(String script) {
+        if (webView != null) runOnUiThread(() -> webView.evaluateJavascript(script, null));
+    }
+    private void stopNativeVoice(boolean notifyPage) {
+        nativeVoiceActive = false;
+        if (nativeSpeechRecognizer != null) {
+            try { nativeSpeechRecognizer.cancel(); } catch (Exception ignored) {}
+            try { nativeSpeechRecognizer.destroy(); } catch (Exception ignored) {}
+            nativeSpeechRecognizer = null;
+        }
+        if (notifyPage) voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(true)");
+    }
+    private void startNativeVoice() {
+        if (nativeVoiceActive) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, NATIVE_VOICE_PERMISSION_REQUEST);
+            return;
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            voiceJs("window.svNativeVoiceError && window.svNativeVoiceError('Speech recognition is not available on this device.')");
+            return;
+        }
+        try {
+            nativeVoiceActive = true;
+            nativeSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            nativeSpeechRecognizer.setRecognitionListener(new RecognitionListener() {
+                @Override public void onReadyForSpeech(Bundle params) { voiceJs("window.svNativeVoiceReady && window.svNativeVoiceReady()"); }
+                @Override public void onBeginningOfSpeech() {}
+                @Override public void onRmsChanged(float rmsdB) {}
+                @Override public void onBufferReceived(byte[] buffer) {}
+                @Override public void onEndOfSpeech() {}
+                @Override public void onError(int error) {
+                    if (!nativeVoiceActive) return;
+                    // Do not restart in a tight loop: that causes repeated system chimes and duplicate text.
+                    nativeVoiceActive = false;
+                    if (nativeSpeechRecognizer != null) { try { nativeSpeechRecognizer.destroy(); } catch (Exception ignored) {} nativeSpeechRecognizer = null; }
+                    voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(false)");
+                    voiceJs("window.svNativeVoiceError && window.svNativeVoiceError(" + org.json.JSONObject.quote("Android speech recognition ended (error " + error + "). Tap the microphone to try again.") + ")");
+                }
+                @Override public void onResults(Bundle results) {
+                    if (!nativeVoiceActive) return;
+                    ArrayList<String> matches = results == null ? null : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                    if (matches != null && !matches.isEmpty()) voiceJs("window.svNativeVoiceResult && window.svNativeVoiceResult(" + org.json.JSONObject.quote(matches.get(0)) + ",true)");
+                    // Android has ended this recognition session. Never restart automatically.
+                    nativeVoiceActive = false;
+                    if (nativeSpeechRecognizer != null) { try { nativeSpeechRecognizer.destroy(); } catch (Exception ignored) {} nativeSpeechRecognizer = null; }
+                    voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(false)");
+                }
+                @Override public void onPartialResults(Bundle partialResults) {
+                    if (!nativeVoiceActive || partialResults == null) return;
+                    ArrayList<String> matches = partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                    if (matches != null && !matches.isEmpty()) voiceJs("window.svNativeVoiceResult && window.svNativeVoiceResult(" + org.json.JSONObject.quote(matches.get(0)) + ",false)");
+                }
+                @Override public void onEvent(int eventType, Bundle params) {}
+            });
+            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag());
+            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+            intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L);
+            nativeSpeechRecognizer.startListening(intent);
+        } catch (Exception e) {
+            nativeVoiceActive = false;
+            if (nativeSpeechRecognizer != null) { try { nativeSpeechRecognizer.destroy(); } catch (Exception ignored) {} nativeSpeechRecognizer = null; }
+            voiceJs("window.svNativeVoiceError && window.svNativeVoiceError('Could not start Android voice recognition.')");
+        }
+    }
     private WebView webView;
     private TextView status;
     private TextView loadingDots;
@@ -126,6 +213,8 @@ public class MainActivity extends Activity {
         loadingHandler.post(loadingAnimation);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true); settings.setUserAgentString(settings.getUserAgentString() + " SkillvayaNative");
+        nativeVoiceBridge = new NativeVoiceBridge();
+        webView.addJavascriptInterface(nativeVoiceBridge, "SkillvayaVoice");
         settings.setDatabaseEnabled(true); settings.setSupportZoom(false);
         // Always fetch the current hosted app instead of retaining stale WebView assets.
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
@@ -322,6 +411,12 @@ public class MainActivity extends Activity {
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == NATIVE_VOICE_PERMISSION_REQUEST) {
+            boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (granted) startNativeVoice();
+            else voiceJs("window.svNativeVoiceError && window.svNativeVoiceError('Microphone permission is required for voice typing.')");
+            return;
+        }
         if (requestCode != WEB_RTC_PERMISSION_REQUEST) return;
         PermissionRequest pending = pendingWebPermission;
         pendingWebPermission = null;
