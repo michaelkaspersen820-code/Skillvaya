@@ -1131,6 +1131,27 @@ body.provider-workstation-mode .bottom-tabbar{display:grid!important;visibility:
 .sv-call-accept{background:#10233f;color:white}.sv-call-decline{background:#eef4fb;color:#10233f}
 @media(max-width:560px){.sv-call-videos{grid-template-columns:1fr}.sv-call-remote-wrap{min-height:220px}.sv-call-local-wrap{min-height:100px;max-width:150px;margin-left:auto}.sv-call-videos video{max-height:45vh}.sv-call-local-wrap video{max-height:20vh}.sv-chat-media-toolbar button{flex:1 1 auto}}
 
+/* Surgical mobile chat-header fix: keep Back + Video call on one continuous navy row. */
+body.messages-conversation-open #messagesScreen .message-conversation-topbar,
+body.messages-screen-mode.messages-conversation-open #messagesScreen .message-conversation-topbar{
+ display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;
+ position:relative!important;z-index:2!important;width:100%!important;min-width:0!important;box-sizing:border-box!important;
+ margin:0!important;padding:8px 12px!important;min-height:64px!important;height:auto!important;border:0!important;border-bottom:1px solid #244c80!important;border-radius:0!important;
+ background:linear-gradient(110deg,#102f60 0%,#174f86 100%)!important;color:#fff!important;box-shadow:none!important;
+}
+body.messages-conversation-open #messagesScreen .message-conversation-topbar .message-back-button,
+body.messages-screen-mode.messages-conversation-open #messagesScreen .message-conversation-topbar .message-back-button{
+ display:flex!important;flex:1 1 auto!important;align-items:center!important;justify-content:flex-start!important;width:auto!important;min-width:0!important;max-width:100%!important;
+ height:46px!important;min-height:46px!important;margin:0!important;padding:8px 10px!important;border:0!important;border-radius:8px!important;
+ background:transparent!important;color:#fff!important;font-size:13px!important;font-weight:750!important;line-height:1.2!important;text-align:left!important;
+ white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;box-shadow:none!important;
+}
+body.messages-conversation-open #messagesScreen .message-conversation-topbar .sv-chat-call-button,
+body.messages-screen-mode.messages-conversation-open #messagesScreen .message-conversation-topbar .sv-chat-call-button{
+ flex:0 0 auto!important;width:auto!important;min-width:0!important;min-height:44px!important;height:44px!important;margin:0!important;padding:8px 12px!important;
+ border:1px solid #78a7f0!important;border-radius:10px!important;background:#10233f!important;color:#fff!important;font-size:13px!important;font-weight:800!important;
+ white-space:nowrap!important;box-shadow:0 4px 12px rgba(16,35,63,.13)!important;
+}
 </style></head><body>
 <div id="svSplash" class="sv-splash" role="status" aria-live="polite"><div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div><div class="sv-loading-dots" aria-hidden="true"><i></i><i></i><i></i></div></div>
 <header class="top"><div class="wrap nav"><div class="brandlock"><img class="sv-logo" src="/sv-logo.jpeg" alt="SV Skillvaya logo"><div><div class="brand">Skillvaya</div><div class="studio-header-subtitle">Digital &amp; Creative Studio</div><div class="tiny studio-header-tagline">Professional. Simple. Powerful.</div></div></div></div></header>
