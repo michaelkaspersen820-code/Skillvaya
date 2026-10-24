@@ -59,6 +59,7 @@ def main():
         data = request("/api/business-tools/data", token=token)
         assert data["business"]["plan"] == "plus"
         assert {"jobs", "calendar", "customers", "quotes", "invoices", "packages"}.issubset(set(data["available"]))
+        assert "team" not in data["available"]
         assert "campaigns" not in data["available"] and "offers" not in data["available"]
 
         job = request("/api/business-tools/jobs", "POST", {
@@ -85,11 +86,17 @@ def main():
         request("/api/business-tools/campaigns", "POST", {
             "title": "Plus must not create this",
         }, token=token, expected=403)
+        request("/api/business-tools/team", "POST", {
+            "name": "Plus should not add staff", "email": "blocked@example.invalid", "role": "Technician",
+        }, token=token, expected=403)
 
         with sqlite3.connect(sv.DB) as c:
             c.execute("UPDATE businesses SET plan='spotlight' WHERE user_id=?", (provider["user"]["id"],))
         data = request("/api/business-tools/data", token=token)
-        assert {"campaigns", "offers"}.issubset(set(data["available"]))
+        assert {"campaigns", "offers", "announcements", "team"}.issubset(set(data["available"]))
+        member = request("/api/business-tools/team", "POST", {
+            "name": "Sam Tech", "email": "sam-tech@example.invalid", "phone": "0820000000", "role": "Technician",
+        }, token=token, expected=201)
         profile = request("/business-profile/%d" % data["business"]["id"])
         assert "BUSINESS SPOTLIGHT" in profile and "Plus QA Services" in profile
         campaign = request("/api/business-tools/campaigns", "POST", {
@@ -101,13 +108,16 @@ def main():
         }, token=token)
         request("/api/business-tools/jobs", "POST", {
             "title": "Campaign lead", "customer_name": "Attributed customer",
-            "lead_source": "Spring plumbing offer", "amount": "300",
+            "lead_source": "Spring plumbing offer", "amount": "300", "assigned_to": "Sam Tech",
         }, token=token, expected=201)
         completed_job = request("/api/business-tools/jobs", "POST", {
             "title": "Completed bathroom repair", "customer_name": "Review Customer", "amount": "900",
         }, token=token, expected=201)
         request("/api/business-tools/jobs/%d" % completed_job["id"], "POST", {
             "status": "completed",
+        }, token=token)
+        request("/api/business-tools/jobs/%d/assignment" % completed_job["id"], "POST", {
+            "assigned_to": "Sam Tech",
         }, token=token)
         review_link = request("/api/business-tools/review-links", "POST", {
             "job_id": completed_job["id"],
@@ -143,6 +153,8 @@ def main():
         }, token=customer["token"], expected=201)
         data = request("/api/business-tools/data", token=token)
         assert len(data["jobs"]) == 3
+        assert any(x["assigned_to"] == "Sam Tech" for x in data["jobs"])
+        assert len(data["team"]) == 1 and data["team"][0]["name"] == "Sam Tech"
         assert any(x["status"] == "booked" for x in data["jobs"])
         assert any(x["scheduled_for"] == "2026-11-01" for x in data["calendar"])
         assert len(data["customers"]) == 1 and len(data["quotes"]) == 1
