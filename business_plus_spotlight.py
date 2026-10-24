@@ -407,6 +407,9 @@ def handle_post(handler, path, payload, app):
                 _json(handler, {"error": "Estimated amount must be zero or greater."}, 400); return True
             assigned = str(payload.get("assigned_to", "")).strip()[:160]
             if assigned:
+                from subscription_entitlements import has_feature
+                if not has_feature(business["plan"], "team_management"):
+                    raise SubscriptionAccessError("Job assignment requires Business Spotlight.")
                 member = connection.execute("SELECT name FROM sv_business_team_members WHERE business_id=? AND lower(name)=lower(?) AND status='active'", (business["id"], assigned)).fetchone()
                 if not member: _json(handler, {"error": "Choose an active team member from your roster."}, 400); return True
                 assigned = member["name"]
