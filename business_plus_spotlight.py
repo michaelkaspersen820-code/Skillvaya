@@ -153,7 +153,7 @@ def _data(connection, business_id, app):
             result["campaign_analytics"].append({"campaign": campaign["title"], "leads": row["leads"], "estimated_value_cents": row["value_cents"]})
     return result
 
-def _profile_page(business):
+def _profile_page(business, offers_html="", announcements_html=""):
     name = escape(str(business["name"] or ""))
     category = escape(str(business["category"] or ""))
     area = escape(str(business["area"] or ""))
@@ -164,7 +164,7 @@ def _profile_page(business):
     link = ('<a class="button" href="' + safe_website + '" target="_blank" rel="noopener noreferrer">Visit website</a>') if safe_website else ""
     phone_link = ('<a class="button" href="tel:' + phone + '">Call business</a>') if phone else ""
     return ('''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#10233f"><title>''' + name + ''' · Skillvaya Spotlight</title><style>
-    body{margin:0;background:#f4f7fb;color:#19283b;font:16px/1.6 "Segoe UI",Arial,sans-serif}.top{background:#10233f;color:white;padding:18px 22px}.brand{font-size:23px;font-weight:850}.brand span{color:#75b7ff}.wrap{max-width:900px;margin:32px auto;padding:0 16px}.hero{background:linear-gradient(125deg,#10233f,#1c4b83);color:white;border-radius:20px;padding:clamp(22px,5vw,48px);box-shadow:0 14px 36px #10233f20}.badge{display:inline-block;background:#d9ebff;color:#174c91;border-radius:99px;padding:5px 11px;font-size:12px;font-weight:800}.hero h1{font-size:clamp(30px,5vw,46px);line-height:1.1;margin:15px 0 6px}.hero p{color:#e1edfb}.card{background:white;border:1px solid #e1e8f1;border-radius:16px;padding:22px;margin-top:16px}.button{display:inline-block;text-decoration:none;background:#2365d8;color:white;padding:10px 15px;border-radius:9px;font-weight:700;margin:5px 7px 0 0}.secondary{background:#eaf0f8;color:#10233f}</style></head><body><header class="top"><div class="brand">skill<span>vaya</span> · Spotlight</div></header><main class="wrap"><section class="hero"><span class="badge">BUSINESS SPOTLIGHT</span><h1>''' + name + '''</h1><p>''' + category + ''' · ''' + area + '''</p><p>''' + description + '''</p><div>''' + phone_link + link + '''</div></section><section class="card"><h2>Contact this provider</h2><p>Skillvaya helps customers discover providers. Confirm the scope, price, timing and terms directly with the business before work begins.</p><a class="button secondary" href="/customer">Back to Skillvaya marketplace</a></section></main></body></html>''')
+    body{margin:0;background:#f4f7fb;color:#19283b;font:16px/1.6 "Segoe UI",Arial,sans-serif}.top{background:#10233f;color:white;padding:18px 22px}.brand{font-size:23px;font-weight:850}.brand span{color:#75b7ff}.wrap{max-width:900px;margin:32px auto;padding:0 16px}.hero{background:linear-gradient(125deg,#10233f,#1c4b83);color:white;border-radius:20px;padding:clamp(22px,5vw,48px);box-shadow:0 14px 36px #10233f20}.badge{display:inline-block;background:#d9ebff;color:#174c91;border-radius:99px;padding:5px 11px;font-size:12px;font-weight:800}.hero h1{font-size:clamp(30px,5vw,46px);line-height:1.1;margin:15px 0 6px}.hero p{color:#e1edfb}.card{background:white;border:1px solid #e1e8f1;border-radius:16px;padding:22px;margin-top:16px}.button{display:inline-block;text-decoration:none;background:#2365d8;color:white;padding:10px 15px;border-radius:9px;font-weight:700;margin:5px 7px 0 0}.secondary{background:#eaf0f8;color:#10233f}</style></head><body><header class="top"><div class="brand">skill<span>vaya</span> · Spotlight</div></header><main class="wrap"><section class="hero"><span class="badge">BUSINESS SPOTLIGHT</span><h1>''' + name + '''</h1><p>''' + category + ''' · ''' + area + '''</p><p>''' + description + '''</p><div>''' + phone_link + link + '''</div></section>''' + offers_html + announcements_html + '''<section class="card"><h2>Contact this provider</h2><p>Skillvaya helps customers discover providers. Confirm the scope, price, timing and terms directly with the business before work begins.</p><a class="button secondary" href="/customer">Back to Skillvaya marketplace</a></section></main></body></html>''')
 
 TEST_LAB_PAGE = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Skillvaya Subscription Test Lab</title><style>
 body{margin:0;background:#f4f7fb;color:#19283b;font:15px/1.5 "Segoe UI",Arial,sans-serif}header{background:#10233f;color:white;padding:20px}.wrap{max-width:900px;margin:auto;padding:20px}.card{background:white;border:1px solid #e1e8f1;border-radius:14px;padding:18px;margin:14px 0}select{font:inherit;padding:10px;border:1px solid #cbd6e4;border-radius:8px;min-width:220px}.notice{background:#fff4d8;color:#77500a;border-radius:9px;padding:12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.pill{display:inline-block;padding:5px 9px;border-radius:20px;background:#eaf2ff;color:#174c91;margin:4px;font-size:13px}button{border:0;border-radius:9px;padding:10px 14px;background:#2365d8;color:white;font:inherit;font-weight:650;cursor:pointer}
@@ -198,10 +198,15 @@ def handle_get(handler, path, app):
             return True
         with app.conn() as connection:
             row = connection.execute("SELECT * FROM businesses WHERE id=? AND status='active' AND payment_status='verified' AND plan='spotlight'", (business_id,)).fetchone()
+            today = app.datetime.datetime.now(app.datetime.timezone.utc).date().isoformat()
+            offers = [dict(x) for x in connection.execute("SELECT title,code,discount_text FROM sv_business_offers WHERE business_id=? AND status='active' AND (starts_on='' OR starts_on<=?) AND (ends_on='' OR ends_on>=?) ORDER BY id DESC", (business_id,today,today)).fetchall()]
+            announcements = [dict(x) for x in connection.execute("SELECT title,message FROM sv_business_announcements WHERE business_id=? AND status='active' AND (starts_on='' OR starts_on<=?) AND (ends_on='' OR ends_on>=?) ORDER BY id DESC", (business_id,today,today)).fetchall()]
         if not row or (row["subscription_expires_at"] and row["subscription_expires_at"] <= app.now()):
             handler.send_error(404)
             return True
-        body = _profile_page(dict(row)).encode("utf-8")
+        offers_html = ''.join('<article class="card"><span class="badge">SPECIAL OFFER</span><h2>' + escape(str(x["title"])) + '</h2><p><strong>Code: ' + escape(str(x["code"])) + '</strong> · ' + escape(str(x["discount_text"])) + '</p></article>' for x in offers)
+        announcements_html = ''.join('<article class="card"><span class="badge">ANNOUNCEMENT</span><h2>' + escape(str(x["title"])) + '</h2><p>' + escape(str(x["message"])) + '</p></article>' for x in announcements)
+        body = _profile_page(dict(row), offers_html, announcements_html).encode("utf-8")
         handler.send_response(200)
         handler.send_header("Content-Type", "text/html; charset=utf-8")
         handler.send_header("Content-Length", str(len(body)))
@@ -306,12 +311,16 @@ def handle_post(handler, path, payload, app):
             title=str(payload.get("title","")).strip()[:160]
             if not title: _json(handler,{"error":"Campaign name is required."},400); return True
             cur=connection.execute("INSERT INTO "+table+"(business_id,title,channel,description,start_date,end_date,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",(business["id"],title,str(payload.get("channel","Skillvaya"))[:80],str(payload.get("description","")).strip()[:2000],str(payload.get("start_date",""))[:20],str(payload.get("end_date",""))[:20],"draft",stamp,stamp))
-        else:
+        elif entity == "offers":
             title=str(payload.get("title","")).strip()[:160]; code=str(payload.get("code","")).strip().upper()[:40]; discount=str(payload.get("discount_text","")).strip()[:200]
             if not title or not code or not discount: _json(handler,{"error":"Offer title, voucher code and discount terms are required."},400); return True
             limit=max(0,min(1000000,int(payload.get("redemption_limit") or 0)))
             try: cur=connection.execute("INSERT INTO "+table+"(business_id,title,code,discount_text,starts_on,ends_on,redemption_limit,redemptions,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(business["id"],title,code,discount,str(payload.get("starts_on",""))[:20],str(payload.get("ends_on",""))[:20],limit,0,"active",stamp))
             except app.sqlite3.IntegrityError: _json(handler,{"error":"That voucher code already exists for this business."},409); return True
+        else:
+            title=str(payload.get("title","")).strip()[:160]; message=str(payload.get("message","")).strip()[:3000]
+            if not title or not message: _json(handler,{"error":"Announcement title and message are required."},400); return True
+            cur=connection.execute("INSERT INTO "+table+"(business_id,title,message,starts_on,ends_on,status,created_at) VALUES(?,?,?,?,?,?,?)",(business["id"],title,message,str(payload.get("starts_on",""))[:20],str(payload.get("ends_on",""))[:20],"active",stamp))
         _json(handler, {"ok": True, "id": cur.lastrowid}, 201)
     return True
 
