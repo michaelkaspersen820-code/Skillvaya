@@ -865,7 +865,7 @@ body.messages-screen-mode #hero,body.messages-screen-mode .top,body.messages-scr
 /* Dedicated WhatsApp-style messaging workspace: it lives only inside Messages, never Account/Home. *//* Contacts viewport fit: prevent page-level scrolling; only the conversation list/chat history scrolls. *//* Skillvaya brand finish: compact contact rows, teal/navy surfaces, less empty white space. */
 body.messages-screen-mode #messagesScreen{background:#edf4f5!important;color:#102c3b!important}
 body.messages-screen-mode #messagesScreen #messagesCard.messages-app-card{background:#f4f8f8!important;border-color:#c9dedc!important;box-shadow:0 8px 26px #063b4018!important}
-body.messages-screen-mode #messagesScreen .messages-app-header{min-height:68px!important;padding:12px 15px!important;background:linear-gradient(125deg,#073b42 0%,#087f80 58%,#0a686e 100%)!important}
+body.messages-screen-mode #messagesScreen .messages-app-header{min-height:68px!important;padding:12px 15px!important;background:linear-gradient(125deg,#10233f 0%,#174f86 100%)!important}
 body.messages-screen-mode #messagesScreen .messages-app-mark{width:40px!important;height:40px!important;flex-basis:40px!important;background:#d7f5ed!important;color:#075b5d!important}
 body.messages-screen-mode #messagesScreen .messages-app-title h1{font-size:19px!important;letter-spacing:-.3px!important}
 body.messages-screen-mode #messagesScreen .messages-app-title p{font-size:11px!important;color:#d3f0ec!important}
