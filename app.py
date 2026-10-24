@@ -512,6 +512,7 @@ class Handler(BaseHTTPRequestHandler):
                     else: return self.sendj({"error":"Not found"},404)
                 return self.sendj({"items":[dict(x) for x in rows]})
             return self.sendj({"error":"Not found"},404)
+        except bps.SubscriptionAccessError as e: return self.sendj({"error":str(e)},403)
         except PermissionError as e: return self.sendj({"error":str(e)},401)
         except Exception as e: return self.sendj({"error":str(e)},400)
     def do_POST(self):
