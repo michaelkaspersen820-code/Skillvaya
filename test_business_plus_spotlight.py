@@ -34,6 +34,8 @@ def main():
         except urllib.error.HTTPError as exc:
             status, raw = exc.code, exc.read()
         assert status == expected, (method, path, status, raw[:400])
+        if path.startswith("/business-profile/"):
+            return raw.decode("utf-8", errors="replace")
         return json.loads(raw) if raw else {}
 
     try:
@@ -83,6 +85,8 @@ def main():
             c.execute("UPDATE businesses SET plan='spotlight' WHERE user_id=?", (provider["user"]["id"],))
         data = request("/api/business-tools/data", token=token)
         assert {"campaigns", "offers"}.issubset(set(data["available"]))
+        profile = request("/business-profile/%d" % data["business"]["id"])
+        assert "Business Spotlight" in profile and "Plus QA Services" in profile
         campaign = request("/api/business-tools/campaigns", "POST", {
             "title": "Spring plumbing offer", "channel": "Skillvaya",
             "description": "Test campaign", "start_date": "2026-11-01",
