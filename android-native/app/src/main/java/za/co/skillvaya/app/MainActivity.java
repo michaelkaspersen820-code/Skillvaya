@@ -1,6 +1,8 @@
 package za.co.skillvaya.app;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.Manifest;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.os.Bundle;
@@ -65,6 +67,7 @@ public class MainActivity extends Activity {
     private PermissionRequest pendingWebPermission;
     private File cameraOutputFile;
     private static final int FILE_CHOOSER_REQUEST = 7341;
+    private static final int WEB_RTC_PERMISSION_REQUEST = 7342;
     private boolean handleExternalNavigation(String rawUrl) {
         if (rawUrl == null || rawUrl.trim().isEmpty()) return true;
         Uri uri = Uri.parse(rawUrl);
@@ -153,13 +156,33 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient());
         webView.setWebChromeClient(new WebChromeClient() {
             @Override public void onPermissionRequest(PermissionRequest request) {
-                // Only grant web permissions for the hosted Skillvaya origin; native camera
-                // capture itself is handled by the Android camera app through ACTION_IMAGE_CAPTURE.
                 runOnUiThread(() -> {
-                    if (request != null && request.getOrigin() != null && BuildConfig.PUBLIC_URL != null
-                            && request.getOrigin().toString().startsWith(BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", ""))) {
+                    if (request == null || request.getOrigin() == null) {
+                        if (request != null) request.deny();
+                        return;
+                    }
+                    String origin = request.getOrigin().toString();
+                    String base = BuildConfig.PUBLIC_URL == null ? "" : BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", "");
+                    boolean trusted = (!base.isEmpty() && (origin.equals(base) || origin.startsWith(base + "/")))
+                        || origin.equals("http://127.0.0.1:8878") || origin.startsWith("http://127.0.0.1:8878/")
+                        || origin.equals("http://localhost:8878") || origin.startsWith("http://localhost:8878/");
+                    if (!trusted) { request.deny(); return; }
+                    java.util.ArrayList<String> needed = new java.util.ArrayList<>();
+                    for (String resource : request.getResources()) {
+                        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)
+                                && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+                                && !needed.contains(Manifest.permission.CAMERA)) needed.add(Manifest.permission.CAMERA);
+                        if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)
+                                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+                                && !needed.contains(Manifest.permission.RECORD_AUDIO)) needed.add(Manifest.permission.RECORD_AUDIO);
+                    }
+                    if (!needed.isEmpty()) {
+                        if (pendingWebPermission != null && pendingWebPermission != request) pendingWebPermission.deny();
+                        pendingWebPermission = request;
+                        requestPermissions(needed.toArray(new String[0]), WEB_RTC_PERMISSION_REQUEST);
+                    } else {
                         request.grant(request.getResources());
-                    } else if (request != null) request.deny();
+                    }
                 });
             }
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
@@ -295,6 +318,22 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> status.setText("Skillvaya startup timed out. Close and reopen the app."));
             }, "SkillvayaHealthCheck").start();
         } catch (Exception e) { status.setText("Skillvaya setup failed. Please reinstall the app."); }
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != WEB_RTC_PERMISSION_REQUEST) return;
+        PermissionRequest pending = pendingWebPermission;
+        pendingWebPermission = null;
+        if (pending == null) return;
+        boolean granted = grantResults.length > 0;
+        for (int result : grantResults) if (result != PackageManager.PERMISSION_GRANTED) granted = false;
+        if (granted) {
+            pending.grant(pending.getResources());
+        } else {
+            pending.deny();
+            Toast.makeText(this, "Allow camera and microphone permissions to use Skillvaya video calls.", Toast.LENGTH_LONG).show();
+        }
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
