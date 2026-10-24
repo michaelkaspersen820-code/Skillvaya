@@ -23,7 +23,7 @@ TABLES = {
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sv_business_jobs (
  id INTEGER PRIMARY KEY, business_id INTEGER NOT NULL, title TEXT NOT NULL,
- customer_name TEXT NOT NULL, customer_contact TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'new',
+ customer_name TEXT NOT NULL, customer_contact TEXT DEFAULT '', lead_source TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'new',
  scheduled_for TEXT DEFAULT '', amount_cents INTEGER NOT NULL DEFAULT 0, notes TEXT DEFAULT '',
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
@@ -67,7 +67,7 @@ PAGE = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 </style></head><body><header><div class="brand">skill<span>vaya</span> · Business Workspace</div><div style="opacity:.8;font-size:13px">Business Plus operations · Spotlight growth tools</div></header><main class="wrap"><section class="hero"><h1 style="margin:0">Your business, organised.</h1><p>Manage jobs, customers, quotations, invoices and service packages. Spotlight subscribers also get campaign and offer management.</p></section><div id="notice" class="notice">Checking your provider subscription…</div><section id="workspace" class="hidden"><div class="grid" id="stats"></div><div class="tabs" id="tabs"></div><section class="card"><div id="panel"></div></section></section><p><button class="secondary" onclick="location.href='/customer'">← Back to Skillvaya</button></p></main><script>
 const tabs=[['jobs','Jobs & leads','Business Plus'],['customers','Customer CRM','Business Plus'],['quotes','Quotations','Business Plus'],['invoices','Invoices','Business Plus'],['packages','Service packages','Business Plus'],['campaigns','Campaigns','Spotlight'],['offers','Offers & vouchers','Spotlight']];
 const fields={
-jobs:[['title','Job / enquiry title','text',true],['customer_name','Customer name','text',true],['customer_contact','Phone or email','text',false],['scheduled_for','Scheduled date','date',false],['amount','Estimated amount (R)','number',false],['notes','Notes','textarea',false]],
+jobs:[['title','Job / enquiry title','text',true],['customer_name','Customer name','text',true],['customer_contact','Phone or email','text',false],['lead_source','Lead source / campaign name','text',false],['scheduled_for','Scheduled date','date',false],['amount','Estimated amount (R)','number',false],['notes','Notes','textarea',false]],
 customers:[['name','Customer name','text',true],['phone','Phone','text',false],['email','Email','email',false],['notes','Customer notes','textarea',false]],
 quotes:[['customer_name','Customer name','text',true],['description','Work description','textarea',true],['amount','Quote amount (R)','number',true],['follow_up_date','Follow-up date','date',false]],
 invoices:[['customer_name','Customer name','text',true],['reference','Invoice reference','text',true],['amount','Invoice amount (R)','number',true],['due_date','Due date','date',false]],
@@ -82,12 +82,12 @@ function message(text,kind='notice'){let e=document.getElementById('notice');e.c
 function money(cents){return 'R'+(Number(cents||0)/100).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2})}
 async function init(){if(!token){message('Please sign in to your provider account in Skillvaya first, then reopen Business Workspace.');return}try{data=await api('/api/business-tools/data');me=data.business;document.getElementById('workspace').classList.remove('hidden');message(me.name+' · '+me.plan_name+' · subscription verified','good');renderTabs();renderStats();renderPanel()}catch(e){message(e.message+' Use an active, PayFast-verified Business Plus or Business Spotlight subscription to open these tools.','error')}}
 function renderTabs(){document.getElementById('tabs').innerHTML=tabs.filter(t=>data.available.includes(t[0])).map(t=>'<button class="'+(active===t[0]?'active':'')+'" onclick="active='+JSON.stringify(t[0])+';renderTabs();renderPanel()">'+t[1]+'</button>').join('')}
-function renderStats(){let items=[['Open jobs',(data.jobs||[]).filter(x=>!['completed','lost'].includes(x.status)).length],['Customers',(data.customers||[]).length],['Quotes awaiting decision',(data.quotes||[]).filter(x=>['draft','sent'].includes(x.status)).length],['Unpaid invoices',(data.invoices||[]).filter(x=>!['paid','cancelled'].includes(x.status)).length]];document.getElementById('stats').innerHTML=items.map(x=>'<div class="card"><div class="muted">'+x[0]+'</div><div class="stat">'+x[1]+'</div></div>').join('')}
+function renderStats(){let items=[['Open jobs',(data.jobs||[]).filter(x=>!['completed','lost'].includes(x.status)).length],['Customers',(data.customers||[]).length],['Quotes awaiting decision',(data.quotes||[]).filter(x=>['draft','sent'].includes(x.status)).length],['Unpaid invoices',(data.invoices||[]).filter(x=>!['paid','cancelled'].includes(x.status)).length]];if(data.available.includes('campaigns'))items.push(['Campaign-attributed leads',(data.campaign_analytics||[]).reduce((n,x)=>n+Number(x.leads||0),0)]);document.getElementById('stats').innerHTML=items.map(x=>'<div class="card"><div class="muted">'+x[0]+'</div><div class="stat">'+x[1]+'</div></div>').join('')}
 function fieldHtml(x){let control=x[2]==='textarea'?'<textarea name="'+x[0]+'" '+(x[3]?'required':'')+'></textarea>':x[2]==='select'?'<select name="'+x[0]+'">'+x[4].map(v=>'<option>'+esc(v)+'</option>').join('')+'</select>':'<input name="'+x[0]+'" type="'+x[2]+'" '+(x[3]?'required':'')+(x[2]==='number'?' min="0" step="0.01"':'')+'>';return '<div class="'+(x[2]==='textarea'?'full':'')+'"><label>'+esc(x[1])+(x[3]?' *':'')+'</label>'+control+'</div>'}
 function renderPanel(){let p=document.getElementById('panel');let title=tabs.find(t=>t[0]===active)?.[1]||'Workspace';let rows=data[active]||[];let f=fields[active]||[];p.innerHTML='<h2 style="margin-top:0">'+title+'</h2><form id="createForm"><div class="formgrid">'+f.map(fieldHtml).join('')+'</div><p><button class="primary">Save '+title.toLowerCase().replace(/s$/,'')+'</button></p></form><div id="formMsg" class="muted"></div><div class="tablewrap"><table><thead><tr>'+columns(active).map(x=>'<th>'+x[1]+'</th>').join('')+'<th>Status / action</th></tr></thead><tbody>'+(rows.length?rows.map(x=>'<tr>'+columns(active).map(c=>'<td>'+esc(c[2]?money(x[c[2]]):x[c[0]])+'</td>').join('')+'<td><span class="pill">'+esc(x.status||'active')+'</span><div class="actions" style="margin-top:6px">'+statusButtons(active,x)+'</div></td></tr>').join(''):'<tr><td colspan="8" class="empty">No records yet. Use the form above to add your first record.</td></tr>')+'</tbody></table></div>';
 document.getElementById('createForm').onsubmit=async e=>{e.preventDefault();let fd=Object.fromEntries(new FormData(e.target));try{await api('/api/business-tools/'+active,{method:'POST',body:JSON.stringify(fd)});await refresh();renderPanel();document.getElementById('formMsg').textContent='Saved.'}catch(err){document.getElementById('formMsg').textContent=err.message}}
 }
-function columns(k){return {jobs:[['title','Job'],['customer_name','Customer'],['customer_contact','Contact'],['scheduled_for','Scheduled'],['amount_cents','Estimate','amount_cents']],customers:[['name','Customer'],['phone','Phone'],['email','Email']],quotes:[['customer_name','Customer'],['description','Description'],['amount_cents','Amount','amount_cents'],['follow_up_date','Follow-up']],invoices:[['reference','Invoice'],['customer_name','Customer'],['amount_cents','Amount','amount_cents'],['due_date','Due']],packages:[['title','Package'],['description','Details'],['price_cents','Price','price_cents']],campaigns:[['title','Campaign'],['channel','Channel'],['start_date','Start'],['end_date','End']],offers:[['title','Offer'],['code','Code'],['discount_text','Terms'],['ends_on','Ends'],['redemptions','Redemptions']]}[k]||[]}
+function columns(k){return {jobs:[['title','Job'],['customer_name','Customer'],['customer_contact','Contact'],['lead_source','Lead source'],['scheduled_for','Scheduled'],['amount_cents','Estimate','amount_cents']],customers:[['name','Customer'],['phone','Phone'],['email','Email']],quotes:[['customer_name','Customer'],['description','Description'],['amount_cents','Amount','amount_cents'],['follow_up_date','Follow-up']],invoices:[['reference','Invoice'],['customer_name','Customer'],['amount_cents','Amount','amount_cents'],['due_date','Due']],packages:[['title','Package'],['description','Details'],['price_cents','Price','price_cents']],campaigns:[['title','Campaign'],['channel','Channel'],['start_date','Start'],['end_date','End'],['tracked_leads','Tracked leads'],['tracked_estimated_value_cents','Attributed estimates','tracked_estimated_value_cents']],offers:[['title','Offer'],['code','Code'],['discount_text','Terms'],['ends_on','Ends'],['redemptions','Redemptions']]}[k]||[]}
 function statusButtons(k,x){let options={jobs:['new','quoted','booked','in_progress','completed','lost'],quotes:['draft','sent','accepted','rejected'],invoices:['draft','sent','paid','overdue','cancelled'],packages:['active','paused'],campaigns:['draft','active','paused','completed'],offers:['active','paused','expired']}[k];if(!options)return '';return '<select aria-label="Update status" onchange="setStatus('+JSON.stringify(k)+','+x.id+',this.value)">'+options.map(v=>'<option '+(x.status===v?'selected':'')+'>'+v+'</option>').join('')+'</select>'}
 async function setStatus(k,id,status){try{await api('/api/business-tools/'+k+'/'+id,{method:'POST',body:JSON.stringify({status})});await refresh();renderStats();renderPanel()}catch(e){message(e.message,'error')}}
 async function refresh(){data=await api('/api/business-tools/data');renderStats();renderTabs()}
@@ -96,6 +96,9 @@ init();
 
 def init_schema(connection):
     connection.executescript(SCHEMA)
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(sv_business_jobs)")}
+    if "lead_source" not in columns:
+        connection.execute("ALTER TABLE sv_business_jobs ADD COLUMN lead_source TEXT DEFAULT ''")
 
 def _json(handler, payload, status=200):
     handler.sendj(payload, status)
@@ -127,7 +130,7 @@ def _access(handler, connection, app, entity):
 
 def _data(connection, business_id, app):
     names = list(TABLES)
-    result = {"business": None, "available": [], "jobs": [], "customers": [], "quotes": [], "invoices": [], "packages": [], "campaigns": [], "offers": []}
+    result = {"business": None, "available": [], "jobs": [], "customers": [], "quotes": [], "invoices": [], "packages": [], "campaigns": [], "offers": [], "campaign_analytics": []}
     for entity in names:
         table, feature = TABLES[entity]
         from subscription_entitlements import has_feature
@@ -135,6 +138,12 @@ def _data(connection, business_id, app):
             result["available"].append(entity)
             rows = connection.execute("SELECT * FROM "+table+" WHERE business_id=? ORDER BY id DESC LIMIT 200", (business_id,)).fetchall()
             result[entity] = [dict(r) for r in rows]
+    if "campaigns" in result["available"]:
+        for campaign in result["campaigns"]:
+            row = connection.execute("SELECT count(*) leads, coalesce(sum(amount_cents),0) value_cents FROM sv_business_jobs WHERE business_id=? AND lower(trim(lead_source))=lower(trim(?))", (business_id, campaign["title"])).fetchone()
+            campaign["tracked_leads"] = row["leads"]
+            campaign["tracked_estimated_value_cents"] = row["value_cents"]
+            result["campaign_analytics"].append({"campaign": campaign["title"], "leads": row["leads"], "estimated_value_cents": row["value_cents"]})
     return result
 
 def handle_get(handler, path, app):
@@ -208,7 +217,7 @@ def handle_post(handler, path, payload, app):
             amount = _cents(payload.get("amount", 0))
             if amount < 0:
                 _json(handler, {"error": "Estimated amount must be zero or greater."}, 400); return True
-            cur = connection.execute("INSERT INTO "+table+"(business_id,title,customer_name,customer_contact,status,scheduled_for,amount_cents,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(business["id"],title,customer,str(payload.get("customer_contact","")).strip()[:160],"new",str(payload.get("scheduled_for",""))[:20],amount,str(payload.get("notes","")).strip()[:2000],stamp,stamp))
+            cur = connection.execute("INSERT INTO "+table+"(business_id,title,customer_name,customer_contact,lead_source,status,scheduled_for,amount_cents,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",(business["id"],title,customer,str(payload.get("customer_contact","")).strip()[:160],str(payload.get("lead_source","")).strip()[:160],"new",str(payload.get("scheduled_for",""))[:20],amount,str(payload.get("notes","")).strip()[:2000],stamp,stamp))
         elif entity == "customers":
             name = str(payload.get("name","")).strip()[:160]
             if not name: _json(handler, {"error":"Customer name is required."},400); return True
