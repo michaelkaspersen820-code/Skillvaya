@@ -86,7 +86,7 @@ def main():
         data = request("/api/business-tools/data", token=token)
         assert {"campaigns", "offers"}.issubset(set(data["available"]))
         profile = request("/business-profile/%d" % data["business"]["id"])
-        assert "Business Spotlight" in profile and "Plus QA Services" in profile
+        assert "BUSINESS SPOTLIGHT" in profile and "Plus QA Services" in profile
         campaign = request("/api/business-tools/campaigns", "POST", {
             "title": "Spring plumbing offer", "channel": "Skillvaya",
             "description": "Test campaign", "start_date": "2026-11-01",
