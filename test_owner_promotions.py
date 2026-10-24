@@ -43,13 +43,14 @@ def main():
         }, 201)
         assert created["owner_free"] is True
         rows = request("/api/admin/owner-promotions")["items"]
-        assert len(rows) == 1 and rows[0]["owner_free"] == 1
+        owned = [x for x in rows if int(x["id"]) == int(created["id"])]
+        assert len(owned) == 1 and owned[0]["owner_free"] == 1
         public = request("/api/owner-promotions")["items"]
-        assert len(public) == 1 and public[0]["title"] == "Test App"
+        assert any(int(x["id"]) == int(created["id"]) and x["title"] == "Test App" for x in public)
         request("/api/admin/owner-promotions/" + str(created["id"]), "POST", {"status": "paused"})
-        assert request("/api/owner-promotions")["items"] == []
+        assert all(int(x["id"]) != int(created["id"]) for x in request("/api/owner-promotions")["items"])
         request("/api/admin/owner-promotions/" + str(created["id"]), "POST", {"status": "active"})
-        assert len(request("/api/owner-promotions")["items"]) == 1
+        assert any(int(x["id"]) == int(created["id"]) for x in request("/api/owner-promotions")["items"])
 
         # Business-type promotions must stay synchronized with the public service directory.
         business = request("/api/admin/owner-promotions", "POST", {

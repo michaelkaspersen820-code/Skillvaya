@@ -127,6 +127,24 @@ def category_search_terms(stored):
     aliases = [name for name, targets in CATEGORY_ALIASES.items() if stored in targets]
     return " ".join([stored, *aliases])
 PLANS = {"local":{"name":"Local","monthly":105},"priority":{"name":"Priority","monthly":210},"plus":{"name":"Business Plus","monthly":500},"spotlight":{"name":"Business Spotlight","monthly":1000}}
+PROVIDER_TIER_RANKS = {"local":0,"priority":1,"plus":2,"spotlight":3}
+def subscription_test_tier(user, query=None, data=None):
+    """Resolve an explicit owner-only tier preview; public provider roles cannot override entitlements."""
+    if not user or user.get("role") != "admin":
+        return None
+    q=query or {}
+    candidate=None
+    if "test_tier" in q:
+        value=q.get("test_tier")
+        candidate=value[0] if isinstance(value,(list,tuple)) and value else value
+    if not candidate:
+        candidate=(data or {}).get("test_tier")
+    candidate=str(candidate or "").strip().lower()
+    return candidate if candidate in PROVIDER_TIER_RANKS else None
+def subscription_test_business_id(owner_user_id, tier):
+    return -(abs(int(owner_user_id))*1000 + PROVIDER_TIER_RANKS[str(tier).lower()] + 1)
+def subscription_test_user_id(owner_user_id, tier):
+    return -(abs(int(owner_user_id))*1000 + 101 + PROVIDER_TIER_RANKS[str(tier).lower()])
 @contextmanager
 def conn():
     c = connect_db()
@@ -178,6 +196,89 @@ def init():
             title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
             starts_on TEXT NOT NULL DEFAULT '', ends_on TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'draft', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS provider_bookings(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, user_id BIGINT NOT NULL,
+            customer_id BIGINT, customer_name TEXT NOT NULL DEFAULT '', customer_contact TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '', starts_at TEXT NOT NULL, ends_at TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'scheduled', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS provider_invoices(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, user_id BIGINT NOT NULL,
+            job_id BIGINT, customer_id BIGINT, invoice_number TEXT NOT NULL UNIQUE,
+            customer_name TEXT NOT NULL, customer_email TEXT NOT NULL DEFAULT '', description TEXT NOT NULL,
+            amount_cents BIGINT NOT NULL, amount_paid_cents BIGINT NOT NULL DEFAULT 0,
+            due_date TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL, paid_at TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS provider_customer_notes(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, user_id BIGINT NOT NULL, customer_id BIGINT NOT NULL,
+            notes TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+            UNIQUE(business_id,customer_id)
+        );
+        CREATE TABLE IF NOT EXISTS provider_followups(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, user_id BIGINT NOT NULL,
+            job_id BIGINT NOT NULL, customer_id BIGINT NOT NULL, remind_at TEXT NOT NULL,
+            note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS provider_review_replies(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, user_id BIGINT NOT NULL,
+            rating_id BIGINT NOT NULL UNIQUE, reply TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS provider_service_packages(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, user_id BIGINT NOT NULL,
+            name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', price_cents BIGINT NOT NULL,
+            add_ons TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS provider_team_members(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, owner_user_id BIGINT NOT NULL,
+            user_id BIGINT, name TEXT NOT NULL, email TEXT NOT NULL, team_role TEXT NOT NULL DEFAULT 'staff',
+            permissions TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'invited',
+            invite_code TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+            UNIQUE(business_id,email)
+        );
+        CREATE TABLE IF NOT EXISTS provider_job_assignments(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, owner_user_id BIGINT NOT NULL,
+            job_id BIGINT NOT NULL, team_member_id BIGINT NOT NULL, note TEXT NOT NULL DEFAULT '',
+            due_date TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'assigned',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(job_id,team_member_id)
+        );
+        CREATE TABLE IF NOT EXISTS provider_offers(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, user_id BIGINT NOT NULL,
+            title TEXT NOT NULL, code TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+            discount_type TEXT NOT NULL DEFAULT 'percent', discount_value NUMERIC NOT NULL DEFAULT 0,
+            starts_on TEXT NOT NULL DEFAULT '', ends_on TEXT NOT NULL DEFAULT '',
+            usage_limit INTEGER NOT NULL DEFAULT 0, usage_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'draft', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+            UNIQUE(business_id,code)
+        );
+        CREATE TABLE IF NOT EXISTS provider_marketing_events(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, user_id BIGINT NOT NULL,
+            campaign_id BIGINT, event_type TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'directory',
+            customer_id BIGINT, visitor_key TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS provider_announcements(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, user_id BIGINT NOT NULL,
+            title TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
+            recipient_count INTEGER NOT NULL DEFAULT 0, published_at TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS customer_marketing_preferences(
+            user_id BIGINT PRIMARY KEY, opted_in INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS provider_automation_rules(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, user_id BIGINT NOT NULL,
+            rule_key TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, config_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL, UNIQUE(business_id,rule_key)
+        );
+        CREATE TABLE IF NOT EXISTS provider_notifications(
+            id BIGSERIAL PRIMARY KEY, business_id BIGINT NOT NULL, user_id BIGINT NOT NULL,
+            kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
+            reference_key TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new',
+            created_at TEXT NOT NULL, read_at TEXT NOT NULL DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS contacts(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, customer_id INTEGER NOT NULL, created_at TEXT NOT NULL, UNIQUE(business_id,customer_id));
         CREATE TABLE IF NOT EXISTS ratings(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, rater_id INTEGER NOT NULL, target_type TEXT NOT NULL, target_user_id INTEGER NOT NULL, stars INTEGER NOT NULL CHECK(stars BETWEEN 1 AND 5), created_at TEXT NOT NULL, UNIQUE(business_id,rater_id,target_type,target_user_id));
@@ -566,6 +667,41 @@ def expire_subscriptions():
     for n in pending:
         if send_owner_email(n["subject"],n["body"],n["recipient"] or None):
             with conn() as c: c.execute("UPDATE notifications SET status='emailed',emailed_at=? WHERE id=?",(now(),n["id"]))
+def evaluate_provider_automation_due():
+    """Run enabled provider reminders for verified Plus/Spotlight businesses. Returns count of new in-app alerts."""
+    stamp=now()
+    cutoff=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(hours=24)).isoformat()
+    today=datetime.date.today().isoformat()
+    tomorrow=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=24)).isoformat()
+    created=0
+    ranks=PROVIDER_TIER_RANKS
+    with conn() as c:
+        businesses=c.execute("SELECT id,user_id FROM businesses WHERE status='active' AND payment_status='verified' AND LOWER(COALESCE(plan,'local')) IN ('plus','spotlight') ORDER BY id").fetchall()
+        for biz in businesses:
+            bid=int(biz["id"]);uid=int(biz["user_id"] or 0)
+            if not uid:continue
+            rules={str(r["rule_key"]):bool(r["enabled"]) for r in c.execute("SELECT rule_key,enabled FROM provider_automation_rules WHERE business_id=?",(bid,)).fetchall()}
+            if not rules:continue
+            candidates=[]
+            if rules.get("quote_followup"):
+                rows=c.execute("""SELECT f.id,f.remind_at,f.note,j.title,cu.name customer_name FROM provider_followups f
+                    JOIN job_requests j ON j.id=f.job_id JOIN users cu ON cu.id=f.customer_id
+                    WHERE f.business_id=? AND f.status='pending' AND f.remind_at<=? LIMIT 100""",(bid,stamp)).fetchall()
+                for r in rows:candidates.append(("quote_followup","Quote follow-up due",str(r["customer_name"])+": "+str(r["title"])+". "+str(r["note"]),"followup:"+str(r["id"])))
+            if rules.get("booking_reminder"):
+                rows=c.execute("SELECT id,title,customer_name,starts_at FROM provider_bookings WHERE business_id=? AND status='scheduled' AND starts_at>=? AND starts_at<=? LIMIT 100",(bid,stamp,tomorrow)).fetchall()
+                for r in rows:candidates.append(("booking_reminder","Upcoming booking",str(r["title"])+" for "+str(r["customer_name"])+" starts "+str(r["starts_at"]),"booking:"+str(r["id"])))
+            if rules.get("invoice_overdue"):
+                rows=c.execute("SELECT id,invoice_number,customer_name,amount_cents,amount_paid_cents,due_date FROM provider_invoices WHERE business_id=? AND status NOT IN ('paid','cancelled') AND due_date<>'' AND due_date<? LIMIT 100",(bid,today)).fetchall()
+                for r in rows:
+                    if int(r["amount_paid_cents"] or 0)<int(r["amount_cents"] or 0):candidates.append(("invoice_overdue","Invoice overdue",str(r["invoice_number"])+" for "+str(r["customer_name"])+" has an outstanding balance.","invoice:"+str(r["id"])))
+            for kind,title,body_text,ref in candidates:
+                exists=c.execute("SELECT id FROM provider_notifications WHERE business_id=? AND reference_key=? AND created_at>? LIMIT 1",(bid,ref,cutoff)).fetchone()
+                if exists:continue
+                c.execute("INSERT INTO provider_notifications(business_id,user_id,kind,title,body,reference_key,status,created_at) VALUES(?,?,?,?,?,?, 'new',?)",(bid,uid,kind,title,body_text,ref,stamp))
+                created+=1
+    return created
+
 TERMS_PAGE_HTML = r"""<!doctype html><html lang="en-ZA"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><meta name="theme-color" content="#071426"><title>Skillvaya Terms & Conditions</title><style>*{box-sizing:border-box}body{margin:0;background:#f2f6fb;color:#17283d;font:16px/1.65 system-ui,Arial,sans-serif}.top{background:#071426;color:#fff;padding:28px 18px}.wrap{max-width:880px;margin:auto;padding:22px 18px}.paper{background:#fff;border:1px solid #dce5f0;border-radius:16px;padding:clamp(18px,4vw,36px)}h1{margin:0 0 8px;font-size:clamp(28px,4vw,40px)}h2{margin-top:28px;font-size:21px}a{color:#075f92}.warning{padding:14px;border-radius:10px;background:#fff5dd;color:#704b08}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}.btn{display:inline-block;border-radius:9px;padding:12px 16px;background:#087f8c;color:white;text-decoration:none;font-weight:700}.muted{color:#66758b;font-size:13px}.message-thread{padding:0!important;overflow:hidden}.conversation-list-item{width:100%;display:flex;align-items:center;gap:12px;padding:15px 16px;border:0;border-bottom:1px solid var(--line);background:var(--card,#fff);text-align:left;cursor:pointer;color:inherit}.conversation-list-item:hover{background:var(--surface,#f4f7fb)}.conversation-avatar{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(145deg,#087f80,#24b8ae);color:#fff;font-size:19px;font-weight:800}.conversation-avatar.large{width:64px;height:64px;font-size:26px;margin:0 auto}.conversation-summary{min-width:0;flex:1;display:grid;gap:5px}.conversation-summary strong{font-size:15px}.conversation-summary span{font-size:13px;color:var(--muted,#64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:58vw}.conversation-meta{display:grid;justify-items:end;gap:8px;color:var(--muted,#64748b);font-size:11px}.conversation-count{border-radius:20px;background:#e1f8f5;color:#087f80;padding:2px 7px;font-weight:800}.message-conversation-screen{display:flex;flex-direction:column;min-height:60vh;background:var(--surface,#f5f8fb);border:1px solid var(--line);border-radius:18px;overflow:hidden;padding:12px}.message-conversation-header{display:flex;gap:12px;align-items:center;padding:14px 4px;border-bottom:1px solid var(--line);background:var(--card,#fff)}.message-conversation-header h2{margin:0;font-size:19px}.message-conversation-header p{margin:4px 0 0}.message-bubbles{display:flex;flex-direction:column;gap:9px;flex:1;max-height:55vh;overflow:auto;padding:18px 4px}.message-row{display:flex;width:100%}.message-row.mine{justify-content:flex-end}.message-row.theirs{justify-content:flex-start}.message-bubble{max-width:min(82%,520px);padding:10px 13px;border-radius:16px;background:var(--card,#fff);box-shadow:0 1px 2px #10203012;overflow-wrap:anywhere;white-space:pre-wrap}.message-row.mine .message-bubble{background:#d8f8ee;border-bottom-right-radius:5px}.message-row.theirs .message-bubble{border-bottom-left-radius:5px}.message-time{font-size:10px;color:#637487;text-align:right;margin-top:5px}.message-compose{display:flex;align-items:flex-end;gap:8px;padding:10px 0 0}.message-compose textarea{flex:1;resize:vertical;min-height:46px;max-height:130px;border:1px solid var(--line);border-radius:14px;padding:12px;font:inherit}.message-compose button{min-height:44px;border-radius:13px}.messages-empty-state{text-align:center;padding:38px 20px;color:var(--muted,#64748b)}.messages-empty-state h3{color:var(--text,#172b42)}
 
 
@@ -577,6 +713,49 @@ body.provider-detail-mode #providerDetailScreen>.ghost{position:sticky;top:0;z-i
 body.provider-detail-mode #providerDetailContent{max-width:900px;margin:14px auto 0!important}
 /* Scroll-tail fix: avoid double-counting the fixed tab bar and the footer bottom spacer. */
 @media(max-width:800px){main.wrap,.wrap{padding-bottom:calc(82px + env(safe-area-inset-bottom))!important}.footer{padding-bottom:20px!important;margin-bottom:0!important}body{padding-bottom:0!important}}
+
+/* Business Plus & Business Spotlight tools: consistent Skillvaya navy / white / blue system. */
+.sv-growth-section{margin:16px 0;padding:18px;border:1px solid var(--line,#dbe6f4);border-radius:18px;background:var(--card,#fff)}
+.sv-growth-intro{margin:0 0 14px;color:var(--muted,#61758f);font-size:13px;line-height:1.6}
+.sv-growth-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.sv-growth-item{min-width:0;border:1px solid var(--line,#dbe6f4);border-radius:14px;background:#fff;padding:14px}
+.sv-growth-item h3{margin:0 0 6px;color:var(--navy,#12345a);font-size:15px}
+.sv-growth-item p{color:var(--muted,#61758f);font-size:12px;line-height:1.5;margin:5px 0 10px;overflow-wrap:anywhere}
+.sv-growth-pill{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;background:#eaf3ff;border:1px solid #d2e3fb;border-radius:999px;color:#1b4c83;font-size:10px;font-weight:850;letter-spacing:.4px}
+.sv-growth-row{display:flex;gap:9px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.sv-growth-small{color:var(--muted,#61758f);font-size:11px;line-height:1.5}
+.sv-growth-money{color:#174e91;font-size:20px;font-weight:900;letter-spacing:-.4px}
+.sv-growth-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}
+.sv-growth-kpi{padding:14px;border:1px solid #d8e6f8;border-radius:14px;background:linear-gradient(135deg,#fff,#f3f8ff)}
+.sv-growth-kpi strong{display:block;color:#164b8a;font-size:24px;line-height:1.15}.sv-growth-kpi span{display:block;color:#61758f;font-size:11px;margin-top:5px}
+.sv-growth-tag{display:inline-flex;padding:4px 8px;border-radius:8px;background:#e9f5f1;color:#176d5e;font-size:10px;font-weight:850;text-transform:uppercase}
+.sv-growth-tag.warn{background:#fff3df;color:#8b5d12}.sv-growth-tag.muted{background:#eef2f7;color:#63748a}
+.sv-growth-empty{padding:20px;border:1px dashed #bfd1e7;border-radius:13px;background:#f8fbff;color:#637892;text-align:center;font-size:13px}
+.sv-growth-form{margin:12px 0;padding:16px;border:1px solid var(--line,#dbe6f4);border-radius:15px;background:#f8fbff}
+.sv-growth-form input,.sv-growth-form textarea,.sv-growth-form select{width:100%;box-sizing:border-box;min-height:42px;border:1px solid #cad9ec;border-radius:10px;padding:10px 11px;background:#fff;color:#203c5d;font:inherit;font-size:13px}
+.sv-growth-form textarea{min-height:82px;resize:vertical}
+.sv-growth-form label{display:block;color:#2d4766;font-size:12px;font-weight:800;margin:0 0 5px}
+.sv-growth-form .sv-tool-fields{margin:10px 0}
+.sv-growth-inline-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+.sv-growth-inline-actions button{min-height:36px;padding:7px 11px!important;font-size:12px!important}
+.sv-growth-tablewrap{max-width:100%;overflow-x:auto;border:1px solid var(--line,#dbe6f4);border-radius:12px}
+.sv-growth-table{border-collapse:collapse;width:100%;font-size:12px;background:#fff}.sv-growth-table th,.sv-growth-table td{padding:10px 12px;border-bottom:1px solid #e5edf7;text-align:left;vertical-align:top}.sv-growth-table th{background:#f2f7fe;color:#294a70;font-weight:850;white-space:nowrap}
+.sv-growth-table td{color:#324a67}.sv-growth-table tr:last-child td{border-bottom:0}
+.sv-growth-check{display:flex;align-items:flex-start;gap:9px;font-size:12px;line-height:1.5;color:#304a68;margin:8px 0}
+.sv-growth-check input{margin-top:3px}
+.sv-growth-muted-alert{padding:10px 12px;border:1px solid #d7e4f5;border-radius:10px;background:#f1f7ff;color:#28517f;font-size:12px;line-height:1.55;margin:10px 0}
+.sv-growth-success{padding:10px 12px;border:1px solid #bfe6d8;border-radius:10px;background:#edf9f4;color:#126b59;font-size:12px;line-height:1.5;margin:10px 0}
+@media(max-width:620px){.sv-growth-grid{grid-template-columns:1fr}.sv-growth-section{padding:14px}.sv-growth-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.sv-growth-table{min-width:520px}}
+
+/* Public tier benefits are neat add-ons using the Skillvaya navy / white / light-blue palette. */
+.sv-growth-public-banner{margin:10px 0;padding:12px 14px;border:1px solid #cfe0f6;border-radius:12px;background:linear-gradient(120deg,#edf5ff,#fff);color:#183f70}
+.sv-growth-public-banner span{display:block;color:#2161ad;font-size:9px;font-weight:900;letter-spacing:1.2px}
+.sv-growth-public-banner strong{display:block;margin:4px 0;color:#153a67;font-size:14px}
+.sv-growth-public-banner p{margin:0;color:#4c6481;font-size:12px;line-height:1.5}
+.sv-growth-public-offers{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.sv-growth-public-packages{margin:8px 0;padding:10px 12px;border:1px solid #dfe9f5;border-radius:11px;background:#f8fbff;color:#2b4f78;font-size:12px}
+.sv-growth-public-packages p{margin:4px 0 0;color:#637892;font-size:11px}
+#teamAssignmentsScreen:not(.hidden){display:block!important;position:fixed!important;inset:0!important;z-index:2147483500!important;width:100vw!important;height:100dvh!important;box-sizing:border-box!important;overflow:auto!important;overflow-x:hidden!important;background:#f3f7fc!important;color:#172b47!important;padding:calc(12px + env(safe-area-inset-top)) 14px calc(22px + env(safe-area-inset-bottom))!important}
 </style></head><body><header class="top"><div class="wrap"><strong>Skillvaya</strong><h1>Terms, Conditions, Rules & Safety</h1><p>Version 1.2 · Effective 21 October 2026 · South Africa</p></div></header><main class="wrap"><article class="paper">
 <p class="warning"><strong>Important:</strong> Read these terms before creating an account or signing in. You must actively tick the agreement box to continue. These terms do not remove consumer or privacy rights that cannot lawfully be excluded.</p>
 <h2>1. Agreement, accounts and updates</h2><p>By ticking the agreement box and selecting Create account or Sign in, you confirm that you have had an opportunity to read these Terms, Conditions, Rules & Safety and agree to the current version. If you do not agree, do not create an account or use account-only features. We record the terms version and the date/time of acceptance. Material changes will be dated and presented for acceptance; you may stop using the service if you do not agree, subject to any outstanding lawful obligations.</p><p>Provide accurate information, protect your credentials, and notify us of suspected unauthorised use. You may not impersonate another person, evade a restriction, or access an account or information without permission. Keep email, phone, business details, prices and qualifications current.</p>
@@ -870,7 +1049,8 @@ body{background:var(--design-surface);color:var(--design-ink)}
 .contact-method-icon{width:42px;height:42px;flex:0 0 42px;border-radius:13px;background:#eaf1ff;color:#2864e8;display:grid;place-items:center;font-size:22px}.contact-method-card>span:nth-child(2){display:flex;flex:1;min-width:0;flex-direction:column;gap:5px}.contact-method-card strong{font-size:14px}.contact-method-card small{font-size:12px;color:#64748b;overflow-wrap:anywhere}.contact-method-card>b{color:#5978ad;font-size:22px}
 .contact-form-card{max-width:760px}.contact-form-card form{display:flex;flex-direction:column;gap:9px}.contact-form-card label{font-size:13px;font-weight:700;margin-top:5px}.contact-form-card input,.contact-form-card select,.contact-form-card textarea{width:100%;border:1px solid #d4deed;border-radius:12px;padding:12px;background:#fbfcff;color:#142345}.contact-form-card textarea{resize:vertical}.contact-form-card button{align-self:flex-start;margin-top:8px}
 @media(max-width:620px){.app-destination{padding-top:14px}.destination-hero{padding:22px 17px;border-radius:17px}.services-provider-grid{grid-template-columns:1fr}.contact-method-grid{grid-template-columns:1fr}.contact-method-card{padding:13px}.destination-search{display:grid}.destination-search input,.destination-search button{width:100%;min-width:0}.destination-section-heading{align-items:flex-start}}
-\n
+
+
 /* Profile/settings visual hierarchy matching the navy-and-blue Skillvaya screens. */
 #settings>.card{background:linear-gradient(180deg,#f7faff 0,#fff 220px);border:1px solid #dce6f5}
 .profile-heading{display:flex;align-items:center;gap:15px;padding:16px 17px;border-radius:17px;background:linear-gradient(120deg,#091833,#17376c);color:#fff}
@@ -1251,6 +1431,33 @@ body.subscription-test-screen-mode #ownerEditionBar{display:none!important}
 
 @media(max-width:640px){.sv-subtest-plan-grid,.sv-subtest-feature-grid{grid-template-columns:1fr}.sv-subtest-plan{padding:16px}.sv-subtest-hero{border-radius:18px;padding:22px 18px}.sv-subtest-plan-header{margin:14px 0}.sv-subtest-testbar select{max-width:100%;flex:1 1 160px}}
 
+
+/* Subscription feature comparison: consistent with Skillvaya's navy, white and light-blue system. */
+.sv-plan-feature-list{list-style:none;display:grid;gap:7px;margin:12px 0 17px;padding:0;text-align:left}
+.sv-plan-feature-list li{display:flex;align-items:flex-start;gap:8px;color:#435c79;font-size:12px;line-height:1.45}
+.sv-plan-feature-list li:before{content:'✓';display:inline-grid;place-items:center;flex:0 0 17px;width:17px;height:17px;margin-top:1px;border-radius:50%;background:#e6f2ff;color:#175da3;font-size:11px;font-weight:900}
+.price{display:flex;flex-direction:column}
+.price .sv-plan-feature-list{flex:1}
+.sv-growth-public-content{display:grid;gap:13px;margin:18px 0}
+.sv-growth-public-content:empty{display:none;margin:0}
+.sv-growth-public-banner{padding:16px 18px;border:1px solid #cfe0f6;border-radius:15px;background:linear-gradient(120deg,#edf5ff,#fff);color:#183f70}
+.sv-growth-public-banner span{display:block;color:#2161ad;font-size:9px;font-weight:900;letter-spacing:1.2px}
+.sv-growth-public-banner strong{display:block;margin:4px 0;color:#153a67;font-size:17px}
+.sv-growth-public-banner p{margin:0;color:#4c6481;font-size:12px;line-height:1.55}
+.sv-growth-public-section{padding:16px;border:1px solid #d9e7f7;border-radius:16px;background:#fff;box-shadow:0 7px 22px rgba(16,35,63,.05)}
+.sv-growth-public-section>h3{margin:0 0 12px;color:#102b4c;font-size:18px}
+.sv-growth-public-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.sv-growth-public-card{min-width:0;padding:13px;border:1px solid #dce8f6;border-radius:12px;background:#f8fbff}
+.sv-growth-public-card h4{margin:0 0 6px;color:#153a67;font-size:15px;overflow-wrap:anywhere}
+.sv-growth-public-card p{margin:6px 0;color:#5c708a;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.sv-growth-public-price{color:#174f8f;font-weight:900;font-size:17px}
+.sv-growth-public-code{display:inline-block;padding:5px 8px;border-radius:7px;background:#e5f1ff;color:#174f8f;font-size:11px;font-weight:900;letter-spacing:.5px}
+.sv-growth-public-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.sv-growth-public-actions button{border:0;border-radius:9px;padding:9px 11px;background:#10233f;color:#fff;font-size:12px;font-weight:800}
+.sv-growth-public-actions button:hover{background:#1b4a7d}
+.sv-growth-public-note{margin:10px 0 0;color:#6a7f98;font-size:11px;line-height:1.5}
+@media(max-width:560px){.sv-plan-feature-list li{font-size:11px}.sv-growth-public-section{padding:13px}.sv-growth-public-grid{grid-template-columns:1fr}.sv-growth-public-card{padding:12px}}
+
 </style></head><body>
 <div id="svSplash" class="sv-splash" role="status" aria-live="polite"><div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div><div class="sv-loading-dots" aria-hidden="true"><i></i><i></i><i></i></div></div>
 <header class="top"><div class="wrap nav"><div class="brandlock"><img class="sv-logo" src="/sv-logo.jpeg" alt="SV Skillvaya logo"><div><div class="brand">Skillvaya</div><div class="studio-header-subtitle">Digital &amp; Creative Studio</div><div class="tiny studio-header-tagline">Professional. Simple. Powerful.</div></div></div></div></header>
@@ -1305,7 +1512,7 @@ body.subscription-test-screen-mode #ownerEditionBar{display:none!important}
 <section id="settings" class="hidden" style="padding:25px 0 55px;max-width:920px;margin:auto">
  <div class="card" style="border-radius:20px;padding:clamp(16px,4vw,30px);box-shadow:0 12px 35px #142b4510">
   <div class="profile-heading"><img id="profileHeadingPhoto" alt="Profile picture" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23e5edf7'/%3E%3Ccircle cx='50' cy='37' r='18' fill='%238aa0bc'/%3E%3Cpath d='M15 95c2-23 17-34 35-34s33 11 35 34' fill='%238aa0bc'/%3E%3C/svg%3E"><div class="profile-heading-copy"><span class="account-eyebrow">SKILLVAYA ACCOUNT</span><h2 id="accountMainTitle">Your account</h2><p id="accountHeroSubtitle">Manage your profile, privacy and preferences in one place.</p></div></div>
-   <div class="account-dashboard-links" aria-label="Account sections"><button type="button" class="account-link active" onclick="scrollAccountSection('profileSettingsCard')"><span>👤</span><strong>Profile</strong><small>Your details &amp; photo</small></button><button type="button" class="account-link" onclick="openProviderOnboarding()"><span>🧰</span><strong>Become a Provider</strong><small>Offer your services</small></button><button type="button" class="account-link" onclick="event.preventDefault();event.stopPropagation();showMessagesScreen(true)"><span>💬</span><strong>Chats</strong><small>Providers &amp; conversations</small></button><button type="button" class="account-link" onclick="viewJobs()"><span>📋</span><strong>My jobs</strong><small>Requests &amp; quotes</small></button><button type="button" class="account-link" onclick="viewFavorites()"><span>☆</span><strong>Saved</strong><small>Favourite providers</small></button><button type="button" class="account-link hidden" id="openSubscriptionTesterLink" onclick="openSubscriptionTestApp()"><span>⌘</span><strong>Subscription Test Lab</strong><small>Test each subscription tier</small></button></div>
+   <div class="account-dashboard-links" aria-label="Account sections"><button type="button" class="account-link active" onclick="scrollAccountSection('profileSettingsCard')"><span>👤</span><strong>Profile</strong><small>Your details &amp; photo</small></button><button type="button" class="account-link" onclick="openProviderOnboarding()"><span>🧰</span><strong>Become a Provider</strong><small>Offer your services</small></button><button type="button" class="account-link" onclick="event.preventDefault();event.stopPropagation();showMessagesScreen(true)"><span>💬</span><strong>Chats</strong><small>Providers &amp; conversations</small></button><button type="button" class="account-link" onclick="viewJobs()"><span>📋</span><strong>My jobs</strong><small>Requests &amp; quotes</small></button><button type="button" class="account-link" onclick="viewFavorites()"><span>☆</span><strong>Saved</strong><small>Favourite providers</small></button><button type="button" class="account-link hidden" id="openMyTeamAssignmentsLink" onclick="openMyTeamAssignments()"><span>▣</span><strong>My Team Assignments</strong><small>Jobs assigned to you</small></button><button type="button" class="account-link hidden" id="openSubscriptionTesterLink" onclick="openSubscriptionTestApp()"><span>⌘</span><strong>Subscription Test Lab</strong><small>Test each subscription tier</small></button></div>
   <div id="profileAuthTabs" style="display:flex;gap:10px;margin:18px 0;flex-wrap:wrap"><button id="profileSigninTab" class="primary" type="button" onclick="profileAuthMode('signin')">Sign in</button><button id="profileSignupTab" class="ghost" type="button" onclick="profileAuthMode('signup')">Create profile</button></div>
   <div id="signinPane"><form id="login"><label class="account-field-label">Email</label><input name="email" type="email" autocomplete="username" required><label class="account-field-label">Password</label><input name="password" type="password" autocomplete="current-password" required><p><label style="display:flex;gap:9px;align-items:flex-start;font-weight:500"><input id="rememberMe" type="checkbox" checked style="width:auto;margin-top:5px;flex:0 0 auto"><span>Remember me on this device — stay signed in until I log out.</span></label></p><p><label style="display:flex;gap:9px;align-items:flex-start;font-weight:500"><input id="loginTerms" name="accept_terms" type="checkbox" required style="width:auto;margin-top:5px;flex:0 0 auto"><span>I have read and agree to the current <a href="/terms" target="_blank" rel="noopener">Skillvaya Terms, Conditions, Rules & Safety</a>.</span></label></p><button class="primary">Sign in securely</button></form><div id="loginMsg" aria-live="polite"></div></div>
   <div id="signupPane" class="hidden"><form id="signup"><label>Your name</label><input name="name" autocomplete="name" required><label class="account-field-label">Email</label><input name="email" type="email" autocomplete="email" required><label>Phone / WhatsApp (optional)</label><input name="phone" type="tel" autocomplete="tel"><label class="account-field-label">Password (minimum 8 characters)</label><input name="password" type="password" autocomplete="new-password" minlength="8" required><label class="account-field-label">Account type</label><select class="account-role-choice" name="role"><option value="customer">Customer — free</option><option value="provider">Service provider</option></select><p class="muted">You can update your picture and personal details after creating your profile.</p><p><label style="display:flex;gap:10px;align-items:flex-start;font-weight:500"><input name="accept_terms" type="checkbox" required style="width:auto;margin-top:5px;flex:0 0 auto"><span>I have read and agree to the <a href="/terms" target="_blank" rel="noopener">Skillvaya Terms, Conditions, Rules & Safety</a>.</span></label></p><button class="primary">Create my profile</button></form><div id="signupMsg" aria-live="polite"></div></div>
@@ -1318,6 +1525,13 @@ body.subscription-test-screen-mode #ownerEditionBar{display:none!important}
  </div>
 
  <div id="jobsCard" class="card hidden" style="border-radius:18px;margin-top:14px"><h2>My Jobs & Quotes</h2><p class="muted">Send a work request, review a provider's quote, and track the job through completion.</p><div id="jobCreateArea" class="hidden"><form id="jobRequestForm"><label>Service provider</label><select id="jobBusinessId" name="business_id" required></select><label>Job title</label><input name="title" required minlength="3" maxlength="160" placeholder="e.g. Repair a leaking kitchen pipe"><label>Describe the work</label><textarea name="description" required minlength="10" maxlength="4000" rows="3" placeholder="Explain what needs doing, relevant details, and any photos to send in My messages."></textarea><label>Your area / address details (avoid sharing more than needed)</label><input name="area" maxlength="160" placeholder="Suburb or town"><label>Preferred date (optional)</label><input name="preferred_date" maxlength="40" placeholder="e.g. 2026-11-02 or flexible"><label>Budget in rand (optional)</label><input name="budget_rands" type="number" min="0" max="10000000" step="0.01" placeholder="R amount"><p><button class="primary">Send job request</button></p><div id="jobRequestStatus" aria-live="polite"></div></form></div><div id="jobsList" aria-live="polite">Sign in to view jobs and quotes.</div><div id="jobsStatus" aria-live="polite"></div></div><div id="favoritesCard" class="card hidden" style="border-radius:18px;margin-top:14px"><h2>Saved providers</h2><p class="muted">Keep trusted providers handy for your next job.</p><div id="favoritesList" aria-live="polite">Loading saved providers…</div></div>
+
+<div id="customerMarketingPreferenceCard" class="card hidden" style="margin:16px 0;border:1px solid var(--line);border-radius:18px;padding:20px">
+ <span class="sv-workstation-eyebrow">OPTIONAL CUSTOMER PREFERENCE</span><h2 style="margin:5px 0 8px">Offers &amp; service announcements</h2>
+ <p class="muted">Choose whether providers you contact may send you occasional offers or service announcements through your existing Skillvaya chat. This is optional and can be turned off at any time.</p>
+ <label style="display:flex;align-items:flex-start;gap:10px;line-height:1.5"><input id="customerMarketingOptIn" type="checkbox" style="margin-top:4px"><span>Yes, I agree to receive relevant offers and service announcements from providers I have contacted.</span></label>
+ <div id="customerMarketingPreferenceStatus" class="sv-tool-status" aria-live="polite"></div><button class="sv-tool-submit" type="button" onclick="saveCustomerMarketingPreference()">Save preference</button>
+</div>
 </section>
 <section id="terms" class="hidden" style="padding:25px 0 55px"><div class="card"><h2>Terms, conditions, rules & safety</h2><p class="muted">Version 1.2 · Effective 21 October 2026. The full current text is also available at <a href="/terms" target="_blank" rel="noopener">Skillvaya Terms & Conditions</a>.</p><div class="notice">By ticking the required agreement box to create an account or sign in, you agree to this current version. Customer browsing/contact is free unless a charge is clearly disclosed before you approve it.</div><h3>1. Agreement and accounts</h3><p>Provide accurate details, protect your login and accept the current terms before creating an account or signing in. Your accepted version and timestamp are recorded.</p><h3>2. Customers and providers</h3><p>Skillvaya is a directory and introduction service; paid placement is not an endorsement. Customers should independently check provider credentials and quotations. Providers must be lawful, honest and suitably qualified for advertised work. Fraud, harassment, misleading listings, unsafe services, unlawful content, privacy abuse and manipulation of ratings, reports or payments are prohibited.</p><h3>3. Paid plans, price changes and taxes</h3><p>Plan, features, billing term, full amount, tax/fees, renewal dates and cancellation terms must be displayed before purchase. Skillvaya may change plan prices in the future. A price change will not retrospectively increase a term already paid for or change its price mid-term. Where legally required, and as a general service commitment, material increases will be communicated in advance—normally at least 30 days before applying to a future renewal—with the new amount and date. You may cancel or not renew before it takes effect. The new price must be displayed before a new purchase or renewal is approved; silence does not authorise an undisclosed charge. Applicable law prevails.</p><h3>4. Payment, renewal and refund</h3><p>PayPal is the only enabled checkout provider for this release; PayFast is paused. Skillvaya is working towards offering additional payment services in future, but they will not be available until integration, testing, and any required approvals are complete. Sandbox transactions are tests, not real payments. A plan activates only when PayPal confirms a completed payment matching order reference, currency and amount. Unless the checkout clearly states otherwise and you expressly authorise recurring billing, renewals are not automatic. Refunds are subject to checkout disclosures and applicable law; a refund is recorded as completed only on provider confirmation.</p><h3>5. Privacy, moderation and service limits</h3><p>Account, listing, enquiry, complaint, payment-status and technical information may be used to operate the service, protect users and support payment reconciliation. Reasonable safeguards are used, but no service is perfectly secure. Reports are allegations, not findings of guilt. Skillvaya may moderate listings or restrict unsafe or unlawful activity. Nothing excludes rights or remedies that applicable South African law does not allow to be excluded.</p><h3>6. Contact and review</h3><p>Contact <a href="mailto:skillvaya@gmail.com">skillvaya@gmail.com</a> for billing, safety or privacy concerns. This is a working business draft, not legal advice; obtain South African legal review before accepting real customer payments.</p><p><a href="/terms" target="_blank" rel="noopener">Read the full Terms & Conditions (opens separately)</a></p>
 <h3>Advertising, owner-owned businesses and apps</h3><p>Paid or featured provider placements are advertising and are labelled in the directory; placement is not an endorsement, qualification check or guarantee by Skillvaya. Skillvaya may also publish or link to businesses, services or apps owned, operated or submitted by the platform owner. Such owner-related listings are disclosed as owner listings where displayed and are subject to the same applicable listing, safety and legal rules. The public app interface is intended to focus on customer search, provider listings and account features; platform ownership disclosures and advertising rules are explained here in these Terms.</p><h3>App operation and support</h3><p>Skillvaya is a local service-provider directory and introduction application. Customer search and ordinary contact are free unless a charge is clearly shown before approval. Email contact is skillvaya@gmail.com; owner email settings are managed in Owner Control. Complaint reports are allegations and are reviewed fairly; a report alone is not proof of misconduct.</p></div></section>
@@ -1341,6 +1555,13 @@ body.subscription-test-screen-mode #ownerEditionBar{display:none!important}
   <div id="svTestPublicProfilePreview" class="sv-subtest-profile-card hidden"></div>
  </div>
 </section>
+<section id="teamAssignmentsScreen" class="hidden app-destination" aria-label="My team assignments">
+ <div class="sv-subtest-shell">
+  <div class="sv-subtest-topbar"><button type="button" class="sv-subtest-back" onclick="view('settings')">← Return to Account</button><span class="sv-subtest-mode">SKILLVAYA · TEAM WORK</span></div>
+  <div class="sv-subtest-hero"><span class="sv-subtest-eyebrow">MY WORKSPACE</span><h1>My Team Assignments</h1><p>Review jobs assigned to you by a Skillvaya provider and update your work progress.</p></div>
+  <div id="teamAssignmentsContent" aria-live="polite"></div>
+ </div>
+</section>
 <section id="messagesScreen" class="hidden app-destination" aria-label="Skillvaya Messages"><div id="messagesWorkspaceMount" class="contacts-workspace"><div id="messagesCard" class="messages-app-card hidden"><header class="messages-app-header"><div class="messages-app-mark">SV</div><div class="messages-app-title"><h1>Messages</h1><p>Private conversations</p></div><span class="messages-online-dot" aria-label="Private messaging"></span></header><div class="messages-list-heading"><strong>Chats</strong><span id="messagesCount" aria-live="polite"></span></div><div id="messagesList" aria-live="polite"><div class="messages-loading"><span class="messages-loading-dot"></span> Loading chats…</div></div><div id="messagesStatus" aria-live="polite"></div></div></div></section>
 <section id="accountSubspace" class="hidden" role="dialog" aria-modal="true" aria-labelledby="accountSubspaceTitle"><div class="account-subspace-top"><button type="button" id="accountSubspaceBack" class="ghost">← Back to Profile</button><div><span class="tag">YOUR ACCOUNT</span><h1 id="accountSubspaceTitle">My account</h1><p id="accountSubspaceSubtitle" class="muted">Your saved information and activity.</p></div></div><div id="accountSubspaceContent" class="account-subspace-content"></div></section><nav class="bottom-tabbar" aria-label="Main app navigation"><button id="nav-customer-bottom" type="button" onclick="view('customer')"><span class="bottom-tab-icon">⌂</span><span>Home</span></button><button id="nav-messages" type="button" onclick="showMessagesScreen()"><span class="bottom-tab-icon">▤</span><span>Contacts</span></button><button id="nav-provider" type="button" onclick="view('services')"><span class="bottom-tab-icon">✦</span><span>Services</span></button><button id="nav-settings" type="button" onclick="view('settings')"><span class="bottom-tab-icon">●</span><span>Account</span></button></nav><script>
 let providerDetailReturnView='customer',categoryReturnView='customer';
@@ -1348,7 +1569,12 @@ let providerDetailReturnView='customer',categoryReturnView='customer';
 let messagesCardHomeParent=null,messagesCardHomeNext=null;
 function restoreMessagesCardHome(){const card=document.getElementById('messagesCard');if(!card||!messagesCardHomeParent)return;card.classList.remove('messages-workspace-card');if(messagesCardHomeNext&&messagesCardHomeNext.parentNode===messagesCardHomeParent)messagesCardHomeParent.insertBefore(card,messagesCardHomeNext);else messagesCardHomeParent.appendChild(card);card.classList.add('hidden');card.style.removeProperty('display');card.style.removeProperty('visibility');messagesCardHomeParent=null;messagesCardHomeNext=null;}
 let cats=[],chosen='All categories',directorySearchActive=false,token=localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token')||sessionStorage.getItem('skillvaya_token')||sessionStorage.getItem('sv_token')||'',me=null,allBusinesses=[],favoriteIds=[];
-const planInfo=[['local','Local',105,'Business profile, category listing, customer enquiries'],['priority','Priority',210,'Higher category placement and priority badge'],['plus','Business Plus',500,'Blue profile, featured category section, portfolio, basic insights'],['spotlight','Business Spotlight',1000,'Plus features, homepage rotation, enhanced portfolio, analytics, priority support']];
+const planInfo=[
+ ['local','Local',105,'Get listed and manage customer enquiries.',['Business profile and category listing','Customer requests and quotations','Private messages, photo/video sharing and video calls']],
+ ['priority','Priority',210,'Improve discovery and quote turnaround.',['Everything in Local','Higher category placement and priority badge','Reusable quotation templates']],
+ ['plus','Business Plus',500,'Run your daily business from Skillvaya.',['Everything in Priority','Lead/job pipeline and booking calendar','Customer CRM with private notes and tags','Quote follow-up reminders','Invoice and payment-status tracking','Review replies and service packages with add-ons','Performance insights from real activity']],
+ ['spotlight','Business Spotlight',1000,'Promote your services and coordinate a growing team.',['Everything in Business Plus','Featured placement plus public offers/vouchers','Team invitations and job assignments','Campaign planner and marketing analytics','Lead-source and campaign interaction tracking','Announcements to opted-in customers through Skillvaya chat','Automation rules and in-app alerts']]
+];
 // Capture-phase fallback for the Account dashboard shortcut, in case nested account overlays swallow inline clicks.
 document.addEventListener('click',function(e){
   const button=e.target&&e.target.closest?e.target.closest('#settings .account-dashboard-links .account-link'):null;
@@ -1457,6 +1683,35 @@ function renderServicesTab(){
   host.innerHTML=list.map(b=>'<article class="card biz '+esc(b.plan||'local')+'" role="button" tabindex="0" onclick="openProvider('+Number(b.id)+')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openProvider('+Number(b.id)+')}"><h3>'+esc(b.name||'Service provider')+'</h3><p class="muted tiny">'+esc(b.category||'Services')+' · '+esc(b.area||'South Africa')+'</p><p>'+esc(b.description||'View this provider profile and contact options.')+'</p><button type="button" class="primary" onclick="event.stopPropagation();openProvider('+Number(b.id)+')">View provider</button></article>').join('');
 }
 
+
+async function maybeAcceptSkillvayaTeamInvite(){
+ const params=new URLSearchParams(location.search),code=params.get('team_invite');
+ if(!code||!me)return;
+ const marker='svTeamInviteSeen:'+code;
+ if(sessionStorage.getItem(marker))return;
+ sessionStorage.setItem(marker,'1');
+ if(!confirm('You were invited to join a Skillvaya provider team. Accept this invitation using your signed-in email?'))return;
+ try{
+  const d=await api('/api/provider/growth/team',{method:'POST',body:JSON.stringify({action:'accept_invite',invite_code:code})});
+  const clean=new URL(location.href);clean.searchParams.delete('team_invite');history.replaceState(null,'',clean.pathname+clean.search+clean.hash);
+  alert(d.message||'Team invitation accepted. Open Account → My Team Assignments to see your assigned work.');
+  await loadMyTeamAccess();
+ }catch(e){sessionStorage.removeItem(marker);alert('Could not accept invitation: '+e.message);}
+}
+async function loadMyTeamAccess(){
+ const link=document.getElementById('openMyTeamAssignmentsLink');if(!link||!me)return;
+ try{const d=await api('/api/team/my-assignments');link.classList.toggle('hidden',!d.active);if(d.active)window.svTeamAccess={active:true,business_ids:d.business_ids||[]};else window.svTeamAccess={active:false};}
+ catch(e){link.classList.add('hidden');window.svTeamAccess={active:false};}
+}
+async function openMyTeamAssignments(){
+ if(!me){view('settings');profileAuthMode('signin');return;}
+ view('teamAssignmentsScreen');const root=document.getElementById('teamAssignmentsContent');if(!root)return;root.innerHTML='<div class="sv-subtest-notice">Loading assigned work…</div>';
+ try{const d=await api('/api/team/my-assignments');if(!d.active){root.innerHTML='<div class="sv-growth-empty">No active team invitation is linked to this account.</div>';return;}
+ root.innerHTML=d.items.length?d.items.map(a=>'<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(a.title||'Assigned job')+'</h3><span class="sv-growth-tag">'+esc(String(a.assignment_status||'assigned').replaceAll('_',' '))+'</span></div><p><strong>'+esc(a.business_name)+'</strong> · Job #'+Number(a.job_id)+' · '+esc(a.area||'Area not supplied')+'</p><p>'+esc(a.description||'')+'</p><p class="sv-growth-small">Due '+esc(a.due_date||'No due date')+' · '+esc(a.note||'No assignment notes')+'</p><div class="sv-growth-inline-actions">'+(a.assignment_status==='assigned'?'<button type="button" class="sv-tool-outline" onclick="updateMyTeamAssignment(this.dataset.id,this.dataset.status)" data-id="'+Number(a.assignment_id)+'" data-status="completed">Mark complete</button>':'')+'</div></article>').join(''):'<div class="sv-growth-empty">No jobs have been assigned to you yet. Your provider manager will assign work here.</div>';}
+ catch(e){root.innerHTML='<div class="sv-growth-muted-alert">'+esc(e.message)+'</div>';}
+}
+async function updateMyTeamAssignment(id,status){try{await api('/api/team/my-assignments',{method:'POST',body:JSON.stringify({assignment_id:Number(id),status})});await openMyTeamAssignments();}catch(e){alert(e.message);}}
+
 function updateSkillvayaProviderTab(){
  const nav=document.getElementById('nav-provider');if(nav)nav.classList.toggle('hidden',!(me&&(me.role==='provider'||me.role==='admin')));
 }
@@ -1497,7 +1752,25 @@ async function loadProviderWorkstation(){
  ];
  if(svWorkspaceRank>=1)tools.push(svWorkstationCard('✎','Quotation Templates','Save reusable quotation wording and estimated timelines.','Manage templates',"openProviderTool('templates')",false));
  if(svWorkspaceRank>=2)tools.push(svWorkstationCard('▥','Performance Insights','See real request, quote, messaging, media-sharing and customer-rating totals for your listing.','View insights',"openProviderTool('insights')",false));
- if(svWorkspaceRank>=3)tools.push(svWorkstationCard('◇','Campaign Planner','Create private advertising campaign drafts, with optional dates. Drafts are not automatically published to customers.','Plan a campaign',"openProviderTool('campaigns')",false));
+
+  if(svWorkspaceRank>=2){
+   tools.push(svWorkstationCard('▦','Lead & Job Pipeline','Track real requests from new enquiry through quote, accepted work, scheduling, progress and completion.','Open pipeline',"openProviderTool('pipeline')",false));
+   tools.push(svWorkstationCard('▣','Bookings & Calendar','Schedule customer appointments and jobs, check upcoming work and update booking status.','Manage bookings',"openProviderTool('bookings')",false));
+   tools.push(svWorkstationCard('◎','Customer CRM','Review customers you have interacted with, their jobs and quote history, and save private notes and tags.','Open customers',"openProviderTool('crm')",false));
+   tools.push(svWorkstationCard('◷','Quote Follow-ups','Create reminders for pending quotations so enquiries do not quietly go cold.','View follow-ups',"openProviderTool('followups')",false));
+   tools.push(svWorkstationCard('▤','Invoices & Payment Tracker','Issue invoice records, track due dates and record full or partial payments. This does not process card payments.','Track invoices',"openProviderTool('invoices')",false));
+   tools.push(svWorkstationCard('★','Reviews & Reputation','Read actual customer ratings, reply professionally and request reviews through existing chats.','Manage reviews',"openProviderTool('reviews')",false));
+   tools.push(svWorkstationCard('◇','Service Packages & Add-ons','Build service packages with clear prices and optional extras for your public provider profile.','Manage packages',"openProviderTool('packages')",false));
+  }
+  if(svWorkspaceRank>=3){
+   tools.push(svWorkstationCard('✦','Featured Placement & Offers','Manage public offer codes and view exposure and engagement for your Spotlight listing.','Manage offers',"openProviderTool('offers')",false));
+   tools.push(svWorkstationCard('♙','Team & Staff','Keep a team roster, invite staff and assign existing customer jobs to an accountable team member.','Manage team',"openProviderTool('team')",false));
+   tools.push(svWorkstationCard('▥','Marketing Analytics','Track directory visibility, campaign interactions, enquiry sources and lead conversions.','View marketing',"openProviderTool('marketing')",false));
+   tools.push(svWorkstationCard('✉','Customer Announcements','Prepare announcements and send them through existing chats only to customers who opted in.','Manage announcements',"openProviderTool('announcements')",false));
+   tools.push(svWorkstationCard('⚡','Automation & Alerts','Control in-app alerts for due follow-ups, upcoming bookings and overdue invoices.','Configure alerts',"openProviderTool('automation')",false));
+  }
+
+if(svWorkspaceRank>=3)tools.push(svWorkstationCard('◇','Campaign Planner','Create private advertising campaign drafts, with optional dates. Drafts are not automatically published to customers.','Plan a campaign',"openProviderTool('campaigns')",false));
  const next=svWorkspaceRank===0?'Priority':svWorkspaceRank===1?'Business Plus':svWorkspaceRank===2?'Business Spotlight':'';
  if(next&&!window.svSubscriptionTestMode)tools.push(svWorkstationCard('＋','More tools with '+next,'Your current plan stays active. Higher plans unlock additional workstation tools; no feature is charged without your explicit checkout.','View upgrade options',"view('provider')",true));
  cards.innerHTML=tools.join('');
@@ -1543,7 +1816,7 @@ function openProviderTool(tool,jobId){
 }
 async function renderProviderTool(tool){
  const root=document.getElementById('svWorkstationToolContent');if(!root)return;
- const titles={requests:['Requests & Quotations','Review work requests and return complete quotes to the customer chat.'],quote:['Quotation Builder','Create a quotation for a real customer request and optionally attach a document or video to the chat.'],templates:['Quotation Templates','Save reusable quotation terms and timelines.'],insights:['Performance Insights','These totals are computed from actual Skillvaya requests, quotes, messages, shared media, and ratings.'],campaigns:['Campaign Planner','Save private campaign drafts. Drafts are not published to the public directory.']};
+ const titles={requests:['Requests & Quotations','Review work requests and return complete quotes to the customer chat.'],quote:['Quotation Builder','Create a quotation for a real customer request and optionally attach a document or video to the chat.'],templates:['Quotation Templates','Save reusable quotation terms and timelines.'],insights:['Performance Insights','These totals are computed from actual Skillvaya requests, quotes, messages, shared media, and ratings.'],campaigns:['Campaign Planner','Manage private drafts and publish Spotlight campaigns with trackable links.'],pipeline:['Lead & Job Pipeline','Review live requests, outstanding quotes and work stages using your existing job records.'],bookings:['Bookings & Calendar','Create and manage job appointments in your business calendar.'],crm:['Customer CRM','See interaction history and keep private notes about customers.'],followups:['Quote Follow-ups','Set reminders for live requests and quotations waiting for a response.'],invoices:['Invoices & Payment Tracker','Maintain an invoice ledger and record payment status without taking payments.'],reviews:['Reviews & Reputation','Review customer feedback, reply, and request feedback through existing chats.'],packages:['Service Packages & Add-ons','Create priced service packages and publish them to your Skillvaya profile.'],offers:['Featured Placement & Offers','Create discount codes and review your listing reach and promotion activity.'],team:['Team & Staff','Manage a staff roster, send invitations and assign existing requests.'],marketing:['Marketing Analytics','Measure listing exposure, campaign engagement and lead sources.'],announcements:['Customer Announcements','Send service updates to customers who explicitly opted in.'],automation:['Automation & Alerts','Configure in-app reminders for quotations, bookings and invoices.']};
  const spec=titles[tool];if(!spec){root.innerHTML=svWorkstationHeader('Provider tools','Choose a tool from the workstation.');return;}
  root.innerHTML=svWorkstationHeader(spec[0],spec[1]);
  const body=document.getElementById('svWorkToolBody');
@@ -1551,7 +1824,20 @@ async function renderProviderTool(tool){
  if(tool==='quote'){await svRenderQuoteBuilder(body,window.svSelectedJobId);return;}
  if(tool==='templates'){await svRenderTemplates(body);return;}
  if(tool==='insights'){await svRenderInsights(body);return;}
- if(tool==='campaigns'){await svRenderCampaigns(body);return;}
+
+  if(tool==='campaigns'){await svRenderCampaigns(body);return;}
+  if(tool==='pipeline'){await svRenderGrowthPipeline(body);return;}
+  if(tool==='bookings'){await svRenderBookings(body);return;}
+  if(tool==='crm'){await svRenderCRM(body);return;}
+  if(tool==='followups'){await svRenderFollowups(body);return;}
+  if(tool==='invoices'){await svRenderInvoices(body);return;}
+  if(tool==='reviews'){await svRenderReviews(body);return;}
+  if(tool==='packages'){await svRenderPackages(body);return;}
+  if(tool==='offers'){await svRenderOffers(body);return;}
+  if(tool==='team'){await svRenderTeam(body);return;}
+  if(tool==='marketing'){await svRenderMarketing(body);return;}
+  if(tool==='announcements'){await svRenderAnnouncements(body);return;}
+  if(tool==='automation'){await svRenderAutomation(body);return;}
 }
 async function svRenderRequests(body){
  const d=await api('/api/jobs'),items=(d.items||[]).filter(j=>me.role==='admin'||Number(j.business_id)>0);
@@ -1570,7 +1856,7 @@ async function svRenderQuoteBuilder(body,jobId){
   body.innerHTML='<div class="sv-tool-card"><h3>Select a customer request</h3><p class="sv-tool-muted">A quotation must be connected to an existing job request so it reaches the correct customer.</p>'+(items.length?items.map(j=>'<article class="sv-tool-card"><h3>'+esc(j.title||'Request')+'</h3><p class="sv-tool-muted">'+esc(j.area||'')+' · '+esc(j.status||'requested')+'</p><p>'+esc(j.description||'')+'</p><button class="sv-tool-submit" onclick="openProviderTool(\'quote\','+Number(j.id)+')">Prepare quote</button></article>').join(''):'<p>No requests are currently accepting quotations. Open Requests & Quotations to review active jobs.</p>')+'</div>';return;
  }
  const job=items.find(x=>Number(x.id)===Number(jobId));
- const templates=svWorkspaceRank>=1?await api('/api/provider/quote-templates').then(x=>x.items||[]).catch(()=>[]):[];
+ const templates=svWorkspaceRank>=1?await svTierPreviewApi('/api/provider/quote-templates').then(x=>x.items||[]).catch(()=>[]):[];
  window.svWorkspaceTemplates=templates;
  body.innerHTML='<form id="svQuoteBuilderForm" class="sv-tool-card"><div class="sv-tool-row"><h3>Quote for: '+esc(job.title||'Customer request')+'</h3><span class="sv-workstation-plan">Job #'+Number(job.id)+'</span></div><p class="sv-tool-muted">Recipient: '+esc(job.customer_name||'Customer')+' · Provider: '+esc(job.business_name||'Your business')+'</p>'+
  (templates.length?'<label for="svQuoteTemplateSelect">Use a saved template</label><select id="svQuoteTemplateSelect" onchange="applySkillvayaQuoteTemplate(this.value)"><option value="">Start with a blank quotation</option>'+templates.map(t=>'<option value="'+Number(t.id)+'">'+esc(t.name)+'</option>').join('')+'</select>':'')+
@@ -1591,21 +1877,147 @@ async function svRenderQuoteBuilder(body,jobId){
 function applySkillvayaQuoteTemplate(templateId){const t=(window.svWorkspaceTemplates||[]).find(x=>Number(x.id)===Number(templateId));if(!t)return;const eta=document.getElementById('svQuoteEta'),msg=document.getElementById('svQuoteMessage');if(eta)eta.value=t.eta||'';if(msg)msg.value=t.message||'';}
 async function updateProviderJobStatus(jobId,status){try{await api('/api/jobs/'+Number(jobId)+'/status',{method:'POST',body:JSON.stringify({status:status})});await renderProviderTool('requests');}catch(e){alert('Job status was not changed: '+e.message);}}
 async function svRenderTemplates(body){
- const d=await api('/api/provider/quote-templates'),items=d.items||[];
+ const query=window.svSubscriptionTestMode?'?test_tier='+encodeURIComponent(window.svSubscriptionTestTier||'local'):'';
+ const d=await svTierPreviewApi('/api/provider/quote-templates'+query),items=d.items||[];
  body.innerHTML='<form id="svTemplateForm" class="sv-tool-card"><h3>Create a reusable quote template</h3><div class="sv-tool-fields"><div class="sv-full"><label>Template name</label><input name="name" required maxlength="120" placeholder="e.g. Standard call-out quote"></div><div><label>Default timeline</label><input name="eta" required maxlength="160" placeholder="e.g. 2–3 working days"></div><div class="sv-full"><label>Reusable quotation wording</label><textarea name="message" required minlength="5" maxlength="2000" rows="4" placeholder="Describe your normal inclusions and exclusions."></textarea></div></div><button class="sv-tool-submit" type="submit">Save template</button><div id="svTemplateStatus" class="sv-tool-status"></div></form><div class="sv-tool-card"><h3>Saved templates</h3>'+(items.length?items.map(t=>'<article class="sv-tool-card"><div class="sv-tool-row"><strong>'+esc(t.name)+'</strong><button class="sv-tool-outline" onclick="useSkillvayaQuoteTemplate('+Number(t.id)+')">Use in quotation</button></div><p class="sv-tool-muted">Timeline: '+esc(t.eta)+'</p><p>'+esc(t.message)+'</p></article>').join(''):'<p class="sv-tool-muted">No saved quotation templates yet.</p>')+'</div>';
- document.getElementById('svTemplateForm').addEventListener('submit',async e=>{e.preventDefault();const f=e.target,s=document.getElementById('svTemplateStatus'),b=f.querySelector('button[type=submit]');b.disabled=true;try{await api('/api/provider/quote-templates',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(f)))});await svRenderTemplates(body);const status=document.getElementById('svWorkToolStatus');if(status)status.textContent='Template saved.';}catch(x){s.textContent=x.message;}finally{b.disabled=false;}});
+ document.getElementById('svTemplateForm').addEventListener('submit',async e=>{e.preventDefault();const f=e.target,s=document.getElementById('svTemplateStatus'),b=f.querySelector('button[type=submit]');b.disabled=true;try{await svTierPreviewApi('/api/provider/quote-templates',{method:'POST',body:JSON.stringify({...Object.fromEntries(new FormData(f)),...(window.svSubscriptionTestMode?{test_tier:window.svSubscriptionTestTier||'local'}:{})})});await svRenderTemplates(body);const status=document.getElementById('svWorkToolStatus');if(status)status.textContent='Template saved.';}catch(x){s.textContent=x.message;}finally{b.disabled=false;}});
 }
-async function useSkillvayaQuoteTemplate(id){if(svWorkspaceRank<1){alert('This tool requires Priority or above.');return;}const d=await api('/api/provider/quote-templates');window.svWorkspaceTemplates=d.items||[];window.svPendingTemplateId=Number(id);openProviderTool('quote',0);}
+async function useSkillvayaQuoteTemplate(id){if(svWorkspaceRank<1){alert('This tool requires Priority or above.');return;}const d=await svTierPreviewApi('/api/provider/quote-templates');window.svWorkspaceTemplates=d.items||[];window.svPendingTemplateId=Number(id);openProviderTool('quote',0);}
 async function svRenderInsights(body){
- const d=await api('/api/provider/insights');
+ const query=window.svSubscriptionTestMode?'?test_tier='+encodeURIComponent(window.svSubscriptionTestTier||'local'):'';
+ const d=await svTierPreviewApi('/api/provider/insights'+query);
  const stats=[['Customer requests',d.job_requests],['Active jobs',d.active_jobs],['Quotes sent',d.quotes_sent],['Quotes accepted',d.quotes_accepted],['Messages',d.messages],['Photos/videos shared',d.media_shared],['Average rating',d.average_rating],['Rating count',d.rating_count]];
  body.innerHTML='<div class="sv-tool-metrics">'+stats.map(x=>'<div class="sv-tool-metric"><strong>'+esc(String(x[1]??0))+'</strong><span>'+esc(x[0])+'</span></div>').join('')+'</div><div class="sv-tool-card"><h3>What these numbers mean</h3><p class="sv-tool-muted">These are counts currently stored in Skillvaya. They are operational statistics, not guaranteed leads, earnings or conversion forecasts.</p><button class="sv-tool-outline" onclick="renderProviderTool(\'requests\')">Review requests</button></div>';
 }
 async function svRenderCampaigns(body){
- const d=await api('/api/provider/campaigns'),items=d.items||[];
- body.innerHTML='<form id="svCampaignForm" class="sv-tool-card"><h3>Save a private campaign draft</h3><div class="sv-tool-fields"><div class="sv-full"><label>Campaign title</label><input name="title" maxlength="120" required placeholder="e.g. Summer maintenance special"></div><div class="sv-full"><label>Campaign message / offer</label><textarea name="description" rows="4" minlength="10" maxlength="2000" required placeholder="Describe the offer, audience and conditions."></textarea></div><div><label>Planned start date</label><input name="starts_on" type="date"></div><div><label>Planned end date</label><input name="ends_on" type="date"></div></div><p class="sv-tool-muted">This creates a private draft only. It does not publish ads, create paid packs or reserve placement on the homepage.</p><button type="submit" class="sv-tool-submit">Save campaign draft</button><div id="svCampaignStatus" class="sv-tool-status"></div></form><div class="sv-tool-card"><h3>Your drafts</h3>'+(items.length?items.map(x=>'<article class="sv-tool-card"><div class="sv-tool-row"><strong>'+esc(x.title)+'</strong><span class="sv-workstation-plan">DRAFT</span></div><p>'+esc(x.description)+'</p><p class="sv-tool-muted">'+esc(x.starts_on||'No start date')+' – '+esc(x.ends_on||'No end date')+'</p></article>').join(''):'<p class="sv-tool-muted">No campaign drafts saved yet.</p>')+'</div>';
- document.getElementById('svCampaignForm').addEventListener('submit',async e=>{e.preventDefault();const f=e.target,b=f.querySelector('button[type=submit]'),s=document.getElementById('svCampaignStatus');b.disabled=true;try{await api('/api/provider/campaigns',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(f)))});await svRenderCampaigns(body);const status=document.getElementById('svWorkToolStatus');if(status)status.textContent='Private campaign draft saved.';}catch(x){s.textContent=x.message;}finally{b.disabled=false;}});
+ const query=window.svSubscriptionTestMode?'?test_tier='+encodeURIComponent(window.svSubscriptionTestTier||'local'):'';
+ const d=await svTierPreviewApi('/api/provider/campaigns'+query),items=d.items||[];
+ let html='<form id="svCampaignForm" class="sv-tool-card"><h3>Create a campaign draft</h3><div class="sv-tool-fields"><div class="sv-full"><label>Campaign title</label><input name="title" maxlength="120" required placeholder="e.g. Summer maintenance special"></div><div class="sv-full"><label>Campaign message / offer</label><textarea name="description" rows="4" minlength="10" maxlength="2000" required placeholder="Describe the offer, audience and conditions."></textarea></div><div><label>Planned start date</label><input name="starts_on" type="date"></div><div><label>Planned end date</label><input name="ends_on" type="date"></div></div><p class="sv-tool-muted">Saving creates a private draft. Publish makes it visible on your public provider listing; it does not purchase ads or guarantee homepage placement.</p><button type="submit" class="sv-tool-submit">Save campaign draft</button><div id="svCampaignStatus" class="sv-tool-status"></div></form><div class="sv-tool-card"><h3>Your campaigns</h3>';
+ html+=items.length?items.map(x=>'<article class="sv-tool-card"><div class="sv-tool-row"><strong>'+esc(x.title)+'</strong><span class="sv-workstation-plan">'+esc(String(x.status||'draft').toUpperCase())+'</span></div><p>'+esc(x.description)+'</p><p class="sv-tool-muted">'+esc(x.starts_on||'No start date')+' – '+esc(x.ends_on||'No end date')+'</p>'+(x.status==='active'?'<p class="sv-growth-success">Published on your provider listing.</p>':'')+'<div class="sv-growth-inline-actions">'+(x.status==='active'?'<button class="sv-tool-outline" type="button" data-id="'+Number(x.id)+'" data-action="pause" onclick="svCampaignAction(this.dataset.id,this.dataset.action)">Pause campaign</button>':'<button class="sv-tool-submit" type="button" data-id="'+Number(x.id)+'" data-action="publish" onclick="svCampaignAction(this.dataset.id,this.dataset.action)">Publish campaign</button>')+'<button class="sv-tool-outline" type="button" data-id="'+Number(x.id)+'" data-action="delete" onclick="svCampaignAction(this.dataset.id,this.dataset.action)">Delete</button></div></article>').join(''):'<p class="sv-tool-muted">No campaign drafts yet.</p>';
+ html+='</div>';body.innerHTML=html;
+ document.getElementById('svCampaignForm').addEventListener('submit',async e=>{e.preventDefault();const f=e.target,b=f.querySelector('button[type=submit]'),status=document.getElementById('svCampaignStatus');b.disabled=true;try{await svTierPreviewApi('/api/provider/campaigns',{method:'POST',body:JSON.stringify({...Object.fromEntries(new FormData(f)),...(window.svSubscriptionTestMode?{test_tier:window.svSubscriptionTestTier||'local'}:{})})});await svRenderCampaigns(body);const el=document.getElementById('svWorkToolStatus');if(el)el.textContent='Campaign draft saved.';}catch(x){status.textContent=x.message;}finally{b.disabled=false;}});
 }
+async function svCampaignAction(id,action){if(action==='publish'&&!confirm('Publish this campaign to your public Skillvaya provider listing?'))return;if(action==='delete'&&!confirm('Delete this campaign?'))return;try{await svTierPreviewApi('/api/provider/campaigns',{method:'POST',body:JSON.stringify({action,id:Number(id),...(window.svSubscriptionTestMode?{test_tier:window.svSubscriptionTestTier||'local'}:{})})});await svRenderCampaigns(document.getElementById('svWorkToolBody'));}catch(e){alert(e.message);}}
+
+
+// Keep owner tier-preview data isolated on the existing templates, campaigns and insights endpoints.
+function svTierPreviewApi(path,options){
+ options=options||{};const method=String(options.method||'GET').toUpperCase();
+ if(!window.svSubscriptionTestMode||!me||me.role!=='admin')return api(path,options);
+ const tier=window.svSubscriptionTestTier||'local';let url=path,body=options.body;
+ if(method==='GET'||method==='HEAD'){url+=(url.includes('?')?'&':'?')+'test_tier='+encodeURIComponent(tier);}
+ else{let data={};try{data=body?JSON.parse(body):{}}catch(e){}data.test_tier=tier;body=JSON.stringify(data);}
+ return api(url,{...options,method,body});
+}
+// Business Plus and Spotlight tools call authenticated, plan-gated APIs and reuse the existing job/chat records.
+async function svGrowthCall(feature,options){
+ options=options||{};
+ const method=String(options.method||'GET').toUpperCase();
+ const query=new URLSearchParams();
+ if(window.svSubscriptionTestMode&&me&&me.role==='admin')query.set('test_tier',window.svSubscriptionTestTier||'local');
+ let body=options.body;
+ if(method!=='GET'&&method!=='HEAD'){
+  let obj={};try{obj=body?JSON.parse(body):{}}catch(e){}
+  if(window.svSubscriptionTestMode&&me&&me.role==='admin')obj.test_tier=window.svSubscriptionTestTier||'local';
+  body=JSON.stringify(obj);
+ }
+ const url='/api/provider/growth/'+encodeURIComponent(feature)+(method==='GET'&&query.size?'?'+query.toString():'');
+ return api(url,{...options,method,body});
+}
+function svGrowthMoney(cents){return 'R'+(Number(cents||0)/100).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function svGrowthDate(value){if(!value)return 'Not set';const d=new Date(value);return Number.isNaN(d.getTime())?String(value):d.toLocaleString('en-ZA',{dateStyle:'medium',timeStyle:value.includes(':')?'short':undefined});}
+function svGrowthStatus(status){const s=String(status||'draft').replaceAll('_',' ');const cl=['paid','completed','active','published','accepted','sent','issued'].includes(String(status||'').toLowerCase())?'':' warn';return '<span class="sv-growth-tag'+cl+'">'+esc(s)+'</span>';}
+function svGrowthResult(id,message,ok=true){const el=document.getElementById(id);if(!el)return;el.className=ok?'sv-growth-success':'sv-growth-muted-alert';el.textContent=message;}
+function svGrowthEmpty(message){return '<div class="sv-growth-empty">'+esc(message)+'</div>';}
+function svGrowthActions(buttons){return '<div class="sv-growth-inline-actions">'+buttons.join('')+'</div>';}
+async function svRenderGrowthPipeline(body){
+ const d=await svGrowthCall('pipeline'),items=d.items||[],stages=['requested','quoted','accepted','scheduled','in_progress','completed'];
+ body.innerHTML='<p class="sv-growth-intro">This view uses the existing customer requests and quotation records. Advancing a stage updates the same job your customer sees.</p><div class="sv-growth-kpis">'+stages.slice(0,4).map(k=>'<div class="sv-growth-kpi"><strong>'+items.filter(x=>String(x.status)===k).length+'</strong><span>'+esc(k.replaceAll('_',' '))+'</span></div>').join('')+'</div>'+(items.length?items.map(j=>'<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(j.title||'Customer request')+'</h3>'+svGrowthStatus(j.status)+'</div><p>'+esc(j.customer_name||'Customer')+' · '+esc(j.business_name||'Your listing')+' · '+esc(j.area||'Area not supplied')+'</p><p>'+esc(j.description||'')+'</p><p class="sv-growth-small">Created '+esc(svGrowthDate(j.created_at))+' · '+(j.quotes||[]).length+' quote(s)</p>'+svGrowthActions([...(String(j.status)==='accepted'?[ '<button type="button" class="sv-tool-outline" onclick="svGrowthSetJobStatus('+Number(j.id)+',\'scheduled\')">Schedule</button>']:[]),...(String(j.status)==='scheduled'?[ '<button type="button" class="sv-tool-outline" onclick="svGrowthSetJobStatus('+Number(j.id)+',\'in_progress\')">Start work</button>']:[]),...(String(j.status)==='in_progress'?[ '<button type="button" class="sv-tool-submit" onclick="svGrowthSetJobStatus('+Number(j.id)+',\'completed\')">Mark completed</button>']:[]),...(String(j.status)==='requested'||String(j.status)==='quoted'?[ '<button type="button" class="sv-tool-submit" onclick="openProviderTool(\'quote\','+Number(j.id)+')">Prepare quotation</button>']:[]),'<button type="button" class="sv-tool-outline" onclick="openMessageConversation('+Number(j.business_id)+','+Number(j.customer_id)+')">Open customer chat</button>'])+'</article>').join(''):svGrowthEmpty('No requests are available in this pipeline yet.'))+'<div id="svGrowthPipelineStatus"></div>';
+}
+async function svGrowthSetJobStatus(jobId,status){try{await api('/api/jobs/'+Number(jobId)+'/status',{method:'POST',body:JSON.stringify({status})});const el=document.getElementById('svWorkToolStatus');if(el)el.textContent='Job status updated.';await svRenderGrowthPipeline(document.getElementById('svWorkToolBody'));}catch(e){svGrowthResult('svGrowthPipelineStatus',e.message,false);}}
+async function svRenderBookings(body){
+ const d=await svGrowthCall('bookings'),items=d.items||[];
+ body.innerHTML='<p class="sv-growth-intro">Appointments are saved against your provider listing. Dates are shown in the device/browser time zone; use the customer details to coordinate changes.</p><form id="svBookingForm" class="sv-growth-form"><h3>Schedule an appointment</h3><div class="sv-tool-fields"><div><label>Booking / job title</label><input name="title" required maxlength="160" placeholder="e.g. Kitchen tap repair"></div><div><label>Customer name</label><input name="customer_name" maxlength="120" placeholder="Customer name"></div><div><label>Customer email or phone</label><input name="customer_contact" maxlength="200" placeholder="Optional contact details"></div><div><label>Start date & time</label><input name="starts_at" type="datetime-local" required></div><div><label>End date & time</label><input name="ends_at" type="datetime-local"></div><div class="sv-full"><label>Notes / address / preparation</label><textarea name="notes" maxlength="2000" placeholder="Useful visit notes"></textarea></div></div><button class="sv-tool-submit" type="submit">Save booking</button><div id="svBookingStatus" aria-live="polite"></div></form><h3>Upcoming & previous bookings</h3>'+(items.length?items.map(b=>'<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(b.title)+'</h3>'+svGrowthStatus(b.status)+'</div><p>'+esc(b.customer_name||'Customer not named')+' · '+esc(b.customer_contact||'No contact supplied')+'</p><p><strong>Starts:</strong> '+esc(svGrowthDate(b.starts_at))+(b.ends_at?' · <strong>Ends:</strong> '+esc(svGrowthDate(b.ends_at)):'')+'</p><p>'+esc(b.notes||'')+'</p>'+svGrowthActions([...(b.status==='scheduled'?[ '<button class="sv-tool-outline" type="button" onclick="svGrowthBookingAction('+b.id+',\'completed\')">Mark completed</button>','<button class="sv-tool-outline" type="button" onclick="svGrowthBookingAction('+b.id+',\'cancelled\')">Cancel</button>']:[]),...(b.status==='completed'?[ '<button class="sv-tool-outline" type="button" onclick="svGrowthRequestReview('+Number(b.business_id)+','+Number(b.customer_id||0)+')">Request a review</button>']:[])])+'</article>').join(''):svGrowthEmpty('No bookings scheduled yet.')) ;
+ const form=document.getElementById('svBookingForm');form.addEventListener('submit',async e=>{e.preventDefault();const btn=form.querySelector('button[type=submit]');btn.disabled=true;try{const d=Object.fromEntries(new FormData(form));await svGrowthCall('bookings',{method:'POST',body:JSON.stringify({action:'create',...d})});await svRenderBookings(body);svGrowthResult('svBookingStatus','Booking saved.');}catch(err){svGrowthResult('svBookingStatus',err.message,false);}finally{btn.disabled=false;}});
+}
+async function svGrowthBookingAction(id,status){if(status==='cancelled'&&!confirm('Cancel this booking?'))return;try{await svGrowthCall('bookings',{method:'POST',body:JSON.stringify({action:'status',id,status})});await svRenderBookings(document.getElementById('svWorkToolBody'));}catch(e){alert(e.message);}}
+async function svRenderCRM(body){
+ const d=await svGrowthCall('crm'),items=d.items||[];
+ body.innerHTML='<p class="sv-growth-intro">CRM records are derived from real interactions in Skillvaya—messages, contacts, requests and quotations. Notes and tags are private to your provider team.</p><div class="sv-growth-grid">'+(items.length?items.map(c=>'<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(c.name||'Customer')+'</h3><span class="sv-growth-pill">'+Number(c.request_count||0)+' requests</span></div><p>'+esc(c.email||'No email')+' · '+esc(c.phone||'No phone')+'</p><p class="sv-growth-small">Last interaction: '+esc(svGrowthDate(c.last_activity))+' · '+Number(c.message_count||0)+' messages · '+Number(c.quote_count||0)+' quotes</p><form class="sv-growth-form" onsubmit="svGrowthSaveCustomerNote(event,'+Number(c.customer_id)+')"><label>Private customer notes</label><textarea name="notes" rows="3" maxlength="3000" placeholder="Preferences, agreed details, service reminders">'+esc(c.notes||'')+'</textarea><label>Tags (comma-separated)</label><input name="tags" maxlength="400" value="'+esc(c.tags||'')+'" placeholder="repeat customer, urgent, maintenance"><button class="sv-tool-submit" style="margin-top:10px" type="submit">Save CRM notes</button><div id="svCrmStatus'+Number(c.customer_id)+'"></div></form><button class="sv-tool-outline" type="button" onclick="openMessageConversation('+Number(c.business_id)+','+Number(c.customer_id)+')">Open chat</button></article>').join(''):svGrowthEmpty('Customer history will appear here after contacts, messages or job requests.'))+'</div>';
+}
+async function svGrowthSaveCustomerNote(event,customerId){event.preventDefault();const f=event.currentTarget,d=Object.fromEntries(new FormData(f));try{await svGrowthCall('crm',{method:'POST',body:JSON.stringify({action:'save_note',customer_id:customerId,...d})});svGrowthResult('svCrmStatus'+customerId,'Customer notes saved.');}catch(e){svGrowthResult('svCrmStatus'+customerId,e.message,false);}}
+async function svRenderFollowups(body){
+ const d=await svGrowthCall('followups'),items=d.items||[],scheduled=d.followups||[];
+ body.innerHTML='<p class="sv-growth-intro">Reminders are stored in Skillvaya. Creating a reminder does not send an automatic message; use the existing customer chat when you decide to follow up.</p><form id="svFollowupForm" class="sv-growth-form"><h3>Schedule a quote follow-up</h3><div class="sv-tool-fields"><div><label>Request / quotation</label><select name="job_id" required><option value="">Choose a pending quotation</option>'+items.map(x=>'<option value="'+Number(x.job_id)+'">#'+Number(x.job_id)+' · '+esc(x.title)+' — '+esc(x.customer_name||'Customer')+'</option>').join('')+'</select></div><div><label>Remind me on</label><input name="remind_at" type="datetime-local" required></div><div class="sv-full"><label>Private reminder note</label><input name="note" maxlength="300" placeholder="e.g. Ask if the customer needs clarification"></div></div><button type="submit" class="sv-tool-submit">Save reminder</button><div id="svFollowupStatus"></div></form><h3>Reminder list</h3>'+(scheduled.length?scheduled.map(f=>'<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(f.title||'Quote follow-up')+'</h3>'+svGrowthStatus(f.status)+'</div><p>'+esc(f.customer_name||'Customer')+' · Remind at '+esc(svGrowthDate(f.remind_at))+'</p><p>'+esc(f.note||'')+'</p>'+ (f.status==='pending'?'<button type="button" class="sv-tool-outline" onclick="svGrowthFollowupAction('+f.id+',\'completed\')">Mark handled</button>':'')+'</article>').join(''):svGrowthEmpty('No follow-up reminders. Pending quotes are listed above when available.'))+(items.length?'<details class="sv-growth-section"><summary>Pending quotations ('+items.length+')</summary>'+items.map(x=>'<p class="sv-growth-small">#'+Number(x.job_id)+' · '+esc(x.title)+' · '+esc(x.customer_name)+' · '+esc(svGrowthDate(x.quote_created_at))+'</p>').join('')+'</details>':'');
+ const form=document.getElementById('svFollowupForm');form.addEventListener('submit',async e=>{e.preventDefault();try{await svGrowthCall('followups',{method:'POST',body:JSON.stringify({action:'create',...Object.fromEntries(new FormData(form))})});await svRenderFollowups(body);svGrowthResult('svFollowupStatus','Reminder saved.');}catch(err){svGrowthResult('svFollowupStatus',err.message,false);}});
+}
+async function svGrowthFollowupAction(id,status){try{await svGrowthCall('followups',{method:'POST',body:JSON.stringify({action:'status',id,status})});await svRenderFollowups(document.getElementById('svWorkToolBody'));}catch(e){alert(e.message);}}
+async function svRenderInvoices(body){
+ const d=await svGrowthCall('invoices'),items=d.items||[],totals=d.totals||{};
+ let html='<p class="sv-growth-intro">Invoice ledger and payment-status tracking. This does not collect money or replace a payment provider.</p>';
+ html+='<div class="sv-growth-kpis"><div class="sv-growth-kpi"><strong>'+svGrowthMoney(totals.outstanding_cents||0)+'</strong><span>Outstanding balance</span></div><div class="sv-growth-kpi"><strong>'+Number(totals.overdue||0)+'</strong><span>Overdue invoices</span></div></div>';
+ html+='<form id="svInvoiceForm" class="sv-growth-form"><h3>Create an invoice record</h3><div class="sv-tool-fields"><div><label>Customer name</label><input name="customer_name" required maxlength="120"></div><div><label>Customer email</label><input name="customer_email" type="email" maxlength="254"></div><div><label>Amount (R)</label><input name="amount_rands" type="number" min="0.01" step="0.01" max="10000000" required></div><div><label>Due date</label><input name="due_date" type="date"></div><div><label>Related request (optional job ID)</label><input name="job_id" type="number" min="1" placeholder="Job ID"></div><div class="sv-full"><label>Invoice description</label><textarea name="description" minlength="3" maxlength="2000" required placeholder="Work completed or supplied"></textarea></div></div><button class="sv-tool-submit" type="submit">Create invoice</button><div id="svInvoiceStatus"></div></form><h3>Invoice register</h3>';
+ if(items.length){
+  html+=items.map(function(i){
+   let row='<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(i.invoice_number)+'</h3>'+svGrowthStatus(i.status)+'</div><p><strong>'+esc(i.customer_name)+'</strong> · '+esc(i.customer_email||'No email')+'</p><p>'+esc(i.description)+'</p>';
+   row+='<div class="sv-growth-row"><span class="sv-growth-money">'+svGrowthMoney(i.amount_cents)+'</span><span class="sv-growth-small">Paid '+svGrowthMoney(i.amount_paid_cents)+' · Due '+esc(i.due_date||'not set')+'</span></div>';
+   row+='<form class="sv-growth-form" onsubmit="svGrowthRecordInvoicePayment(event, '+Number(i.id)+')"><label>Record an additional payment (R)</label><div class="sv-growth-row"><input name="amount_rands" type="number" min="0.01" step="0.01" max="10000000" required style="max-width:200px"><button class="sv-tool-outline" type="submit">Record payment</button>';
+   row+='<button class="sv-tool-outline" type="button" data-growth-action="invoice-status" data-id="'+Number(i.id)+'" data-status="issued" onclick="svGrowthAction(this)">Mark issued</button>';
+   if(i.status!=='paid')row+='<button class="sv-tool-outline" type="button" data-growth-action="invoice-status" data-id="'+Number(i.id)+'" data-status="cancelled" onclick="svGrowthAction(this)">Cancel</button>';
+   row+='</div><div id="svInvoiceItemStatus'+Number(i.id)+'"></div></form></article>';return row;
+  }).join('');
+ } else html+=svGrowthEmpty('No invoices recorded yet.');
+ body.innerHTML=html;
+ const form=document.getElementById('svInvoiceForm');
+ form.addEventListener('submit',async function(e){e.preventDefault();const values=Object.fromEntries(new FormData(form));try{await svGrowthCall('invoices',{method:'POST',body:JSON.stringify({action:'create',...values})});await svRenderInvoices(body);}catch(err){svGrowthResult('svInvoiceStatus',err.message,false);}});
+}
+function svGrowthAction(button){const id=Number(button.dataset.id),status=String(button.dataset.status||'');if(button.dataset.growthAction==='invoice-status')svGrowthInvoiceAction(id,status);else if(button.dataset.growthAction==='package-status')svGrowthPackageAction(id,status);else if(button.dataset.growthAction==='offer-status')svGrowthOfferAction(id,status);}
+async function svGrowthRecordInvoicePayment(event,id){event.preventDefault();const amount=event.currentTarget.elements.amount_rands.value;try{await svGrowthCall('invoices',{method:'POST',body:JSON.stringify({action:'record_payment',id,amount_rands:amount})});await svRenderInvoices(document.getElementById('svWorkToolBody'));}catch(e){svGrowthResult('svInvoiceItemStatus'+id,e.message,false);}}
+async function svGrowthInvoiceAction(id,status){if(status==='cancelled'&&!confirm('Cancel this invoice record?'))return;try{await svGrowthCall('invoices',{method:'POST',body:JSON.stringify({action:'status',id,status})});await svRenderInvoices(document.getElementById('svWorkToolBody'));}catch(e){alert(e.message);}}
+async function svRenderReviews(body){
+ const d=await svGrowthCall('reviews'),items=d.items||[];
+ body.innerHTML='<p class="sv-growth-intro">Reviews displayed here come from actual Skillvaya ratings. Replies are public-facing professional responses saved against the original rating. The review-request button sends through the existing chat.</p>'+(items.length?items.map(r=>'<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(r.customer_name||'Customer')+'</h3><span class="sv-growth-pill">'+Number(r.stars)+'/5 ★</span></div><p class="sv-growth-small">Received '+esc(svGrowthDate(r.created_at))+'</p><p class="sv-growth-small">'+(r.reply?'Your reply: '+esc(r.reply):'No public reply yet.')+'</p><form class="sv-growth-form" onsubmit="svGrowthReplyReview(event,'+Number(r.id)+')"><label>Reply to review</label><textarea name="reply" minlength="3" maxlength="1500" required placeholder="Thank the customer and respond professionally">'+esc(r.reply||'')+'</textarea><button type="submit" class="sv-tool-submit">'+(r.reply?'Update reply':'Save reply')+'</button><div id="svReviewReplyStatus'+Number(r.id)+'"></div></form>'+ (Number(r.customer_id)?'<button type="button" class="sv-tool-outline" onclick="svGrowthRequestReview('+Number(r.business_id)+','+Number(r.customer_id)+')">Send review follow-up via chat</button>':'')+'</article>').join(''):svGrowthEmpty('No customer reviews have been recorded for this provider yet.'))+'<div id="svReviewStatus"></div>';
+}
+async function svGrowthReplyReview(event,id){event.preventDefault();const reply=event.currentTarget.elements.reply.value;try{await svGrowthCall('reviews',{method:'POST',body:JSON.stringify({action:'reply',rating_id:id,reply})});await svRenderReviews(document.getElementById('svWorkToolBody'));svGrowthResult('svReviewStatus','Review reply saved.');}catch(e){svGrowthResult('svReviewReplyStatus'+id,e.message,false);}}
+async function svGrowthRequestReview(businessId,customerId){if(!businessId||!customerId){alert('A customer conversation is required to send a review request.');return;}const message='Thank you for working with us through Skillvaya. When you have a moment, we would appreciate an honest review of your experience. Your feedback helps customers make informed decisions.';if(!confirm('Send this review request to the customer in their existing Skillvaya chat?'))return;try{await api('/api/messages/send',{method:'POST',body:JSON.stringify({business_id:Number(businessId),customer_id:Number(customerId),message})});alert('Review request sent in the existing chat.');}catch(e){alert(e.message);}}
+async function svRenderPackages(body){
+ const d=await svGrowthCall('packages'),items=d.items||[];
+ body.innerHTML='<p class="sv-growth-intro">Active packages are included in your public Skillvaya provider profile. Draft packages stay private; add-ons are presented as optional extras, not automatically charged.</p><form id="svPackageForm" class="sv-growth-form"><h3>Add a service package</h3><div class="sv-tool-fields"><div><label>Package name</label><input name="name" maxlength="120" required placeholder="e.g. Home maintenance basic"></div><div><label>Base price (R)</label><input name="price_rands" type="number" min="0.01" step="0.01" max="10000000" required></div><div class="sv-full"><label>Description</label><textarea name="description" minlength="3" maxlength="1500" required placeholder="What the package includes"></textarea></div><div class="sv-full"><label>Optional add-ons (one per line, format Name | Price)</label><textarea name="add_ons" maxlength="2000" placeholder="Emergency call-out | 250&#10;Extra item | 120"></textarea></div><div><label>Visibility</label><select name="status"><option value="active">Show on public profile</option><option value="draft">Keep as draft</option></select></div></div><button class="sv-tool-submit" type="submit">Save service package</button><div id="svPackageStatus"></div></form><div class="sv-growth-grid">'+(items.length?items.map(x=>'<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(x.name)+'</h3>'+svGrowthStatus(x.status)+'</div><div class="sv-growth-money">'+svGrowthMoney(x.price_cents)+'</div><p>'+esc(x.description)+'</p>'+(x.add_ons||[]).map(a=>'<span class="sv-growth-pill">'+esc(a.name)+' · '+svGrowthMoney(a.price_cents)+'</span> ').join('')+svGrowthActions(['<button type="button" class="sv-tool-outline" onclick="svGrowthPackageAction('+x.id+',\''+(x.status==='active'?'draft':'active')+'\')">'+(x.status==='active'?'Unpublish':'Publish')+'</button>','<button type="button" class="sv-tool-outline" onclick="svGrowthPackageAction('+x.id+',\'delete\')">Delete</button>'])+'</article>').join(''):svGrowthEmpty('No service packages yet.'))+'</div>';
+ const form=document.getElementById('svPackageForm');form.addEventListener('submit',async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(form));try{await svGrowthCall('packages',{method:'POST',body:JSON.stringify({action:'create',...v})});await svRenderPackages(body);svGrowthResult('svPackageStatus','Package saved.');}catch(err){svGrowthResult('svPackageStatus',err.message,false);}});
+}
+async function svGrowthPackageAction(id,action){if(action==='delete'&&!confirm('Delete this service package?'))return;try{await svGrowthCall('packages',{method:'POST',body:JSON.stringify({action,id,status:action})});await svRenderPackages(document.getElementById('svWorkToolBody'));}catch(e){alert(e.message);}}
+async function svRenderOffers(body){
+ const d=await svGrowthCall('offers'),items=d.items||[],stats=d.stats||{};
+ body.innerHTML='<p class="sv-growth-intro">Spotlight includes enhanced placement in Skillvaya’s directory, plus trackable offers. A promo code describes an offer; Skillvaya does not collect or deduct the discount at checkout.</p><div class="sv-growth-kpis"><div class="sv-growth-kpi"><strong>'+Number(stats.profile_views||0)+'</strong><span>Profile views</span></div><div class="sv-growth-kpi"><strong>'+Number(stats.leads||0)+'</strong><span>Tracked enquiries</span></div></div><form id="svOfferForm" class="sv-growth-form"><h3>Create an offer / voucher</h3><div class="sv-tool-fields"><div><label>Offer title</label><input name="title" maxlength="120" required></div><div><label>Voucher code</label><input name="code" maxlength="32" required placeholder="WELCOME10"></div><div class="sv-full"><label>Description &amp; conditions</label><textarea name="description" maxlength="1200" minlength="3" required></textarea></div><div><label>Discount type</label><select name="discount_type"><option value="percent">Percentage discount</option><option value="amount">Fixed Rand amount</option></select></div><div><label>Discount value</label><input name="discount_value" type="number" min="0.01" step="0.01" max="100000" required></div><div><label>Start date (optional)</label><input name="starts_on" type="date"></div><div><label>End date (optional)</label><input name="ends_on" type="date"></div><div><label>Use limit (0 = no stated limit)</label><input name="usage_limit" type="number" min="0" max="1000000" value="0"></div></div><button class="sv-tool-submit" type="submit">Save offer</button><div id="svOfferStatus"></div></form><div class="sv-growth-grid">'+(items.length?items.map(o=>'<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(o.title)+'</h3>'+svGrowthStatus(o.status)+'</div><div class="sv-growth-money">'+(o.discount_type==='percent'?Number(o.discount_value)+'%':'R'+Number(o.discount_value).toFixed(2))+' off</div><p>'+esc(o.description)+'</p><p><span class="sv-growth-pill">'+esc(o.code)+'</span> · '+Number(o.usage_count)+' uses'+(Number(o.usage_limit)>0?' / '+Number(o.usage_limit):'')+'</p><p class="sv-growth-small">'+esc(o.starts_on||'No start')+' – '+esc(o.ends_on||'No end')+'</p>'+svGrowthActions(['<button class="sv-tool-outline" type="button" onclick="svGrowthOfferAction('+o.id+',\''+(o.status==='active'?'paused':'active')+'\')">'+(o.status==='active'?'Pause':'Activate')+'</button>',...(o.status==='active'&&(!o.ends_on||o.ends_on>=new Date().toISOString().slice(0,10))?[ '<button class="sv-tool-outline" type="button" onclick="svGrowthOfferAction('+o.id+',\'redeem\')">Record redemption</button>']:[])])+'</article>').join(''):svGrowthEmpty('No offers or vouchers created yet.'))+'</div>';
+ const form=document.getElementById('svOfferForm');form.addEventListener('submit',async e=>{e.preventDefault();try{const v=Object.fromEntries(new FormData(form));await svGrowthCall('offers',{method:'POST',body:JSON.stringify({action:'create',...v})});await svRenderOffers(body);svGrowthResult('svOfferStatus','Offer saved.');}catch(err){svGrowthResult('svOfferStatus',err.message,false);}});
+}
+async function svGrowthOfferAction(id,action){try{await svGrowthCall('offers',{method:'POST',body:JSON.stringify({action,id})});await svRenderOffers(document.getElementById('svWorkToolBody'));}catch(e){alert(e.message);}}
+async function svRenderTeam(body){
+ const d=await svGrowthCall('team'),members=d.items||[],jobs=d.jobs||[],assignments=d.assignments||[];
+ body.innerHTML='<p class="sv-growth-intro">Invite staff by email, share the private invite link when email delivery is not configured, and assign actual Skillvaya job requests to active team members. Only accepted team members can be assigned.</p><form id="svTeamInviteForm" class="sv-growth-form"><h3>Invite a team member</h3><div class="sv-tool-fields"><div><label>Team member name</label><input name="name" maxlength="120" required></div><div><label>Email address</label><input name="email" type="email" maxlength="254" required></div><div><label>Team role</label><select name="team_role"><option value="staff">Staff member</option><option value="manager">Team manager</option></select></div></div><button class="sv-tool-submit" type="submit">Create invitation</button><div id="svTeamInviteStatus"></div></form><h3>Team roster</h3>'+(members.length?members.map(m=>'<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(m.name)+'</h3>'+svGrowthStatus(m.status)+'</div><p>'+esc(m.email)+' · '+esc(m.team_role)+'</p>'+(m.status==='invited'?'<p class="sv-growth-small">Invite link: <code>'+esc(m.invite_url||'Open Copy Invite Link')+'</code></p><button class="sv-tool-outline" type="button" onclick="svCopyTeamInvite('+m.id+')">Copy invite link</button>':'')+'</article>').join(''):svGrowthEmpty('No team members yet.'))+'<form id="svTeamAssignmentForm" class="sv-growth-form"><h3>Assign a job request</h3><div class="sv-tool-fields"><div><label>Job request</label><select name="job_id" required><option value="">Choose a live request</option>'+jobs.map(j=>'<option value="'+j.id+'">#'+j.id+' · '+esc(j.title)+'</option>').join('')+'</select></div><div><label>Active team member</label><select name="team_member_id" required><option value="">Choose staff</option>'+members.filter(m=>m.status==='active').map(m=>'<option value="'+m.id+'">'+esc(m.name)+'</option>').join('')+'</select></div><div><label>Due date (optional)</label><input name="due_date" type="date"></div><div class="sv-full"><label>Assignment notes</label><textarea name="note" maxlength="1000"></textarea></div></div><button class="sv-tool-submit" type="submit">Save assignment</button><div id="svTeamAssignStatus"></div></form><h3>Assignments</h3>'+(assignments.length?assignments.map(a=>'<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(a.job_title||'Job #'+a.job_id)+'</h3>'+svGrowthStatus(a.status)+'</div><p>'+esc(a.member_name||'Team member')+' · '+esc(a.due_date||'No due date')+'</p><p>'+esc(a.note||'')+'</p><button type="button" class="sv-tool-outline" onclick="svGrowthAssignmentAction('+a.id+',\'completed\')">Mark complete</button></article>').join(''):svGrowthEmpty('No jobs assigned yet.'));
+ const inv=document.getElementById('svTeamInviteForm');inv.addEventListener('submit',async e=>{e.preventDefault();try{const d=await svGrowthCall('team',{method:'POST',body:JSON.stringify({action:'invite',...Object.fromEntries(new FormData(inv))})});await svRenderTeam(body);svGrowthResult('svTeamInviteStatus',d.email_sent?'Invitation sent by email.':'Invitation created. Copy and share its private link. '+(d.email_error||''));}catch(err){svGrowthResult('svTeamInviteStatus',err.message,false);}});
+ const as=document.getElementById('svTeamAssignmentForm');as.addEventListener('submit',async e=>{e.preventDefault();try{await svGrowthCall('team',{method:'POST',body:JSON.stringify({action:'assign',...Object.fromEntries(new FormData(as))})});await svRenderTeam(body);svGrowthResult('svTeamAssignStatus','Job assignment saved.');}catch(err){svGrowthResult('svTeamAssignStatus',err.message,false);}});
+}
+async function svCopyTeamInvite(id){try{const d=await svGrowthCall('team',{method:'POST',body:JSON.stringify({action:'get_invite_link',id})});if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(d.invite_url);alert('Private invitation link copied.')}else prompt('Copy this private invitation link:',d.invite_url);}catch(e){alert(e.message);}}
+async function svGrowthAssignmentAction(id,status){try{await svGrowthCall('team',{method:'POST',body:JSON.stringify({action:'assignment_status',id,status})});await svRenderTeam(document.getElementById('svWorkToolBody'));}catch(e){alert(e.message);}}
+async function svRenderMarketing(body){
+ const d=await svGrowthCall('marketing'),stats=d.stats||{},sources=d.sources||[],campaigns=d.campaigns||[];
+ body.innerHTML='<p class="sv-growth-intro">Marketing counts come from recorded Skillvaya directory visits, campaign opens, contact actions and requests. They measure tracked activity, not guaranteed sales; visits before tracking was deployed are not retroactively counted.</p><div class="sv-growth-kpis">'+[['Listing views',stats.profile_views||0],['Campaign views',stats.campaign_views||0],['Campaign clicks',stats.campaign_clicks||0],['Tracked leads',stats.leads||0],['Requests',stats.requests||0],['Offer interactions',stats.offer_views||0]].map(x=>'<div class="sv-growth-kpi"><strong>'+Number(x[1])+'</strong><span>'+esc(x[0])+'</span></div>').join('')+'</div><div class="sv-growth-section"><h3>Lead sources</h3>'+(sources.length?'<div class="sv-growth-tablewrap"><table class="sv-growth-table"><thead><tr><th>Source</th><th>Visits</th><th>Clicks</th><th>Leads</th></tr></thead><tbody>'+sources.map(x=>'<tr><td>'+esc(x.source)+'</td><td>'+Number(x.visits||0)+'</td><td>'+Number(x.clicks||0)+'</td><td>'+Number(x.leads||0)+'</td></tr>').join('')+'</tbody></table></div>':svGrowthEmpty('No tracked lead-source events yet. Share a published campaign link or allow a visitor to open your directory profile.'))+'</div><div class="sv-growth-section"><h3>Campaign performance</h3>'+(campaigns.length?'<div class="sv-growth-tablewrap"><table class="sv-growth-table"><thead><tr><th>Campaign</th><th>Status</th><th>Views</th><th>Clicks</th><th>Leads</th></tr></thead><tbody>'+campaigns.map(c=>'<tr><td>'+esc(c.title)+'</td><td>'+esc(c.status)+'</td><td>'+Number(c.views||0)+'</td><td>'+Number(c.clicks||0)+'</td><td>'+Number(c.leads||0)+'</td></tr>').join('')+'</tbody></table></div>':svGrowthEmpty('No campaign statistics yet. Create a Spotlight campaign and publish it to begin measuring activity.'))+'</div>';
+}
+async function svRenderAnnouncements(body){
+ const d=await svGrowthCall('announcements'),items=d.items||[];
+ body.innerHTML='<p class="sv-growth-intro">Announcements are delivered through the existing Skillvaya chat, and only to customers who opted in and have a saved contact with this provider. Publish is a separate, confirmed action.</p><div class="sv-growth-muted-alert">Customer opt-in count: <strong>'+Number(d.opted_in_customers||0)+'</strong> · Customers who have not opted in are excluded.</div><form id="svAnnouncementForm" class="sv-growth-form"><h3>Draft a customer announcement</h3><div class="sv-tool-fields"><div class="sv-full"><label>Announcement title</label><input name="title" required maxlength="160"></div><div class="sv-full"><label>Message</label><textarea name="body" required minlength="10" maxlength="2000" rows="5" placeholder="A useful service update, special offer or seasonal reminder"></textarea></div></div><button type="submit" class="sv-tool-submit">Save draft</button><div id="svAnnouncementStatus"></div></form><h3>Previous announcements</h3>'+(items.length?items.map(a=>'<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(a.title)+'</h3>'+svGrowthStatus(a.status)+'</div><p>'+esc(a.body)+'</p><p class="sv-growth-small">Recipients: '+Number(a.recipient_count||0)+' · Updated '+esc(svGrowthDate(a.updated_at))+'</p>'+(a.status==='draft'?'<button class="sv-tool-submit" type="button" onclick="svGrowthPublishAnnouncement('+a.id+')">Review & publish</button>':'')+'</article>').join(''):svGrowthEmpty('No announcements drafted yet.'));
+ const f=document.getElementById('svAnnouncementForm');f.addEventListener('submit',async e=>{e.preventDefault();try{await svGrowthCall('announcements',{method:'POST',body:JSON.stringify({action:'create',...Object.fromEntries(new FormData(f))})});await svRenderAnnouncements(body);svGrowthResult('svAnnouncementStatus','Draft saved.');}catch(err){svGrowthResult('svAnnouncementStatus',err.message,false);}});
+}
+async function svGrowthPublishAnnouncement(id){if(!confirm('Publish this announcement to existing contacts who explicitly opted in? It will create messages in those customers’ existing chats.'))return;try{const d=await svGrowthCall('announcements',{method:'POST',body:JSON.stringify({action:'publish',id})});await svRenderAnnouncements(document.getElementById('svWorkToolBody'));alert('Announcement published to '+Number(d.recipient_count||0)+' opted-in customer(s).');}catch(e){alert(e.message);}}
+async function loadCustomerMarketingPreference(){const card=document.getElementById('customerMarketingPreferenceCard');if(!card||!me||me.role!=='customer')return;try{const d=await api('/api/customer/marketing-preferences');document.getElementById('customerMarketingOptIn').checked=!!d.opted_in;card.classList.remove('hidden');}catch(e){card.classList.remove('hidden');const s=document.getElementById('customerMarketingPreferenceStatus');if(s)s.textContent='Could not load preference: '+e.message;}}
+async function saveCustomerMarketingPreference(){const value=!!document.getElementById('customerMarketingOptIn').checked,status=document.getElementById('customerMarketingPreferenceStatus');try{const d=await api('/api/customer/marketing-preferences',{method:'POST',body:JSON.stringify({opted_in:value})});if(status)status.textContent=d.opted_in?'You opted in to relevant provider announcements. You can opt out at any time.':'Preference saved. You will not receive provider announcements.';}catch(e){if(status)status.textContent=e.message;}}
+async function svRenderAutomation(body){
+ const d=await svGrowthCall('automation'),rules=d.rules||[],alerts=d.alerts||[];
+ body.innerHTML='<p class="sv-growth-intro">Enabled reminders are evaluated automatically about once an hour and can also be checked manually here. Alerts are in-app only; this does not send push notifications, email or customer messages.</p><div class="sv-growth-section"><h3>Automation rules</h3>'+rules.map(r=>'<label class="sv-growth-check"><input type="checkbox" '+(r.enabled?'checked':'')+' onchange="svGrowthToggleAutomation(\''+esc(r.rule_key)+'\',this.checked)"> <span><strong>'+esc(r.title)+'</strong><br>'+esc(r.description)+'</span></label>').join('')+'<div id="svAutomationStatus"></div><button type="button" class="sv-tool-submit" onclick="svGrowthEvaluateAutomation()">Check now &amp; refresh alerts</button></div><div class="sv-growth-section"><h3>In-app alerts</h3>'+(alerts.length?alerts.map(a=>'<article class="sv-growth-item"><div class="sv-growth-row"><h3>'+esc(a.title)+'</h3>'+svGrowthStatus(a.status)+'</div><p>'+esc(a.body)+'</p><p class="sv-growth-small">'+esc(svGrowthDate(a.created_at))+'</p></article>').join(''):svGrowthEmpty('No alerts right now. Alerts are evaluated from due quotes, bookings and invoice records.'))+'</div>';
+}
+async function svGrowthToggleAutomation(rule_key,enabled){try{await svGrowthCall('automation',{method:'POST',body:JSON.stringify({action:'toggle',rule_key,enabled})});svGrowthResult('svAutomationStatus','Rule preference saved.');}catch(e){svGrowthResult('svAutomationStatus',e.message,false);}}
+async function svGrowthEvaluateAutomation(){try{await svGrowthCall('automation',{method:'POST',body:JSON.stringify({action:'evaluate'})});await svRenderAutomation(document.getElementById('svWorkToolBody'));}catch(e){alert(e.message);}}
 
 function searchFromServices(){
   const field=document.getElementById('servicesSearchInput'),q=document.getElementById('q');
@@ -1626,9 +2038,9 @@ function view(v){if(v==='provider'&&window.svSubscriptionTestMode){openSubscript
  // Switching destinations must close any account subspace overlay first, or it can cover every bottom tab.
  if(typeof accountSubspaceCurrent!=='undefined'&&accountSubspaceCurrent)closeAccountSubspace();
  if(v==='admin'){location.href='/owner-app';return}
- const valid=['customer','provider','account','settings','messages','terms','providerDetailScreen','servicesTabScreen','svWorkstationTool','svWorkstationToolScreen','contactUsScreen','subscriptionTestApp','subscriptionTestProfileScreen','services','contact'];
+ const valid=['customer','provider','account','settings','messages','terms','providerDetailScreen','servicesTabScreen','svWorkstationTool','svWorkstationToolScreen','contactUsScreen','subscriptionTestApp','subscriptionTestProfileScreen','teamAssignmentsScreen','services','contact'];
  if(!valid.includes(v))v='customer';
- const screenIds=['customer','categoryScreen','provider','account','settings','messagesScreen','terms','providerDetailScreen','servicesTabScreen','svWorkstationToolScreen','contactUsScreen','subscriptionTestApp','subscriptionTestProfileScreen'];
+ const screenIds=['customer','categoryScreen','provider','account','settings','messagesScreen','terms','providerDetailScreen','servicesTabScreen','svWorkstationToolScreen','contactUsScreen','subscriptionTestApp','subscriptionTestProfileScreen','teamAssignmentsScreen'];
  screenIds.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('hidden')});
  const targetId=({services:'servicesTabScreen',svWorkstationTool:'svWorkstationToolScreen',contact:'contactUsScreen',messages:'messagesScreen'})[v]||v;
  // Keep inactive full-page destinations out of layout even if a later screen-specific CSS rule changes display.
@@ -1704,6 +2116,7 @@ function openProvider(id){document.body.classList.remove('category-screen-mode',
   providerDetailReturnView=serviceScreen&&!serviceScreen.classList.contains('hidden')?'services':categoryScreenNow&&!categoryScreenNow.classList.contains('hidden')?'category':'customer';
   setHomeChrome(false);
  const b=allBusinesses.find(x=>Number(x.id)===Number(id));if(!b)return;
+ svTrackMarketingEvent(b.id,'profile_view',0,'directory');
  const studio=Boolean(b.owner_studio);
  const contact=['<button type="button" class="primary" onclick="contact('+Number(b.id)+')">＋ Make contact</button>'];
  if(b.email)contact.push('<a class="studio-action" href="mailto:'+esc(b.email)+'">✉ Email</a>');
@@ -1713,11 +2126,12 @@ function openProvider(id){document.body.classList.remove('category-screen-mode',
  const icons=['✎','◇','▣','</>','⚙','▯','✺','▤','⌕','🔧'];
  const about=String(b.description||'').trim();
  if(studio){
- document.getElementById('providerDetailContent').innerHTML='<article class="studio-profile"><div class="studio-banner"><div class="studio-logo">S</div><div class="studio-brand"><h1>Skillvaya</h1><h2>Digital &amp; Creative Studio</h2><p>Ideas <b>·</b> Design <b>·</b> Code <b>·</b> Build <b>·</b> Support</p></div><div class="studio-slogan">Your Vision.<br>Our Skills.<br>Real Results.</div></div><div class="studio-facts"><div><span>▣</span><div><small>Business Type</small><strong>Digital &amp; Creative Studio</strong></div></div><div><span>📍</span><div><small>Service Area</small><strong>Online &amp; Remote</strong></div></div></div><div class="studio-contactfacts"><a href="tel:'+esc(String(b.phone||'+27 83 787 45 69').replace(/[^+0-9]/g,''))+'"><span>☎</span><div><small>Phone</small><strong>'+esc(b.phone||'+27 83 787 45 69')+'</strong></div></a><a href="mailto:'+esc(b.email||'Skillvaya@gmail.com')+'"><span>✉</span><div><small>Email</small><strong>'+esc(b.email||'Skillvaya@gmail.com')+'</strong></div></a></div><h2 class="studio-sectiontitle">Our Services</h2><div class="studio-services">'+services.map((x,i)=>'<div class="studio-service"><span class="studio-service-icon icon-'+i+'">'+icons[i]+'</span><strong>'+esc(x)+'</strong></div>').join('')+'</div><h2 class="studio-sectiontitle">About Us</h2><p class="studio-about">'+about+'</p><div class="studio-motto"><span>◎</span><div>Our goal is simple:<strong>Your success is our success.</strong></div></div><div class="studio-actions">'+contact.join('')+'</div><div class="studio-extra-actions"><button type="button" class="studio-action" onclick="toggleFavorite('+Number(b.id)+')">♡ Save provider</button><button type="button" class="studio-action" onclick="contact('+Number(b.id)+')">✉ Request a service</button>'+ratingMarkup(b.id,b.rating,b.rating_count,b.my_rating)+'</div></article>';
+ document.getElementById('providerDetailContent').innerHTML='<article class="studio-profile"><div class="studio-banner"><div class="studio-logo">S</div><div class="studio-brand"><h1>Skillvaya</h1><h2>Digital &amp; Creative Studio</h2><p>Ideas <b>·</b> Design <b>·</b> Code <b>·</b> Build <b>·</b> Support</p></div><div class="studio-slogan">Your Vision.<br>Our Skills.<br>Real Results.</div></div><div class="studio-facts"><div><span>▣</span><div><small>Business Type</small><strong>Digital &amp; Creative Studio</strong></div></div><div><span>📍</span><div><small>Service Area</small><strong>Online &amp; Remote</strong></div></div></div><div class="studio-contactfacts"><a href="tel:'+esc(String(b.phone||'+27 83 787 45 69').replace(/[^+0-9]/g,''))+'"><span>☎</span><div><small>Phone</small><strong>'+esc(b.phone||'+27 83 787 45 69')+'</strong></div></a><a href="mailto:'+esc(b.email||'Skillvaya@gmail.com')+'"><span>✉</span><div><small>Email</small><strong>'+esc(b.email||'Skillvaya@gmail.com')+'</strong></div></a></div><h2 class="studio-sectiontitle">Our Services</h2><div class="studio-services">'+services.map((x,i)=>'<div class="studio-service"><span class="studio-service-icon icon-'+i+'">'+icons[i]+'</span><strong>'+esc(x)+'</strong></div>').join('')+'</div><h2 class="studio-sectiontitle">About Us</h2><p class="studio-about">'+about+'</p><div id="providerGrowthPublicContent" class="sv-growth-public-content"></div><div class="studio-motto"><span>◎</span><div>Our goal is simple:<strong>Your success is our success.</strong></div></div><div class="studio-actions">'+contact.join('')+'</div><div class="studio-extra-actions"><button type="button" class="studio-action" onclick="toggleFavorite('+Number(b.id)+')">♡ Save provider</button><button type="button" class="studio-action" onclick="contact('+Number(b.id)+')">✉ Request a service</button>'+ratingMarkup(b.id,b.rating,b.rating_count,b.my_rating)+'</div></article>';
  }else{
- document.getElementById('providerDetailContent').innerHTML='<article class="provider-detail-hero"><span class="tag '+(b.plan==='plus'?'plus':b.plan==='spotlight'?'spotlight':'')+'">'+(b.plan==='local'?'Local listing':b.plan==='priority'?'Priority · Sponsored':b.plan==='plus'?'Business Plus · Sponsored':'Spotlight · Sponsored')+'</span><h1>'+esc(b.name)+'</h1><p class="muted">'+esc(b.category)+' · '+esc(b.area)+'</p><p>'+esc(b.description)+'</p>'+portfolioMarkup(b.photos)+ratingMarkup(b.id,b.rating,b.rating_count,b.my_rating)+'<h3 style="margin-top:22px">Contact this service provider</h3><p class="muted">Choose how you would like to get in touch. Customer directory browsing is free.</p><div class="provider-detail-contact">'+contact.join('')+'</div></article>';
+ document.getElementById('providerDetailContent').innerHTML='<article class="provider-detail-hero"><span class="tag '+(b.plan==='plus'?'plus':b.plan==='spotlight'?'spotlight':'')+'">'+(b.plan==='local'?'Local listing':b.plan==='priority'?'Priority · Sponsored':b.plan==='plus'?'Business Plus · Sponsored':'Spotlight · Sponsored')+'</span><h1>'+esc(b.name)+'</h1><p class="muted">'+esc(b.category)+' · '+esc(b.area)+'</p><p>'+esc(b.description)+'</p>'+portfolioMarkup(b.photos)+'<div id="providerGrowthPublicContent" class="sv-growth-public-content"></div>'+ratingMarkup(b.id,b.rating,b.rating_count,b.my_rating)+'<h3 style="margin-top:22px">Contact this service provider</h3><p class="muted">Choose how you would like to get in touch. Customer directory browsing is free.</p><div class="provider-detail-contact">'+contact.join('')+'</div></article>';
  }
  ['customer','provider','account','settings','terms','admin','categoryScreen','servicesTabScreen','contactUsScreen','services','contact'].forEach(x=>{const el=document.getElementById(x);if(el)el.classList.add('hidden')});setHomeChrome(false);document.getElementById('hero').classList.add('hidden');document.body.classList.add('provider-detail-mode');document.getElementById('providerDetailScreen').classList.remove('hidden');
+ loadPublicProviderGrowth(Number(b.id));
  const ownerPublic=document.getElementById('owner-promotions-public');if(ownerPublic)ownerPublic.classList.add('hidden');
  document.querySelectorAll('.bottom-tabbar button').forEach(x=>x.classList.remove('active'));window.scrollTo(0,0)
 }
@@ -1729,14 +2143,51 @@ async function rateCustomer(businessId,customerId,stars){if(!me||me.role!=='prov
 async function loadPlatformRating(){try{const d=await api('/api/platform-rating');const summary=document.getElementById('platformRatingSummary');if(!summary)return;summary.textContent=(d.count?('Skillvaya rating: '+Number(d.average).toFixed(1)+' / 5 from '+d.count+' rating'+(d.count===1?'':'s')):'No ratings yet — be the first to rate Skillvaya.');const root=document.getElementById('platformRatingStars');root.innerHTML=[1,2,3,4,5].map(n=>'<button type="button" aria-label="Rate Skillvaya '+n+' out of 5 stars" title="Rate Skillvaya '+n+' stars" onclick="submitPlatformRating('+n+')" style="background:transparent;border:0;padding:2px 5px;font-size:1.7rem;line-height:1.3;cursor:pointer;color:'+(n<=(Number(d.my_rating)||0)?'#e6a400':'#9aa7b5')+'">★</button>').join('')}catch(e){const s=document.getElementById('platformRatingSummary');if(s)s.textContent='Skillvaya ratings are temporarily unavailable.'}}
 async function submitPlatformRating(stars){if(!me){view('settings');profileAuthMode('signin');document.getElementById('platformRatingMsg').textContent='Please sign in or create a free account to rate Skillvaya.';return}try{const d=await api('/api/platform-rating',{method:'POST',body:JSON.stringify({stars})});document.getElementById('platformRatingMsg').textContent='Thank you — your '+stars+'-star rating has been saved. You can change it any time.';await loadPlatformRating()}catch(e){document.getElementById('platformRatingMsg').textContent=e.message}}
 function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-async function contact(id){if(!me){view('settings');profileAuthMode('signin');alert('Please sign in to your Skillvaya account to message this provider.');return}if(!['customer','admin'].includes(me.role)){alert('Only customer accounts can make a contact with a service provider.');return}const b=allBusinesses.find(x=>Number(x.id)===Number(id));if(!b){alert('Provider listing is not available.');return}if(me.role==='provider'&&Number(b.user_id)===Number(me.id)){alert('You cannot message your own provider listing. Choose another provider.');return}try{await api('/api/contacts',{method:'POST',body:JSON.stringify({business_id:Number(id)})})}catch(e){alert('Could not save this contact: '+e.message);return}showMessagesScreen(false);const root=document.getElementById('messagesList');if(!root)return;document.body.classList.add('messages-conversation-open');root.innerHTML='<div class="message-conversation-screen"><button type="button" class="ghost message-back-button" onclick="loadMessageThreads()">? Back to conversations</button><header class="message-conversation-header"><div class="conversation-avatar">'+esc(String(b.name||'S').slice(0,1).toUpperCase())+'</div><div><h2>'+esc(b.name)+'</h2><p class="muted tiny">Private conversation ? Only you and this provider can see your messages.</p></div></header><form class="message-compose" onsubmit="sendInitialProviderMessage(event,'+Number(id)+')"><textarea name="message" required maxlength=4000 rows=3 placeholder="Write your message to this provider?"></textarea><button class="primary" type="submit">Send message</button></form></div>';const field=root.querySelector('textarea');if(field)field.focus({preventScroll:true})}
+async function svTrackMarketingEvent(businessId,eventType,campaignId=0,source='directory'){
+ try{
+  const key='sv_visit_key';let visitor=sessionStorage.getItem(key);
+  if(!visitor){visitor=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now())+'-'+Math.random().toString(36).slice(2);sessionStorage.setItem(key,visitor);}
+  fetch('/api/marketing/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({business_id:Number(businessId),event_type:eventType,campaign_id:Number(campaignId||0),source:String(source||'directory').slice(0,80),visitor_key:visitor})}).catch(()=>{});
+ }catch(e){}
+}
+function svPublicGrowthMarkup(b,businessId){
+ const campaigns=b.active_campaigns||[],offers=b.offers||[],packages=b.packages||[];
+ let out='';
+ if(campaigns.length){
+  out+='<section class="sv-growth-public-section"><span class="sv-workstation-eyebrow">BUSINESS SPOTLIGHT</span><h3>Current promotion</h3><div class="sv-growth-public-banner"><span>FEATURED CAMPAIGN</span><strong>'+esc(campaigns[0].title)+'</strong><p>'+esc(campaigns[0].description)+'</p></div><div class="sv-growth-public-actions"><button type="button" onclick="svGrowthPublicContact('+Number(businessId)+',\'campaign\','+Number(campaigns[0].id)+')">Ask about this promotion</button></div></section>';
+  campaigns.forEach(c=>svTrackMarketingEvent(Number(businessId),'campaign_view',Number(c.id),'provider-profile'));
+ }
+ if(offers.length){
+  out+='<section class="sv-growth-public-section"><h3>Special offers &amp; vouchers</h3><div class="sv-growth-public-grid">'+offers.map(o=>'<article class="sv-growth-public-card"><h4>'+esc(o.title)+'</h4><div class="sv-growth-public-price">'+(o.discount_type==='percent'?Number(o.discount_value)+'% off':'R'+Number(o.discount_value).toFixed(2)+' off')+'</div><p>'+esc(o.description)+'</p><span class="sv-growth-public-code">'+esc(o.code)+'</span><p class="sv-growth-public-note">Ask this provider about the offer and its conditions. Skillvaya does not automatically deduct discounts or collect payment.</p><div class="sv-growth-public-actions"><button type="button" onclick="svGrowthPublicContact('+Number(businessId)+',\'offer\','+Number(o.id)+')">Ask about offer</button></div></article>').join('')+'</div></section>';
+ }
+ if(packages.length){
+  out+='<section class="sv-growth-public-section"><h3>Service packages &amp; optional extras</h3><div class="sv-growth-public-grid">'+packages.map(p=>'<article class="sv-growth-public-card"><h4>'+esc(p.name)+'</h4><div class="sv-growth-public-price">R'+(Number(p.price_cents||0)/100).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div><p>'+esc(p.description)+'</p>'+((p.add_ons||[]).length?'<p><strong>Optional add-ons</strong></p>'+p.add_ons.map(a=>'<p>＋ '+esc(a.name)+' · R'+(Number(a.price_cents||0)/100).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2})+'</p>').join(''):'')+'<div class="sv-growth-public-actions"><button type="button" onclick="svGrowthPublicContact('+Number(businessId)+',\'package\','+Number(p.id)+')">Request this package</button></div></article>').join('')+'</div><p class="sv-growth-public-note">Prices and scope are supplied by the provider. Confirm availability, add-ons and final quotation in chat before agreeing to work.</p></section>';
+ }
+ return out;
+}
+async function loadPublicProviderGrowth(businessId){
+ const host=document.getElementById('providerGrowthPublicContent');if(!host)return;
+ host.innerHTML='<div class="sv-growth-public-section"><p class="sv-growth-public-note">Checking current offers and service packages…</p></div>';
+ try{
+  const d=await api('/api/businesses/'+Number(businessId)+'/growth');
+  if(!host.isConnected)return;
+  host.innerHTML=svPublicGrowthMarkup(d,Number(businessId));
+ }catch(e){if(host.isConnected)host.innerHTML='';}
+}
+function svGrowthPublicContact(businessId,kind,referenceId){
+ if(kind==='campaign')svTrackMarketingEvent(Number(businessId),'campaign_click',Number(referenceId),'provider-profile');
+ else if(kind==='offer')svTrackMarketingEvent(Number(businessId),'offer_view',0,'offer:'+Number(referenceId));
+ else svTrackMarketingEvent(Number(businessId),'package_click',0,'package:'+Number(referenceId));
+ contact(Number(businessId));
+}
+async function contact(id){if(!me){view('settings');profileAuthMode('signin');alert('Please sign in to your Skillvaya account to message this provider.');return}if(!['customer','admin'].includes(me.role)){alert('Only customer accounts can make a contact with a service provider.');return}const b=allBusinesses.find(x=>Number(x.id)===Number(id));if(!b){alert('Provider listing is not available.');return}if(me.role==='provider'&&Number(b.user_id)===Number(me.id)){alert('You cannot message your own provider listing. Choose another provider.');return}try{await api('/api/contacts',{method:'POST',body:JSON.stringify({business_id:Number(id)})})}catch(e){alert('Could not save this contact: '+e.message);return}svTrackMarketingEvent(Number(id),'lead',0,'contact');showMessagesScreen(false);const root=document.getElementById('messagesList');if(!root)return;document.body.classList.add('messages-conversation-open');root.innerHTML='<div class="message-conversation-screen"><button type="button" class="ghost message-back-button" onclick="loadMessageThreads()">? Back to conversations</button><header class="message-conversation-header"><div class="conversation-avatar">'+esc(String(b.name||'S').slice(0,1).toUpperCase())+'</div><div><h2>'+esc(b.name)+'</h2><p class="muted tiny">Private conversation ? Only you and this provider can see your messages.</p></div></header><form class="message-compose" onsubmit="sendInitialProviderMessage(event,'+Number(id)+')"><textarea name="message" required maxlength=4000 rows=3 placeholder="Write your message to this provider?"></textarea><button class="primary" type="submit">Send message</button></form></div>';const field=root.querySelector('textarea');if(field)field.focus({preventScroll:true})}
 async function sendInitialProviderMessage(e,businessId){e.preventDefault();const form=e.target,field=form.elements.message,message=field.value.trim(),button=form.querySelector('button[type=submit]');if(!message)return;const root=document.getElementById('messagesList');document.body.classList.add('messages-conversation-open');root.innerHTML='<div class="message-conversation-screen"><button type="button" class="ghost message-back-button" onclick="loadMessageThreads()">? Back to conversations</button><div class="message-bubbles"><div class="message-row mine"><div class="message-bubble">'+esc(message)+'<div class="message-time">Sending?</div></div></div></div><form class="message-compose" onsubmit="sendConversationReply(event,'+Number(businessId)+','+Number(me.id)+')"><textarea name="message" required maxlength="4000" rows="2" placeholder="Write a message?"></textarea><button class="primary" type="submit">Send</button></form></div>';const bubbles=root.querySelector('.message-bubbles'),stamp=root.querySelector('.message-time'),next=root.querySelector('textarea');if(bubbles)bubbles.scrollTop=bubbles.scrollHeight;if(button)button.disabled=true;try{await api('/api/messages/send',{method:'POST',body:JSON.stringify({business_id:Number(businessId),message})});if(stamp)stamp.textContent=formatMessageDate(new Date().toISOString());if(next)next.focus({preventScroll:true});}catch(err){if(stamp)stamp.textContent='Not sent ? '+err.message;if(next)next.value=message;}finally{if(button)button.disabled=false}}async function report(id){if(!me){view('settings');profileAuthMode('signin');alert('Please create a free profile or sign in to report a business.');return}let reason=prompt('Describe the concern. Reports are investigated fairly; allegations are not treated as proven facts.');if(!reason)return;try{await api('/api/complaints',{method:'POST',body:JSON.stringify({business_id:id,reason})});alert('Report submitted to the safety review queue.')}catch(e){alert(e.message)}}
 document.getElementById('signup').onsubmit=async e=>{e.preventDefault();try{let fd=new FormData(e.target);let data=Object.fromEntries(fd);data.accept_terms=document.querySelector('#signup input[name="accept_terms"]').checked;let d=await api('/api/signup',{method:'POST',body:JSON.stringify(data)});token=d.token;localStorage.setItem('sv_token',token);localStorage.setItem('skillvaya_token',token);sessionStorage.removeItem('sv_token');sessionStorage.removeItem('skillvaya_token');msg('signupMsg','Profile created. Welcome, '+d.user.name+'.',true);view('settings');await sessionInfo()}catch(x){msg('signupMsg',x.message)}};
-document.getElementById('login').onsubmit=async e=>{e.preventDefault();try{let data=Object.fromEntries(new FormData(e.target));data.accept_terms=document.getElementById('loginTerms').checked;let d=await api('/api/login',{method:'POST',body:JSON.stringify(data)});token=d.token;me=d.user;localStorage.removeItem('sv_token');localStorage.removeItem('skillvaya_token');sessionStorage.removeItem('sv_token');sessionStorage.removeItem('skillvaya_token');if(document.getElementById('rememberMe').checked){localStorage.setItem('sv_token',token);localStorage.setItem('skillvaya_token',token)}else{sessionStorage.setItem('sv_token',token);sessionStorage.setItem('skillvaya_token',token)}msg('loginMsg','Signed in successfully.',true);view('settings');await sessionInfo();if(me.role==='provider')refreshProviderGate();if(me.role==='admin'){const workerButton=document.getElementById('workerSideButton');if(workerButton)workerButton.classList.remove('hidden')}}catch(x){msg('loginMsg',x.message)}};
+document.getElementById('login').onsubmit=async e=>{e.preventDefault();try{let data=Object.fromEntries(new FormData(e.target));data.accept_terms=document.getElementById('loginTerms').checked;let d=await api('/api/login',{method:'POST',body:JSON.stringify(data)});token=d.token;me=d.user;maybeAcceptSkillvayaTeamInvite().catch(()=>{});loadMyTeamAccess().catch(()=>{});localStorage.removeItem('sv_token');localStorage.removeItem('skillvaya_token');sessionStorage.removeItem('sv_token');sessionStorage.removeItem('skillvaya_token');if(document.getElementById('rememberMe').checked){localStorage.setItem('sv_token',token);localStorage.setItem('skillvaya_token',token)}else{sessionStorage.setItem('sv_token',token);sessionStorage.setItem('skillvaya_token',token)}msg('loginMsg','Signed in successfully.',true);view('settings');await sessionInfo();if(me.role==='provider')refreshProviderGate();if(me.role==='admin'){const workerButton=document.getElementById('workerSideButton');if(workerButton)workerButton.classList.remove('hidden')}}catch(x){msg('loginMsg',x.message)}};
 function setProfileEditing(enabled){const form=document.getElementById('profileForm');if(!form)return;['name','phone'].forEach(n=>{const el=form.elements[n];if(el)el.readOnly=!enabled});const save=document.getElementById('profileSaveActions'),edit=document.getElementById('editProfileButton');if(save)save.classList.toggle('hidden',!enabled);if(edit)edit.classList.toggle('hidden',!!enabled)}
 async function becomeServiceProvider(){if(!me){view('settings');profileAuthMode('signin');return}if(me.role==='admin'){msg('providerOptInMsg','Your owner account already has free provider access. Open Provider Studio to edit your existing Skillvaya profile.',true);view('provider');return}if(me.role==='provider'){msg('providerOptInMsg','Your account is already set as a service provider.',true);view('provider');return}const b=document.getElementById('becomeProviderButton');if(b){b.disabled=true;b.textContent='Setting up provider access…'}try{const d=await api('/api/account/become-provider',{method:'POST',body:JSON.stringify({})});me=d.user;document.getElementById('profileIdentity').textContent=me.email+' · '+me.role;msg('providerOptInMsg','Provider access is ready. Choose a plan to publish your service profile.',true);if(b){b.textContent='Provider access ready';b.disabled=true}await refreshProviderGate();view('provider')}catch(e){msg('providerOptInMsg',e.message)}finally{if(b&&(!me||me.role!=='provider')){b.disabled=false;b.textContent='Become a Provider'}}}
 function openWorkerSide(){if(!me||me.role!=='admin'){alert('This private workspace is available only to the authorised owner account.');return}if(!token){alert('Please sign in again to open your worker workspace.');profileAuthMode('signin');return}localStorage.setItem('skillvaya_owner_token',token);location.assign('/owner-app')}
-async function sessionInfo(){try{let d=await api('/api/me');me=d.user;const workerButton=document.getElementById('workerSideButton');if(workerButton)workerButton.classList.toggle('hidden',me.role!=='admin');if(me.role==='admin'&&token)localStorage.setItem('skillvaya_owner_token',token);updateSkillvayaProviderTab();updateSubscriptionTesterAccess();document.getElementById('profileSettingsCard').classList.remove('hidden');document.getElementById('profileAuthTabs').classList.add('hidden');document.getElementById('signinPane').classList.add('hidden');document.getElementById('signupPane').classList.add('hidden');if(document.getElementById('profileForm')){document.getElementById('profileForm').elements.name.value=me.name||'';document.getElementById('profileForm').elements.phone.value=me.phone||'';document.getElementById('profileIdentity').textContent=me.email+' · '+me.role;setProfileEditing(false);const opt=document.getElementById('providerOptInCard');if(opt)opt.classList.toggle('hidden',me.role!=='customer');document.getElementById('profilePhotoPreview').src=me.profile_photo||document.getElementById('profilePhotoPreview').src;const headingPhoto=document.getElementById('profileHeadingPhoto');if(headingPhoto)headingPhoto.src=me.profile_photo||headingPhoto.src}return me}catch(e){if(token&&/sign in first|session|token/i.test(e.message)){token='';localStorage.removeItem('sv_token');localStorage.removeItem('skillvaya_token');localStorage.removeItem('skillvaya_user');sessionStorage.removeItem('sv_token');sessionStorage.removeItem('skillvaya_token');try{return await sessionInfo()}catch(_){}}me=null;updateSubscriptionTesterAccess();const c=document.getElementById('profileSettingsCard');if(c)c.classList.add('hidden');document.getElementById('profileAuthTabs').classList.remove('hidden');profileAuthMode('signin');return null}}
+async function sessionInfo(){try{let d=await api('/api/me');me=d.user;const workerButton=document.getElementById('workerSideButton');if(workerButton)workerButton.classList.toggle('hidden',me.role!=='admin');if(me.role==='admin'&&token)localStorage.setItem('skillvaya_owner_token',token);updateSkillvayaProviderTab();if(me.role==='customer')loadCustomerMarketingPreference().catch(()=>{});loadMyTeamAccess().catch(()=>{});maybeAcceptSkillvayaTeamInvite().catch(()=>{});updateSubscriptionTesterAccess();document.getElementById('profileSettingsCard').classList.remove('hidden');document.getElementById('profileAuthTabs').classList.add('hidden');document.getElementById('signinPane').classList.add('hidden');document.getElementById('signupPane').classList.add('hidden');if(document.getElementById('profileForm')){document.getElementById('profileForm').elements.name.value=me.name||'';document.getElementById('profileForm').elements.phone.value=me.phone||'';document.getElementById('profileIdentity').textContent=me.email+' · '+me.role;setProfileEditing(false);const opt=document.getElementById('providerOptInCard');if(opt)opt.classList.toggle('hidden',me.role!=='customer');document.getElementById('profilePhotoPreview').src=me.profile_photo||document.getElementById('profilePhotoPreview').src;const headingPhoto=document.getElementById('profileHeadingPhoto');if(headingPhoto)headingPhoto.src=me.profile_photo||headingPhoto.src}return me}catch(e){if(token&&/sign in first|session|token/i.test(e.message)){token='';localStorage.removeItem('sv_token');localStorage.removeItem('skillvaya_token');localStorage.removeItem('skillvaya_user');sessionStorage.removeItem('sv_token');sessionStorage.removeItem('skillvaya_token');try{return await sessionInfo()}catch(_){}}me=null;updateSubscriptionTesterAccess();const c=document.getElementById('profileSettingsCard');if(c)c.classList.add('hidden');document.getElementById('profileAuthTabs').classList.remove('hidden');profileAuthMode('signin');return null}}
 async function saveProfilePhoto(){const photoInput=document.getElementById('profilePhotoFile'),cameraInput=document.getElementById('profileCameraFile');const file=(photoInput&&photoInput.files&&photoInput.files[0])||(cameraInput&&cameraInput.files&&cameraInput.files[0]);if(!file){msg('photoMsg','Choose a picture or take a photo first.');return}if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>2*1024*1024){msg('photoMsg','Choose a JPG, PNG or WebP image up to 2 MB.');return}const button=document.getElementById('saveProfilePhotoButton');button.disabled=true;button.textContent='Uploading…';const reader=new FileReader();reader.onerror=()=>{button.disabled=false;button.textContent='Upload picture';msg('photoMsg','The selected image could not be read. Please choose it again.')};reader.onload=async()=>{try{const d=await api('/api/account/profile',{method:'POST',body:JSON.stringify({name:me.name,phone:me.phone||'',profile_photo:reader.result})});me=d.user;document.getElementById('profilePhotoPreview').src=me.profile_photo;const headingPhoto=document.getElementById('profileHeadingPhoto');if(headingPhoto)headingPhoto.src=me.profile_photo;if(photoInput)photoInput.value='';if(cameraInput)cameraInput.value='';document.getElementById('profilePhotoFileName').textContent='Profile picture uploaded successfully';msg('photoMsg','Profile picture saved.',true)}catch(e){msg('photoMsg',e.message)}finally{button.disabled=false;button.textContent='Upload picture'}};reader.readAsDataURL(file)}
 function previewProfilePhotoInput(input){const otherInput=document.getElementById(input&&input.id==='profileCameraFile'?'profilePhotoFile':'profileCameraFile');if(otherInput)otherInput.value='';const file=input&&input.files&&input.files[0];if(!file)return;document.getElementById('profilePhotoFileName').textContent=file.name+' ('+(file.size/1024).toFixed(0)+' KB)';if(file.size<=2*1024*1024&&['image/jpeg','image/png','image/webp'].includes(file.type)){const r=new FileReader();r.onload=()=>document.getElementById('profilePhotoPreview').src=r.result;r.readAsDataURL(file)}else{msg('photoMsg','Choose a JPG, PNG or WebP image up to 2 MB.')}}
 document.getElementById('profilePhotoFile').addEventListener('change',e=>previewProfilePhotoInput(e.target));document.getElementById('profileCameraFile').addEventListener('change',e=>previewProfilePhotoInput(e.target));
@@ -1991,7 +2442,7 @@ async function refreshProviderGate(){
   }
  }catch(e){card.classList.add('hidden');if(plans)plans.classList.remove('hidden');notice.classList.remove('hidden');notice.textContent='Could not load your provider profile. Please retry after checking your connection.'}
 }
-function drawPlans(){if(me&&me.role==='admin'){document.getElementById('plans').innerHTML='<div class="price featured"><h3>Skillvaya Owner Edition</h3><div class="amount">FREE</div><p>All available app features unlocked for the owner account. No subscription or checkout required.</p><span class="pill">Top-tier owner access</span></div>';return}let y=document.getElementById('billing').value==='yearly';document.getElementById('plans').innerHTML='<p class="muted tiny">Plan prices are shown in South African rand (ZAR). PayPal checkout is charged in US dollars (USD) using the current exchange rate; PayPal may apply its own currency-conversion fees.</p>'+planInfo.map(p=>'<div class="price '+(p[0]==='spotlight'?'featured':'')+'"><h3>'+p[1]+'</h3><div class="amount">R'+(p[2]*(y?11:1)).toLocaleString('en-ZA')+'<span class="tiny muted"> / '+(y?'year':'month')+'</span></div>'+(y?'<span class="pill">12 months for price of 11</span>':'')+'<p class="muted tiny">'+p[3]+'</p><button class="primary" onclick="choosePlan(\''+p[0]+'\',\''+(y?'yearly':'monthly')+'\')">Choose plan</button></div>').join('')}
+function drawPlans(){if(me&&me.role==='admin'){document.getElementById('plans').innerHTML='<div class="price featured"><h3>Skillvaya Owner Edition</h3><div class="amount">FREE</div><p>All available app features unlocked for the owner account. No subscription or checkout required.</p><span class="pill">Top-tier owner access</span></div>';return}let y=document.getElementById('billing').value==='yearly';document.getElementById('plans').innerHTML='<p class="muted tiny">Plan prices are shown in South African rand (ZAR). PayPal checkout is charged in US dollars (USD) using the current exchange rate; PayPal may apply its own currency-conversion fees.</p>'+planInfo.map(p=>'<div class="price '+(p[0]==='spotlight'?'featured':'')+'"><h3>'+p[1]+'</h3><div class="amount">R'+(p[2]*(y?11:1)).toLocaleString('en-ZA')+'<span class="tiny muted"> / '+(y?'year':'month')+'</span></div>'+(y?'<span class="pill">12 months for price of 11</span>':'')+'<p class="muted tiny">'+p[3]+'</p><ul class="sv-plan-feature-list">'+p[4].map(f=>'<li>'+esc(f)+'</li>').join('')+'</ul><button class="primary" onclick="choosePlan(\''+p[0]+'\',\''+(y?'yearly':'monthly')+'\')">Choose plan</button></div>').join('')}
 async function choosePlan(plan,billing){if(me&&me.role==='admin'){alert('Your Skillvaya Owner Edition is already unlocked for free. No payment is required.');return}if(!me){view('settings');profileAuthMode('signin');alert('Create a provider profile or sign in first.');return}try{const p=await api('/api/payment-provider');if(p.provider!=='paypal'||!p.checkout_ready)throw Error(p.message||'PayPal is not ready. Check the configured PayPal mode and matching credentials in Render.');const d=await api('/api/paypal/create-order',{method:'POST',body:JSON.stringify({plan,billing})});if(!d.checkout_ready||!d.approval_url)throw Error(d.error||'PayPal checkout is not ready.');location.assign(d.approval_url)}catch(e){alert(e.message)}}
 async function loadAdmin(){try{let d=await api('/api/admin/summary');document.getElementById('adminData').classList.remove('hidden');document.getElementById('adminMsg').classList.add('hidden');document.getElementById('sBiz').textContent=d.businesses;document.getElementById('sComplaints').textContent=d.complaints;document.getElementById('sPayments').textContent=d.payments;document.getElementById('sPending').textContent=d.pending;adminTab('complaints')}catch(e){document.getElementById('adminData').classList.add('hidden');document.getElementById('adminMsg').textContent='Owner sign-in required. '+e.message}}
 async function adminTab(tab){try{if(tab==='settings'){let d=await api('/api/admin/settings');document.getElementById('adminTable').innerHTML='<h3>Owner email & alerts</h3><p>Reports, new account notices, payment events and overdue subscription alerts can be emailed when SMTP is configured.</p><form id="ownerEmailForm"><label>Owner notification email</label><input name="owner_email" type="email" value="'+esc(d.owner_email)+'" placeholder="you@example.com" required><p><button class="primary">Save email</button> <button type="button" class="ghost" onclick="testOwnerEmail()">Send test email</button></p></form><div class="notice">'+(d.smtp_configured?'SMTP credentials detected.':'Email sending is not yet configured; events are saved to Alerts until SMTP is configured.')+'</div><p class="muted tiny">'+esc(d.note)+'</p>';document.getElementById('ownerEmailForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/admin/settings',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});alert('Owner email saved.');adminTab('settings')}catch(x){alert(x.message)}};return}
@@ -2075,6 +2526,483 @@ class Handler(BaseHTTPRequestHandler):
         with conn() as c:
             rows=c.execute("SELECT p.id,p.reference,p.plan,p.billing,p.amount,p.status,p.created_at,p.verified_at,p.pf_payment_id,p.payment_gateway,p.paypal_order_id,p.paypal_capture_id,p.refunded_amount,p.refund_status,u.email user_email FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 300").fetchall()
         return [dict(x) for x in rows]
+    def handle_provider_growth(self, method, path, data=None):
+        feature=path.rsplit("/",1)[-1]
+        allowed={
+            "pipeline":2,"bookings":2,"crm":2,"followups":2,"invoices":2,"reviews":2,"packages":2,
+            "offers":3,"team":3,"marketing":3,"announcements":3,"automation":3
+        }
+        if feature not in allowed:
+            return self.sendj({"error":"Growth tool not found."},404)
+        u=self.require()
+        d=data or {}
+        if feature=="team" and method=="POST" and str(d.get("action",""))=="accept_invite":
+            if u.get("role") not in ("customer","provider","admin"):
+                return self.sendj({"error":"Sign in with the invited account to accept this invitation."},403)
+            code=str(d.get("invite_code","")).strip()[:100]
+            with conn() as c:
+                invite=c.execute("SELECT * FROM provider_team_members WHERE invite_code=? AND status='invited'",(code,)).fetchone()
+                if not invite:return self.sendj({"error":"This invitation is invalid, expired or already accepted."},404)
+                if str(invite["email"]).lower()!=str(u.get("email","")).lower():return self.sendj({"error":"Sign in with the email address that received this invitation."},403)
+                c.execute("UPDATE provider_team_members SET user_id=?,status='active',updated_at=? WHERE id=?",(u["id"],now(),invite["id"]))
+                return self.sendj({"ok":True,"business_id":int(invite["business_id"]),"team_member_id":int(invite["id"]),"message":"Your team invitation was accepted."})
+        if u.get("role") not in ("provider","admin"):
+            return self.sendj({"error":"Only provider accounts can use this tool."},403)
+        query=urllib.parse.parse_qs(urlparse(self.path).query)
+        ranks=PROVIDER_TIER_RANKS
+        test_tier=subscription_test_tier(u,query,d)
+        with conn() as c:
+            biz=c.execute("SELECT id,user_id,name,plan,payment_status,status FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1",(u["id"],)).fetchone()
+        if u["role"]=="provider":
+            if not biz or str(biz["payment_status"] or "")!="verified":
+                return self.sendj({"error":"A verified provider profile is required to use business growth tools."},403)
+            business_id=int(biz["id"]); plan=str(biz["plan"] or "local").lower()
+        else:
+            if not biz:
+                with conn() as c:
+                    biz=c.execute("SELECT id,user_id,name,plan,payment_status,status FROM businesses WHERE LOWER(TRIM(name))='skillvaya digital & creative studio' ORDER BY id DESC LIMIT 1").fetchone()
+            business_id=int(biz["id"]) if biz else 0
+            plan="spotlight"
+            if test_tier:
+                plan=test_tier
+                business_id=subscription_test_business_id(u["id"],test_tier)
+        rank=ranks.get(plan,0)
+        if rank<allowed[feature]:
+            need="Business Plus" if allowed[feature]==2 else "Business Spotlight"
+            return self.sendj({"error":feature.replace("_"," ").title()+" requires "+need+" or above."},403)
+        uid=int(u["id"]); stamp=now()
+        try:
+            with conn() as c:
+                if feature=="pipeline":
+                    rows=c.execute("""SELECT j.*,COALESCE(b.name,?) business_name,cu.name customer_name
+                        FROM job_requests j LEFT JOIN businesses b ON b.id=j.business_id
+                        JOIN users cu ON cu.id=j.customer_id
+                        WHERE j.business_id=? ORDER BY j.updated_at DESC,j.id DESC LIMIT 200""",("Sandbox "+plan.title()+" test account",business_id)).fetchall()
+                    items=[]
+                    for r in rows:
+                        item=dict(r)
+                        item["quotes"]=[dict(q) for q in c.execute("SELECT id,amount_cents,eta,message,status,created_at FROM job_quotes WHERE job_id=? ORDER BY created_at",(r["id"],)).fetchall()]
+                        items.append(item)
+                    return self.sendj({"items":items,"plan":plan})
+                if feature=="bookings":
+                    if method=="GET":
+                        rows=c.execute("SELECT * FROM provider_bookings WHERE business_id=? ORDER BY starts_at DESC,id DESC LIMIT 300",(business_id,)).fetchall()
+                        return self.sendj({"items":[dict(x) for x in rows],"plan":plan})
+                    action=str(d.get("action","create"))
+                    if action=="create":
+                        title=str(d.get("title","")).strip()[:160]
+                        customer_name=str(d.get("customer_name","")).strip()[:120]
+                        customer_contact=str(d.get("customer_contact","")).strip()[:200]
+                        starts=str(d.get("starts_at","")).strip()[:40]; ends=str(d.get("ends_at","")).strip()[:40]
+                        notes=str(d.get("notes","")).strip()[:2000]
+                        if len(title)<2 or not starts: return self.sendj({"error":"Enter a title and start date/time."},400)
+                        if ends and ends<starts: return self.sendj({"error":"End time must be on or after the start time."},400)
+                        cur=c.execute("INSERT INTO provider_bookings(business_id,user_id,customer_name,customer_contact,title,notes,starts_at,ends_at,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'scheduled',?,?) RETURNING id",(business_id,uid,customer_name,customer_contact,title,notes,starts,ends,stamp,stamp))
+                        return self.sendj({"ok":True,"id":cur.fetchone()["id"],"message":"Booking saved."},201)
+                    if action=="status":
+                        try: bid=int(d.get("id",0))
+                        except (TypeError,ValueError): return self.sendj({"error":"Invalid booking."},400)
+                        status=str(d.get("status",""))
+                        if status not in ("scheduled","completed","cancelled"): return self.sendj({"error":"Invalid booking status."},400)
+                        cur=c.execute("UPDATE provider_bookings SET status=?,updated_at=? WHERE id=? AND business_id=?",(status,stamp,bid,business_id))
+                        if cur.rowcount!=1:return self.sendj({"error":"Booking not found."},404)
+                        return self.sendj({"ok":True,"status":status})
+                if feature=="crm":
+                    if method=="GET":
+                        rows=c.execute("""SELECT DISTINCT u.id customer_id,u.name,u.email,u.phone
+                            FROM users u WHERE
+                            EXISTS(SELECT 1 FROM job_requests j WHERE j.business_id=? AND j.customer_id=u.id)
+                            OR EXISTS(SELECT 1 FROM messages m WHERE m.business_id=? AND m.customer_id=u.id)
+                            OR EXISTS(SELECT 1 FROM contacts ct WHERE ct.business_id=? AND ct.customer_id=u.id)
+                            OR EXISTS(SELECT 1 FROM enquiries e WHERE e.business_id=? AND e.customer_id=u.id)
+                            ORDER BY u.name LIMIT 500""",(business_id,business_id,business_id,business_id)).fetchall()
+                        items=[]
+                        for r in rows:
+                            cid=int(r["customer_id"])
+                            requests=c.execute("SELECT count(*) FROM job_requests WHERE business_id=? AND customer_id=?",(business_id,cid)).fetchone()[0]
+                            quotes=c.execute("SELECT count(*) FROM job_quotes WHERE business_id=? AND job_id IN (SELECT id FROM job_requests WHERE business_id=? AND customer_id=?)",(business_id,business_id,cid)).fetchone()[0]
+                            messages=c.execute("SELECT count(*),max(created_at) FROM messages WHERE business_id=? AND customer_id=?",(business_id,cid)).fetchone()
+                            note=c.execute("SELECT notes,tags FROM provider_customer_notes WHERE business_id=? AND customer_id=?",(business_id,cid)).fetchone()
+                            items.append({**dict(r),"request_count":int(requests),"quote_count":int(quotes),"message_count":int(messages[0] or 0),"last_activity":messages[1] or "","notes":note["notes"] if note else "","tags":note["tags"] if note else ""})
+                        return self.sendj({"items":items})
+                    if str(d.get("action",""))!="save_note":return self.sendj({"error":"Unsupported CRM action."},400)
+                    try: cid=int(d.get("customer_id",0))
+                    except (TypeError,ValueError):return self.sendj({"error":"Invalid customer."},400)
+                    interaction=c.execute("SELECT 1 FROM contacts WHERE business_id=? AND customer_id=? UNION SELECT 1 FROM messages WHERE business_id=? AND customer_id=? UNION SELECT 1 FROM job_requests WHERE business_id=? AND customer_id=? LIMIT 1",(business_id,cid,business_id,cid,business_id,cid)).fetchone()
+                    if not interaction:return self.sendj({"error":"CRM notes are limited to customers you have interacted with through Skillvaya."},403)
+                    notes=str(d.get("notes","")).strip()[:3000];tags=str(d.get("tags","")).strip()[:400]
+                    c.execute("INSERT INTO provider_customer_notes(business_id,user_id,customer_id,notes,tags,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(business_id,customer_id) DO UPDATE SET notes=excluded.notes,tags=excluded.tags,updated_at=excluded.updated_at",(business_id,uid,cid,notes,tags,stamp,stamp))
+                    return self.sendj({"ok":True})
+                if feature=="followups":
+                    if method=="GET":
+                        q=c.execute("""SELECT j.id job_id,j.title,j.customer_id,cu.name customer_name,q.created_at quote_created_at
+                            FROM job_quotes q JOIN job_requests j ON j.id=q.job_id JOIN users cu ON cu.id=j.customer_id
+                            WHERE j.business_id=? AND q.business_id=? AND q.status='pending'
+                            ORDER BY q.created_at DESC LIMIT 200""",(business_id,business_id)).fetchall()
+                        f=c.execute("SELECT * FROM provider_followups WHERE business_id=? ORDER BY remind_at ASC,id DESC LIMIT 300",(business_id,)).fetchall()
+                        return self.sendj({"items":[dict(x) for x in q],"followups":[dict(x) for x in f]})
+                    action=str(d.get("action","create"))
+                    if action=="create":
+                        try: jid=int(d.get("job_id",0))
+                        except (TypeError,ValueError): return self.sendj({"error":"Choose a valid quote request."},400)
+                        remind=str(d.get("remind_at","")).strip()[:40];note=str(d.get("note","")).strip()[:300]
+                        job=c.execute("SELECT id,customer_id FROM job_requests WHERE id=? AND business_id=? AND status IN ('requested','quoted')",(jid,business_id)).fetchone()
+                        quote=c.execute("SELECT id FROM job_quotes WHERE job_id=? AND business_id=? AND status='pending' LIMIT 1",(jid,business_id)).fetchone()
+                        if not job or not quote:return self.sendj({"error":"Choose a request with a pending quotation."},400)
+                        if not remind:return self.sendj({"error":"Choose a reminder date and time."},400)
+                        cur=c.execute("INSERT INTO provider_followups(business_id,user_id,job_id,customer_id,remind_at,note,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'pending',?,?) RETURNING id",(business_id,uid,jid,job["customer_id"],remind,note,stamp,stamp))
+                        return self.sendj({"ok":True,"id":cur.fetchone()["id"]},201)
+                    if action=="status":
+                        try: fid=int(d.get("id",0))
+                        except (ValueError,TypeError):return self.sendj({"error":"Invalid follow-up."},400)
+                        status=str(d.get("status",""))
+                        if status not in ("pending","completed","cancelled"):return self.sendj({"error":"Invalid reminder status."},400)
+                        cur=c.execute("UPDATE provider_followups SET status=?,updated_at=? WHERE id=? AND business_id=?",(status,stamp,fid,business_id))
+                        if cur.rowcount!=1:return self.sendj({"error":"Reminder not found."},404)
+                        return self.sendj({"ok":True})
+                if feature=="invoices":
+                    if method=="GET":
+                        rows=c.execute("SELECT * FROM provider_invoices WHERE business_id=? ORDER BY created_at DESC,id DESC LIMIT 300",(business_id,)).fetchall()
+                        items=[dict(r) for r in rows]
+                        outstanding=sum(max(0,int(r["amount_cents"])-int(r["amount_paid_cents"])) for r in items if r["status"] not in ("cancelled","paid"))
+                        today=datetime.date.today().isoformat()
+                        overdue=sum(1 for r in items if r["status"] not in ("cancelled","paid") and r["due_date"] and r["due_date"]<today and int(r["amount_paid_cents"])<int(r["amount_cents"]))
+                        return self.sendj({"items":items,"totals":{"outstanding_cents":outstanding,"overdue":overdue}})
+                    action=str(d.get("action","create"))
+                    if action=="create":
+                        customer=str(d.get("customer_name","")).strip()[:120]; email=str(d.get("customer_email","")).strip().lower()[:254]
+                        desc=str(d.get("description","")).strip()[:2000];due=str(d.get("due_date","")).strip()[:20]
+                        try: amount=round(float(d.get("amount_rands",0))*100);jid=int(d.get("job_id",0) or 0)
+                        except (ValueError,TypeError):return self.sendj({"error":"Enter a valid amount and request ID."},400)
+                        if not customer or len(desc)<3 or amount<=0 or amount>1_000_000_000:return self.sendj({"error":"Enter customer name, description and a positive invoice amount."},400)
+                        if jid and not c.execute("SELECT id FROM job_requests WHERE id=? AND business_id=?",(jid,business_id)).fetchone():return self.sendj({"error":"The selected job request does not belong to this business."},400)
+                        number="SVI-"+secrets.token_hex(4).upper()
+                        cur=c.execute("INSERT INTO provider_invoices(business_id,user_id,job_id,invoice_number,customer_name,customer_email,description,amount_cents,due_date,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,'draft',?,?) RETURNING id",(business_id,uid,jid or None,number,customer,email,desc,amount,due,stamp,stamp))
+                        return self.sendj({"ok":True,"id":cur.fetchone()["id"],"invoice_number":number,"message":"Invoice record created; no payment was taken."},201)
+                    try:iid=int(d.get("id",0))
+                    except (ValueError,TypeError):return self.sendj({"error":"Invalid invoice."},400)
+                    inv=c.execute("SELECT * FROM provider_invoices WHERE id=? AND business_id=?",(iid,business_id)).fetchone()
+                    if not inv:return self.sendj({"error":"Invoice not found."},404)
+                    if action=="record_payment":
+                        try: amount=round(float(d.get("amount_rands",0))*100)
+                        except (ValueError,TypeError):return self.sendj({"error":"Enter a valid payment amount."},400)
+                        remaining=int(inv["amount_cents"])-int(inv["amount_paid_cents"])
+                        if amount<=0 or amount>remaining or inv["status"]=="cancelled":return self.sendj({"error":"Payment amount must be positive and no greater than the remaining invoice balance."},400)
+                        paid=int(inv["amount_paid_cents"])+amount;status="paid" if paid>=int(inv["amount_cents"]) else inv["status"]
+                        c.execute("UPDATE provider_invoices SET amount_paid_cents=?,status=?,paid_at=?,updated_at=? WHERE id=? AND business_id=?",(paid,status,stamp if status=="paid" else inv["paid_at"],stamp,iid,business_id))
+                        return self.sendj({"ok":True,"status":status,"amount_paid_cents":paid,"message":"Payment entry recorded in the ledger only."})
+                    if action=="status":
+                        status=str(d.get("status",""))
+                        if status not in ("issued","cancelled") or inv["status"]=="paid":return self.sendj({"error":"Invalid invoice status change."},400)
+                        c.execute("UPDATE provider_invoices SET status=?,updated_at=? WHERE id=? AND business_id=?",(status,stamp,iid,business_id))
+                        return self.sendj({"ok":True,"status":status})
+                if feature=="reviews":
+                    if method=="GET":
+                        rows=c.execute("""SELECT r.id,r.business_id,r.rater_id AS customer_id,r.stars,r.created_at,u.name customer_name
+                            FROM ratings r JOIN users u ON u.id=r.rater_id
+                            WHERE r.business_id=? AND r.target_type='provider' ORDER BY r.created_at DESC LIMIT 300""",(business_id,)).fetchall()
+                        items=[]
+                        for r in rows:
+                            x=dict(r); reply=c.execute("SELECT reply FROM provider_review_replies WHERE rating_id=? AND business_id=?",(r["id"],business_id)).fetchone();x["reply"]=reply["reply"] if reply else "";items.append(x)
+                        return self.sendj({"items":items})
+                    if str(d.get("action"))!="reply":return self.sendj({"error":"Unsupported review action."},400)
+                    try:rid=int(d.get("rating_id",0))
+                    except (ValueError,TypeError):return self.sendj({"error":"Invalid review."},400)
+                    if not c.execute("SELECT id FROM ratings WHERE id=? AND business_id=? AND target_type='provider'",(rid,business_id)).fetchone():return self.sendj({"error":"Review not found for this business."},404)
+                    reply=str(d.get("reply","")).strip()[:1500]
+                    if len(reply)<3:return self.sendj({"error":"Reply must contain at least three characters."},400)
+                    updated=c.execute("UPDATE provider_review_replies SET reply=?,updated_at=? WHERE rating_id=? AND business_id=?",(reply,stamp,rid,business_id))
+                    if updated.rowcount==0:
+                        c.execute("INSERT INTO provider_review_replies(business_id,user_id,rating_id,reply,created_at,updated_at) VALUES(?,?,?,?,?,?)",(business_id,uid,rid,reply,stamp,stamp))
+                    saved=c.execute("SELECT id FROM provider_review_replies WHERE rating_id=? AND business_id=? AND reply=?",(rid,business_id,reply)).fetchone()
+                    if not saved:return self.sendj({"error":"Review reply could not be persisted."},500)
+                    return self.sendj({"ok":True,"id":int(saved["id"]),"rating_id":rid})
+                if feature=="packages":
+                    if method=="GET":
+                        rows=c.execute("SELECT * FROM provider_service_packages WHERE business_id=? ORDER BY created_at DESC,id DESC LIMIT 200",(business_id,)).fetchall()
+                        items=[]
+                        for r in rows:
+                            x=dict(r)
+                            try:x["add_ons"]=json.loads(x["add_ons"] or "[]")
+                            except Exception:x["add_ons"]=[]
+                            items.append(x)
+                        return self.sendj({"items":items})
+                    action=str(d.get("action","create"))
+                    if action=="create":
+                        name=str(d.get("name","")).strip()[:120];desc=str(d.get("description","")).strip()[:1500];status=str(d.get("status","draft"))
+                        try:price=round(float(d.get("price_rands",0))*100)
+                        except (ValueError,TypeError):return self.sendj({"error":"Enter a valid package price."},400)
+                        if len(name)<2 or len(desc)<3 or price<=0 or price>1_000_000_000 or status not in ("active","draft"):return self.sendj({"error":"Enter package name, description, price and a valid visibility."},400)
+                        add_ons=[]
+                        for line in str(d.get("add_ons","")).splitlines()[:20]:
+                            if "|" not in line:continue
+                            n,pr=line.split("|",1)
+                            try: cents=round(float(pr.strip().replace("R",""))*100)
+                            except ValueError:continue
+                            if n.strip() and 0<cents<=1_000_000_000:add_ons.append({"name":n.strip()[:100],"price_cents":cents})
+                        cur=c.execute("INSERT INTO provider_service_packages(business_id,user_id,name,description,price_cents,add_ons,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id",(business_id,uid,name,desc,price,json.dumps(add_ons),status,stamp,stamp))
+                        return self.sendj({"ok":True,"id":cur.fetchone()["id"]},201)
+                    try:pid=int(d.get("id",0))
+                    except (ValueError,TypeError):return self.sendj({"error":"Invalid package."},400)
+                    row=c.execute("SELECT id FROM provider_service_packages WHERE id=? AND business_id=?",(pid,business_id)).fetchone()
+                    if not row:return self.sendj({"error":"Package not found."},404)
+                    if action=="delete":c.execute("DELETE FROM provider_service_packages WHERE id=? AND business_id=?",(pid,business_id));return self.sendj({"ok":True})
+                    status=str(d.get("status",""))
+                    if status not in ("active","draft"):return self.sendj({"error":"Invalid package status."},400)
+                    c.execute("UPDATE provider_service_packages SET status=?,updated_at=? WHERE id=? AND business_id=?",(status,stamp,pid,business_id));return self.sendj({"ok":True})
+                if feature=="offers":
+                    if method=="GET":
+                        rows=c.execute("SELECT * FROM provider_offers WHERE business_id=? ORDER BY created_at DESC,id DESC LIMIT 200",(business_id,)).fetchall()
+                        stats={}
+                        for et in ("profile_view","lead"):
+                            stats["profile_views" if et=="profile_view" else "leads"]=int(c.execute("SELECT count(*) FROM provider_marketing_events WHERE business_id=? AND event_type=?",(business_id,et)).fetchone()[0])
+                        return self.sendj({"items":[dict(x) for x in rows],"stats":stats})
+                    action=str(d.get("action","create"))
+                    try:oid=int(d.get("id",0) or 0)
+                    except (ValueError,TypeError):return self.sendj({"error":"Invalid offer."},400)
+                    if action=="create":
+                        title=str(d.get("title","")).strip()[:120];code=str(d.get("code","")).strip().upper()[:32];desc=str(d.get("description","")).strip()[:1200]
+                        typ=str(d.get("discount_type","percent"));starts=str(d.get("starts_on","")).strip()[:20];ends=str(d.get("ends_on","")).strip()[:20]
+                        try:value=float(d.get("discount_value",0));limit=int(d.get("usage_limit",0) or 0)
+                        except (ValueError,TypeError):return self.sendj({"error":"Enter a valid offer value and use limit."},400)
+                        if len(title)<2 or len(code)<3 or len(desc)<3 or not all(ch.isalnum() or ch in "-_" for ch in code) or typ not in ("percent","amount") or value<=0 or value>100000 or limit<0:return self.sendj({"error":"Check the title, code, description, discount and limit."},400)
+                        if typ=="percent" and value>100:return self.sendj({"error":"Percentage discount cannot exceed 100%."},400)
+                        if starts and ends and ends<starts:return self.sendj({"error":"Offer end date must be on or after the start date."},400)
+                        try:
+                            cur=c.execute("INSERT INTO provider_offers(business_id,user_id,title,code,description,discount_type,discount_value,starts_on,ends_on,usage_limit,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,'draft',?,?) RETURNING id",(business_id,uid,title,code,desc,typ,value,starts,ends,limit,stamp,stamp))
+                            return self.sendj({"ok":True,"id":cur.fetchone()["id"],"status":"draft"},201)
+                        except DBIntegrityError:return self.sendj({"error":"That offer code already exists for this business."},409)
+                    row=c.execute("SELECT * FROM provider_offers WHERE id=? AND business_id=?",(oid,business_id)).fetchone()
+                    if not row:return self.sendj({"error":"Offer not found."},404)
+                    if action in ("active","paused"):
+                        c.execute("UPDATE provider_offers SET status=?,updated_at=? WHERE id=? AND business_id=?",(action,stamp,oid,business_id));return self.sendj({"ok":True,"status":action})
+                    if action=="redeem":
+                        if row["status"]!="active" or (int(row["usage_limit"] or 0)>0 and int(row["usage_count"])>=int(row["usage_limit"])):return self.sendj({"error":"This offer is inactive or its usage limit has been reached."},409)
+                        c.execute("UPDATE provider_offers SET usage_count=usage_count+1,updated_at=? WHERE id=? AND business_id=?",(stamp,oid,business_id))
+                        return self.sendj({"ok":True,"usage_count":int(row["usage_count"])+1,"message":"Redemption counted for tracking. No payment was processed."})
+                if feature=="team":
+                    if method=="GET":
+                        members=c.execute("SELECT id,business_id,name,email,team_role,permissions,status,invite_code,created_at,updated_at FROM provider_team_members WHERE business_id=? ORDER BY created_at DESC LIMIT 200",(business_id,)).fetchall()
+                        items=[]
+                        base=os.environ.get("SKILLVAYA_PUBLIC_URL","https://skillvaya.onrender.com").rstrip("/")
+                        for m in members:
+                            x=dict(m);x["invite_url"]=base+"/customer-app?team_invite="+urllib.parse.quote(str(x["invite_code"]),safe="")
+                            items.append(x)
+                        jobs=c.execute("SELECT id,title,status FROM job_requests WHERE business_id=? AND status NOT IN ('completed','cancelled') ORDER BY created_at DESC LIMIT 200",(business_id,)).fetchall()
+                        assigns=c.execute("""SELECT a.*,j.title job_title,t.name member_name FROM provider_job_assignments a
+                            JOIN job_requests j ON j.id=a.job_id JOIN provider_team_members t ON t.id=a.team_member_id
+                            WHERE a.business_id=? ORDER BY a.created_at DESC LIMIT 200""",(business_id,)).fetchall()
+                        return self.sendj({"items":items,"jobs":[dict(x) for x in jobs],"assignments":[dict(x) for x in assigns]})
+                    action=str(d.get("action","invite"))
+                    if action=="accept_invite":
+                        code=str(d.get("invite_code","")).strip()[:100]
+                        row=c.execute("SELECT * FROM provider_team_members WHERE invite_code=? AND status='invited'",(code,)).fetchone()
+                        if not row:return self.sendj({"error":"This invitation is invalid, expired or already accepted."},404)
+                        if str(row["email"]).lower()!=str(u.get("email","")).lower():return self.sendj({"error":"Sign in with the email address that received this invitation."},403)
+                        c.execute("UPDATE provider_team_members SET user_id=?,status='active',updated_at=? WHERE id=?",(uid,stamp,row["id"]))
+                        return self.sendj({"ok":True,"business_id":int(row["business_id"]),"team_member_id":int(row["id"])})
+                    if action=="invite":
+                        name=str(d.get("name","")).strip()[:120];email=str(d.get("email","")).strip().lower()[:254];team_role=str(d.get("team_role","staff"))
+                        if len(name)<2 or "@" not in email or team_role not in ("staff","manager"):return self.sendj({"error":"Enter a valid name, email address and team role."},400)
+                        code=secrets.token_urlsafe(24)
+                        try:
+                            cur=c.execute("INSERT INTO provider_team_members(business_id,owner_user_id,name,email,team_role,permissions,status,invite_code,created_at,updated_at) VALUES(?,?,?,?,?,'[]','invited',?,?,?) RETURNING id",(business_id,uid,name,email,team_role,code,stamp,stamp))
+                            mid=cur.fetchone()["id"]
+                        except DBIntegrityError:return self.sendj({"error":"This email already belongs to a team record."},409)
+                        base=os.environ.get("SKILLVAYA_PUBLIC_URL","https://skillvaya.onrender.com").rstrip("/")
+                        invite_url=base+"/customer-app?team_invite="+urllib.parse.quote(code,safe="")
+                        email_sent=False
+                        email_error="Test mode: no email was sent. Copy this sandbox invitation link to test acceptance." if test_tier else "Email delivery is not configured; copy the private invitation link."
+                        if not test_tier:
+                            email_sent=send_owner_email("Skillvaya team invitation","You have been invited by "+str(u.get("name") or "a Skillvaya provider")+" to join their provider team. Sign in to Skillvaya with "+email+" and open this private invitation link:\n\n"+invite_url,email)
+                            email_error="" if email_sent else "Email delivery is not configured; copy the private invitation link."
+                        return self.sendj({"ok":True,"id":mid,"invite_url":invite_url,"email_sent":bool(email_sent),"email_error":email_error,"test_mode":bool(test_tier)},201)
+                    if action=="get_invite_link":
+                        try:mid=int(d.get("id",0))
+                        except (TypeError,ValueError):return self.sendj({"error":"Invalid team invitation."},400)
+                        row=c.execute("SELECT id,invite_code,email FROM provider_team_members WHERE id=? AND business_id=? AND status='invited'",(mid,business_id)).fetchone()
+                        if not row:return self.sendj({"error":"Invitation not found."},404)
+                        return self.sendj({"ok":True,"invite_url":os.environ.get("SKILLVAYA_PUBLIC_URL","https://skillvaya.onrender.com").rstrip("/")+"/customer-app?team_invite="+urllib.parse.quote(row["invite_code"],safe="")})
+                    if action=="assign":
+                        try:jid=int(d.get("job_id",0));mid=int(d.get("team_member_id",0))
+                        except (TypeError,ValueError):return self.sendj({"error":"Choose a job and team member."},400)
+                        job=c.execute("SELECT id FROM job_requests WHERE id=? AND business_id=?",(jid,business_id)).fetchone()
+                        member=c.execute("SELECT id FROM provider_team_members WHERE id=? AND business_id=? AND status='active'",(mid,business_id)).fetchone()
+                        if not job or not member:return self.sendj({"error":"Choose a job belonging to this business and an active team member."},400)
+                        due=str(d.get("due_date","")).strip()[:20];note=str(d.get("note","")).strip()[:1000]
+                        c.execute("INSERT INTO provider_job_assignments(business_id,owner_user_id,job_id,team_member_id,note,due_date,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'assigned',?,?) ON CONFLICT(job_id,team_member_id) DO UPDATE SET note=excluded.note,due_date=excluded.due_date,status='assigned',updated_at=excluded.updated_at",(business_id,uid,jid,mid,note,due,stamp,stamp))
+                        return self.sendj({"ok":True})
+                    if action=="assignment_status":
+                        try:aid=int(d.get("id",0))
+                        except (TypeError,ValueError):return self.sendj({"error":"Invalid assignment."},400)
+                        status=str(d.get("status",""))
+                        if status not in ("assigned","in_progress","completed","cancelled"):return self.sendj({"error":"Invalid assignment status."},400)
+                        cur=c.execute("UPDATE provider_job_assignments SET status=?,updated_at=? WHERE id=? AND business_id=?",(status,stamp,aid,business_id))
+                        if cur.rowcount!=1:return self.sendj({"error":"Assignment not found."},404)
+                        return self.sendj({"ok":True})
+                if feature=="marketing":
+                    if method=="GET":
+                        rows=c.execute("SELECT event_type,source,count(*) total FROM provider_marketing_events WHERE business_id=? GROUP BY event_type,source ORDER BY total DESC",(business_id,)).fetchall()
+                        stats={}
+                        mapping={"profile_view":"profile_views","campaign_view":"campaign_views","campaign_click":"campaign_clicks","package_click":"package_clicks","lead":"leads","offer_view":"offer_views"}
+                        for key,out in mapping.items():stats[out]=int(c.execute("SELECT count(*) FROM provider_marketing_events WHERE business_id=? AND event_type=?",(business_id,key)).fetchone()[0])
+                        stats["requests"]=int(c.execute("SELECT count(*) FROM job_requests WHERE business_id=?",(business_id,)).fetchone()[0])
+                        sources=[]
+                        for r in rows:
+                            src=str(r["source"] or "directory");item=next((x for x in sources if x["source"]==src),None)
+                            if not item:item={"source":src,"visits":0,"clicks":0,"leads":0};sources.append(item)
+                            et=str(r["event_type"])
+                            if et in ("profile_view","campaign_view"):item["visits"]+=int(r["total"])
+                            elif et in ("campaign_click","package_click"):item["clicks"]+=int(r["total"])
+                            elif et=="lead":item["leads"]+=int(r["total"])
+                        camps=c.execute("SELECT * FROM provider_campaigns WHERE business_id=? ORDER BY created_at DESC LIMIT 100",(business_id,)).fetchall();campaigns=[]
+                        for camp in camps:
+                            x=dict(camp);x["views"]=int(c.execute("SELECT count(*) FROM provider_marketing_events WHERE campaign_id=? AND event_type='campaign_view'",(camp["id"],)).fetchone()[0]);x["clicks"]=int(c.execute("SELECT count(*) FROM provider_marketing_events WHERE campaign_id=? AND event_type='campaign_click'",(camp["id"],)).fetchone()[0]);x["leads"]=int(c.execute("SELECT count(*) FROM provider_marketing_events WHERE campaign_id=? AND event_type='lead'",(camp["id"],)).fetchone()[0]);campaigns.append(x)
+                        return self.sendj({"stats":stats,"sources":sources,"campaigns":campaigns})
+                    if str(d.get("action",""))!="track":return self.sendj({"error":"Unsupported marketing action."},400)
+                    event=str(d.get("event_type",""));source=str(d.get("source","directory"))[:80];visitor=str(d.get("visitor_key",""))[:100];details=str(d.get("details",""))[:500]
+                    if event not in ("profile_view","campaign_view","campaign_click","package_click","lead","offer_view"):return self.sendj({"error":"Unsupported tracking event."},400)
+                    try:cid=int(d.get("campaign_id",0) or 0);customer=int(d.get("customer_id",0) or 0)
+                    except (ValueError,TypeError):cid=customer=0
+                    if cid and not c.execute("SELECT id FROM provider_campaigns WHERE id=? AND business_id=?",(cid,business_id)).fetchone():cid=0
+                    c.execute("INSERT INTO provider_marketing_events(business_id,user_id,campaign_id,event_type,source,customer_id,visitor_key,details,created_at) VALUES(?,?,?,?,?,?,?,?,?)",(business_id,uid,cid or None,event,source,customer or None,visitor,details,stamp))
+                    return self.sendj({"ok":True},201)
+                if feature=="announcements":
+                    if method=="GET":
+                        rows=c.execute("SELECT * FROM provider_announcements WHERE business_id=? ORDER BY created_at DESC LIMIT 100",(business_id,)).fetchall()
+                        count=c.execute("SELECT count(DISTINCT ct.customer_id) FROM contacts ct JOIN customer_marketing_preferences mp ON mp.user_id=ct.customer_id WHERE ct.business_id=? AND mp.opted_in=1",(business_id,)).fetchone()[0]
+                        return self.sendj({"items":[dict(x) for x in rows],"opted_in_customers":int(count)})
+                    action=str(d.get("action","create"))
+                    if action=="create":
+                        title=str(d.get("title","")).strip()[:160];body=str(d.get("body","")).strip()[:2000]
+                        if len(title)<2 or len(body)<10:return self.sendj({"error":"Enter a title and at least 10 characters for the message."},400)
+                        cur=c.execute("INSERT INTO provider_announcements(business_id,user_id,title,body,status,created_at,updated_at) VALUES(?,?,?,?,'draft',?,?) RETURNING id",(business_id,uid,title,body,stamp,stamp))
+                        return self.sendj({"ok":True,"id":cur.fetchone()["id"],"status":"draft"},201)
+                    if action=="publish":
+                        if test_tier:
+                            return self.sendj({"error":"Publishing customer announcements is disabled in Subscription Test Lab. Drafts remain available for testing."},409)
+                        try:aid=int(d.get("id",0))
+                        except (ValueError,TypeError):return self.sendj({"error":"Invalid announcement."},400)
+                        ann=c.execute("SELECT * FROM provider_announcements WHERE id=? AND business_id=? AND status='draft'",(aid,business_id)).fetchone()
+                        if not ann:return self.sendj({"error":"Draft announcement not found."},404)
+                        recipients=c.execute("SELECT DISTINCT ct.customer_id FROM contacts ct JOIN customer_marketing_preferences mp ON mp.user_id=ct.customer_id WHERE ct.business_id=? AND mp.opted_in=1",(business_id,)).fetchall()
+                        sent=0
+                        for recipient in recipients:
+                            c.execute("INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)",(business_id,recipient["customer_id"],uid,"Service announcement: "+str(ann["title"])+"\n\n"+str(ann["body"]),stamp));sent+=1
+                        c.execute("UPDATE provider_announcements SET status='published',recipient_count=?,published_at=?,updated_at=? WHERE id=? AND business_id=?",(sent,stamp,stamp,aid,business_id))
+                        return self.sendj({"ok":True,"recipient_count":sent,"status":"published"})
+                if feature=="automation":
+                    defaults=[
+                        ("quote_followup","Quotation follow-up reminders","Alert when a quote follow-up is due."),
+                        ("booking_reminder","Upcoming booking reminders","Alert about bookings starting within the next 24 hours."),
+                        ("invoice_overdue","Overdue invoice reminders","Alert about unpaid invoice balances past their due date.")]
+                    for key,title,desc in defaults:
+                        c.execute("INSERT INTO provider_automation_rules(business_id,user_id,rule_key,enabled,config_json,updated_at) VALUES(?,?,?,1,?,?) ON CONFLICT(business_id,rule_key) DO NOTHING",(business_id,uid,key,json.dumps({"title":title,"description":desc}),stamp))
+                    action=str(d.get("action",""))
+                    if method=="POST" and action=="toggle":
+                        key=str(d.get("rule_key",""))
+                        if key not in ("quote_followup","booking_reminder","invoice_overdue"):return self.sendj({"error":"Unknown automation rule."},400)
+                        enabled=1 if d.get("enabled") else 0
+                        c.execute("UPDATE provider_automation_rules SET enabled=?,updated_at=? WHERE business_id=? AND rule_key=?",(enabled,stamp,business_id,key))
+                        return self.sendj({"ok":True,"enabled":bool(enabled)})
+                    if method=="POST" and action=="evaluate":
+                        rules={x["rule_key"]:bool(x["enabled"]) for x in c.execute("SELECT rule_key,enabled FROM provider_automation_rules WHERE business_id=?",(business_id,)).fetchall()}
+                        candidates=[]
+                        if rules.get("quote_followup"):
+                            for r in c.execute("""SELECT f.id,f.remind_at,f.note,j.title,cu.name customer_name FROM provider_followups f JOIN job_requests j ON j.id=f.job_id JOIN users cu ON cu.id=f.customer_id WHERE f.business_id=? AND f.status='pending' AND f.remind_at<=? LIMIT 100""",(business_id,stamp)).fetchall():
+                                candidates.append(("quote_followup","Quote follow-up due",str(r["customer_name"])+": "+str(r["title"])+". "+str(r["note"]), "followup:"+str(r["id"])))
+                        if rules.get("booking_reminder"):
+                            tomorrow=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=24)).isoformat()
+                            for r in c.execute("SELECT id,title,customer_name,starts_at FROM provider_bookings WHERE business_id=? AND status='scheduled' AND starts_at>=? AND starts_at<=? LIMIT 100",(business_id,stamp,tomorrow)).fetchall():
+                                candidates.append(("booking_reminder","Upcoming booking",str(r["title"])+" for "+str(r["customer_name"])+" starts "+str(r["starts_at"]), "booking:"+str(r["id"])))
+                        if rules.get("invoice_overdue"):
+                            today=datetime.date.today().isoformat()
+                            for r in c.execute("SELECT id,invoice_number,customer_name,amount_cents,amount_paid_cents,due_date FROM provider_invoices WHERE business_id=? AND status NOT IN ('paid','cancelled') AND due_date<>'' AND due_date<? LIMIT 100",(business_id,today)).fetchall():
+                                candidates.append(("invoice_overdue","Invoice overdue",str(r["invoice_number"])+" for "+str(r["customer_name"])+" has an outstanding balance.", "invoice:"+str(r["id"])))
+                        for kind,title,body_text,ref in candidates:
+                            exists=c.execute("SELECT id FROM provider_notifications WHERE business_id=? AND reference_key=? AND created_at>? LIMIT 1",(business_id,ref,(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(hours=24)).isoformat())).fetchone()
+                            if not exists:c.execute("INSERT INTO provider_notifications(business_id,user_id,kind,title,body,reference_key,status,created_at) VALUES(?,?,?,?,?,?, 'new',?)",(business_id,uid,kind,title,body_text,ref,stamp))
+                    rules_rows=c.execute("SELECT rule_key,enabled,config_json FROM provider_automation_rules WHERE business_id=?",(business_id,)).fetchall()
+                    rule_items=[]
+                    for r in rules_rows:
+                        try:cfg=json.loads(r["config_json"] or "{}")
+                        except Exception:cfg={}
+                        rule_items.append({"rule_key":r["rule_key"],"enabled":bool(r["enabled"]),"title":cfg.get("title",r["rule_key"]),"description":cfg.get("description","")})
+                    alerts=c.execute("SELECT * FROM provider_notifications WHERE business_id=? ORDER BY created_at DESC LIMIT 100",(business_id,)).fetchall()
+                    return self.sendj({"rules":rule_items,"alerts":[dict(x) for x in alerts]})
+        except PermissionError as e:
+            return self.sendj({"error":str(e)},401)
+        except Exception as e:
+            return self.sendj({"error":str(e)},400)
+        return self.sendj({"error":"Unsupported growth tool action."},400)
+    def handle_customer_marketing_preferences(self, method, data=None):
+        try:
+            u=self.require("customer")
+            stamp=now()
+            with conn() as c:
+                if method=="GET":
+                    row=c.execute("SELECT opted_in FROM customer_marketing_preferences WHERE user_id=?",(u["id"],)).fetchone()
+                    return self.sendj({"opted_in":bool(row["opted_in"]) if row else False})
+                if method=="POST":
+                    opted=1 if (data or {}).get("opted_in") is True else 0
+                    c.execute("INSERT INTO customer_marketing_preferences(user_id,opted_in,updated_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET opted_in=excluded.opted_in,updated_at=excluded.updated_at",(u["id"],opted,stamp))
+                    return self.sendj({"ok":True,"opted_in":bool(opted)})
+        except PermissionError as e:return self.sendj({"error":str(e)},401)
+        except Exception as e:return self.sendj({"error":str(e)},400)
+        return self.sendj({"error":"Unsupported preference action."},400)
+    def handle_my_team_assignments(self, method, data=None):
+        try:
+            u=self.require()
+            if u.get("role") not in ("customer","provider","admin"):return self.sendj({"error":"Sign in to view team work."},403)
+            with conn() as c:
+                members=c.execute("SELECT * FROM provider_team_members WHERE user_id=? AND status='active' ORDER BY id DESC",(u["id"],)).fetchall()
+                if not members:
+                    if method=="GET":return self.sendj({"active":False,"items":[],"message":"No accepted team invitation was found for this account."})
+                    return self.sendj({"error":"No accepted team assignment is linked to this account."},403)
+                business_ids=[int(m["business_id"]) for m in members]
+                if method=="GET":
+                    items=[]
+                    for m in members:
+                        rows=c.execute("""SELECT a.id assignment_id,a.status assignment_status,a.note,a.due_date,
+                            j.id job_id,j.title,j.description,j.area,j.status job_status,j.created_at,
+                            b.name business_name,t.name member_name,t.team_role
+                            FROM provider_job_assignments a JOIN job_requests j ON j.id=a.job_id
+                            JOIN businesses b ON b.id=a.business_id JOIN provider_team_members t ON t.id=a.team_member_id
+                            WHERE a.business_id=? AND a.team_member_id=? ORDER BY a.created_at DESC LIMIT 200""",(m["business_id"],m["id"])).fetchall()
+                        for r in rows:items.append(dict(r))
+                    return self.sendj({"active":True,"items":items,"business_ids":business_ids})
+                d=data or {}
+                try:aid=int(d.get("assignment_id",0))
+                except (TypeError,ValueError):return self.sendj({"error":"Invalid assignment."},400)
+                status=str(d.get("status",""))
+                if status not in ("assigned","in_progress","completed"):return self.sendj({"error":"Invalid assignment status."},400)
+                marks=",".join("?" for _ in members)
+                ids=[int(m["id"]) for m in members]
+                cur=c.execute("UPDATE provider_job_assignments SET status=?,updated_at=? WHERE id=? AND team_member_id IN ("+marks+")",(status,now(),aid,*ids))
+                if cur.rowcount!=1:return self.sendj({"error":"This assignment is not assigned to your account."},403)
+                return self.sendj({"ok":True,"status":status})
+        except PermissionError as e:return self.sendj({"error":str(e)},401)
+        except Exception as e:return self.sendj({"error":str(e)},400)
+
+    def handle_public_marketing_track(self, data):
+        try:
+            d=data or {}
+            try:bid=int(d.get("business_id",0));cid=int(d.get("campaign_id",0) or 0)
+            except (TypeError,ValueError):return self.sendj({"error":"Invalid tracking reference."},400)
+            event=str(d.get("event_type",""));source=str(d.get("source","directory"))[:80]
+            if event not in ("profile_view","campaign_view","campaign_click","package_click","lead","offer_view"):return self.sendj({"error":"Invalid event type."},400)
+            with conn() as c:
+                biz=c.execute("SELECT id,user_id FROM businesses WHERE id=? AND status IN ('active','approved','published')",(bid,)).fetchone()
+                if not biz:return self.sendj({"error":"Provider listing not found."},404)
+                if cid and not c.execute("SELECT id FROM provider_campaigns WHERE id=? AND business_id=? AND status='active'",(cid,bid)).fetchone():cid=0
+                viewer=self.user();customer=int(viewer["id"]) if viewer and viewer["role"]=="customer" else None
+                visitor=str(d.get("visitor_key",""))[:100]
+                c.execute("INSERT INTO provider_marketing_events(business_id,user_id,campaign_id,event_type,source,customer_id,visitor_key,details,created_at) VALUES(?,?,?,?,?,?,?,?,?)",(bid,int(biz["user_id"]),cid or None,event,source,customer,visitor,"",now()))
+            return self.sendj({"ok":True},201)
+        except Exception:
+            # Tracking is optional and must never break directory browsing or contact flow.
+            return self.sendj({"ok":False,"tracking":"unavailable"})
+
     def do_HEAD(self):
         path=urlparse(self.path).path
         if path=="/healthz":
@@ -2093,6 +3021,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(404); self.end_headers()
     def do_GET(self):
         path=urlparse(self.path).path
+        if path.startswith("/api/provider/growth/"):
+            return self.handle_provider_growth("GET",path,{})
+        if path=="/api/customer/marketing-preferences":
+            return self.handle_customer_marketing_preferences("GET",{})
+        if path=="/api/team/my-assignments":
+            return self.handle_my_team_assignments("GET",{})
         try:
             if path=="/payment/paypal-return":
                 page="""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Confirm Skillvaya payment</title><style>body{font:16px system-ui;max-width:620px;margin:12vh auto;padding:24px;color:#14253b}button{padding:12px 18px;background:#087f80;color:#fff;border:0;border-radius:9px;font-weight:700}</style></head><body><h1>Confirming your payment</h1><p id="msg">Checking PayPal confirmation securely. Please keep this page open.</p><button id="back" hidden onclick="location.href='/customer'">Return to Skillvaya</button><script>(async()=>{const msg=document.getElementById('msg'),btn=document.getElementById('back'),order=new URLSearchParams(location.search).get('token'),auth=localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token');if(!order||!auth){msg.textContent='Return to Skillvaya and sign in with the same provider account used to start checkout, then check your plan status.';btn.hidden=false;return;}try{const r=await fetch('/api/paypal/capture',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+auth},body:JSON.stringify({order_id:order})}),d=await r.json();if(!r.ok)throw Error(d.error||'Payment confirmation could not be completed.');msg.textContent=d.already_verified?(d.profile_required?'Your payment was already confirmed. Return to Skillvaya and complete your provider profile to activate your listing.':'Your payment was already confirmed.'):(d.profile_required?'PayPal confirmed your payment. Return to Skillvaya, open Provider Studio, and complete your profile to activate your listing.':'PayPal confirmed your payment. Your Skillvaya plan is now active.');}catch(e){msg.textContent=e.message+' If PayPal charged you, do not pay again; sign in and contact Skillvaya support with the transaction details.';}btn.hidden=false;})();
@@ -2360,19 +3294,27 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                 if u["role"] not in ("provider","admin"): return self.sendj({"error":"Only service providers can use this workspace tool."},403)
                 template_path=path.endswith("quote-templates")
                 need_rank=1 if template_path else 3
-                ranks={"local":0,"priority":1,"plus":2,"spotlight":3}
+                ranks=PROVIDER_TIER_RANKS
+                url_query=urllib.parse.parse_qs(urlparse(self.path).query)
+                test_tier=subscription_test_tier(u,url_query,{})
                 with conn() as c:
-                    biz=c.execute("SELECT id,plan,payment_status,status FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1",(u["id"],)).fetchone() if u["role"]=="provider" else None
+                    biz=c.execute("SELECT id,plan,payment_status,status FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1",(u["id"],)).fetchone()
                     if u["role"]=="provider":
                         if not biz or biz["payment_status"]!="verified": return self.sendj({"error":"Complete a verified provider subscription and profile first."},403)
                         tier=ranks.get(str(biz["plan"] or "local").lower(),0)
-                    else: tier=3
+                        business_id=int(biz["id"]);record_user_id=int(u["id"])
+                    else:
+                        tier=ranks[test_tier] if test_tier else 3
+                        business_id=subscription_test_business_id(u["id"],test_tier) if test_tier else (int(biz["id"]) if biz else 0)
+                        record_user_id=subscription_test_user_id(u["id"],test_tier) if test_tier else int(u["id"])
                     if tier<need_rank: return self.sendj({"error":"This tool unlocks with the "+("Priority" if need_rank==1 else "Business Spotlight")+" provider plan."},403)
                     if template_path:
-                        rows=c.execute("SELECT id,name,eta,message,created_at,updated_at FROM provider_quote_templates WHERE user_id=? ORDER BY updated_at DESC,id DESC LIMIT 100",(u["id"],)).fetchall()
+                        rows=c.execute("SELECT id,name,eta,message,created_at,updated_at FROM provider_quote_templates WHERE user_id=? ORDER BY updated_at DESC,id DESC LIMIT 100",(record_user_id,)).fetchall()
+                    elif test_tier:
+                        rows=c.execute("SELECT id,title,description,starts_on,ends_on,status,created_at,updated_at FROM provider_campaigns WHERE user_id=? AND business_id=? ORDER BY updated_at DESC,id DESC LIMIT 100",(record_user_id,business_id)).fetchall()
                     else:
-                        rows=c.execute("SELECT id,title,description,starts_on,ends_on,status,created_at,updated_at FROM provider_campaigns WHERE user_id=? ORDER BY updated_at DESC,id DESC LIMIT 100",(u["id"],)).fetchall()
-                return self.sendj({"items":[dict(x) for x in rows],"plan":"spotlight" if u["role"]=="admin" else str(biz["plan"])})
+                        rows=c.execute("SELECT id,title,description,starts_on,ends_on,status,created_at,updated_at FROM provider_campaigns WHERE user_id=? ORDER BY updated_at DESC,id DESC LIMIT 100",(record_user_id,)).fetchall()
+                return self.sendj({"items":[dict(x) for x in rows],"plan":test_tier or ("spotlight" if u["role"]=="admin" else str(biz["plan"]))})
             if path=="/api/provider/insights":
                 u=self.require()
                 ranks={"local":0,"priority":1,"plus":2,"spotlight":3}
@@ -2384,8 +3326,16 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                         biz_ids=[int(biz["id"])]
                         plan=str(biz["plan"])
                     elif u["role"]=="admin":
-                        biz_ids=[int(x["id"]) for x in c.execute("SELECT id FROM businesses").fetchall()]
-                        plan="spotlight"
+                        q=urllib.parse.parse_qs(urlparse(self.path).query)
+                        requested=str((q.get("test_tier") or ["spotlight"])[0]).lower()
+                        if ranks.get(requested,3)<2:return self.sendj({"error":"Performance insights unlock with Business Plus."},403)
+                        test_tier=subscription_test_tier(u,q,{})
+                        if test_tier:
+                            biz_ids=[subscription_test_business_id(u["id"],test_tier)]
+                            plan=test_tier
+                        else:
+                            biz_ids=[int(x["id"]) for x in c.execute("SELECT id FROM businesses WHERE user_id=?",(u["id"],)).fetchall()]
+                            plan="spotlight"
                     else: return self.sendj({"error":"Only service providers can view this report."},403)
                     if biz_ids:
                         ph=",".join("?" for _ in biz_ids); where="business_id IN ("+ph+")"; args=tuple(biz_ids)
@@ -2446,6 +3396,29 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                     row=c.execute("SELECT id,user_id,name,category,area,phone,whatsapp,email,website,description,photos,plan,billing,status,payment_status,subscription_expires_at,created_at FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1",(u["id"],)).fetchone()
                     payment=c.execute("SELECT id FROM payments WHERE user_id=? AND status='verified' AND (business_id IS NULL OR business_id=?) ORDER BY id DESC LIMIT 1",(u["id"],row["id"] if row else -1)).fetchone()
                 return self.sendj({"business":dict(row) if row else None,"payment_verified":bool(payment)})
+            if path.startswith("/api/businesses/") and path.endswith("/growth"):
+                bits=path.strip("/").split("/")
+                try: business_id=int(bits[2]) if len(bits)==4 and bits[0]=="api" and bits[1]=="businesses" and bits[3]=="growth" else 0
+                except (TypeError,ValueError): business_id=0
+                if business_id<=0:return self.sendj({"error":"Provider listing not found."},404)
+                today=datetime.date.today().isoformat()
+                with conn() as c:
+                    biz=c.execute("SELECT id,user_id,name FROM businesses WHERE id=? AND LOWER(TRIM(COALESCE(status,''))) IN ('active','approved','published')",(business_id,)).fetchone()
+                    if not biz:return self.sendj({"error":"Provider listing not found."},404)
+                    if biz["name"].strip().casefold()=="skillvaya digital & creative studio":
+                        owner=c.execute("SELECT role FROM users WHERE id=?",(biz["user_id"],)).fetchone()
+                        if owner and owner["role"]=="admin":
+                            c.execute("UPDATE provider_campaigns SET business_id=? WHERE user_id=? AND business_id=0",(business_id,biz["user_id"]))
+                    package_rows=c.execute("SELECT id,name,description,price_cents,add_ons FROM provider_service_packages WHERE business_id=? AND status='active' ORDER BY created_at DESC,id DESC LIMIT 12",(business_id,)).fetchall()
+                    offer_rows=c.execute("SELECT id,title,code,description,discount_type,discount_value,starts_on,ends_on FROM provider_offers WHERE business_id=? AND status='active' AND (starts_on='' OR starts_on<=?) AND (ends_on='' OR ends_on>=?) ORDER BY created_at DESC,id DESC LIMIT 8",(business_id,today,today)).fetchall()
+                    campaign_rows=c.execute("SELECT id,title,description,starts_on,ends_on FROM provider_campaigns WHERE business_id=? AND status='active' AND (starts_on='' OR starts_on<=?) AND (ends_on='' OR ends_on>=?) ORDER BY updated_at DESC,id DESC LIMIT 3",(business_id,today,today)).fetchall()
+                packages=[]
+                for row in package_rows:
+                    item=dict(row)
+                    try:item["add_ons"]=json.loads(item.get("add_ons") or "[]")
+                    except Exception:item["add_ons"]=[]
+                    packages.append(item)
+                return self.sendj({"packages":packages,"offers":[dict(x) for x in offer_rows],"active_campaigns":[dict(x) for x in campaign_rows]})
             if path=="/api/businesses":
                 from urllib.parse import parse_qs
                 q=parse_qs(urlparse(self.path).query); term=q.get("q",[""])[0].lower(); area=q.get("area",[""])[0].lower(); cat=q.get("category",["All categories"])[0]; sort=q.get("sort",["featured"])[0]
@@ -2463,11 +3436,44 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                              AND my.rater_id=? AND my.target_user_id=b.user_id
                         WHERE LOWER(TRIM(COALESCE(b.status,''))) IN ('active','approved','published')""",(rater_id,)).fetchall()
                 items=[dict(x) for x in rows if (category_matches(cat, x["category"]) or skillvaya_matches_category(cat, dict(x))) and (not term or term in (x["name"]+" "+x["category"]+" "+x["description"]+" "+category_search_terms(x["category"])).lower()) and (not area or area in x["area"].lower())]
+                ranks={"local":0,"priority":1,"plus":2,"spotlight":3}
+                today=datetime.date.today().isoformat()
+                with conn() as growth_c:
+                    for item in items:
+                        tier=ranks.get(str(item.get("plan") or "local").lower(),0)
+                        item["packages"]=[];item["offers"]=[];item["active_campaigns"]=[]
+                        if tier>=2:
+                            pkgs=growth_c.execute("SELECT id,name,description,price_cents,add_ons FROM provider_service_packages WHERE business_id=? AND status='active' ORDER BY created_at DESC LIMIT 30",(item["id"],)).fetchall()
+                            for pkg in pkgs:
+                                z=dict(pkg)
+                                try:z["add_ons"]=json.loads(z.get("add_ons") or "[]")
+                                except Exception:z["add_ons"]=[]
+                                item["packages"].append(z)
+                        if tier>=3:
+                            offers=growth_c.execute("SELECT id,title,code,description,discount_type,discount_value,starts_on,ends_on,usage_limit,usage_count FROM provider_offers WHERE business_id=? AND status='active' AND (starts_on='' OR starts_on<=?) AND (ends_on='' OR ends_on>=?) AND (usage_limit=0 OR usage_count<usage_limit) ORDER BY created_at DESC LIMIT 20",(item["id"],today,today)).fetchall()
+                            item["offers"]=[dict(o) for o in offers]
+                            campaigns=growth_c.execute("SELECT id,title,description,starts_on,ends_on FROM provider_campaigns WHERE business_id=? AND status='active' AND (starts_on='' OR starts_on<=?) AND (ends_on='' OR ends_on>=?) ORDER BY created_at DESC LIMIT 10",(item["id"],today,today)).fetchall()
+                            item["active_campaigns"]=[dict(x) for x in campaigns]
+
                 for item in items:
                     item["rating"]=round(float(item["rating"] or 0),1); item["rating_count"]=int(item["rating_count"] or 0); item["my_rating"]=int(item["my_rating"] or 0)
                 if sort=="rating": items.sort(key=lambda x:x["rating"] or 0,reverse=True)
                 elif sort=="name": items.sort(key=lambda x:x["name"].lower())
-                else: items.sort(key=lambda x:{"spotlight":0,"plus":1,"priority":2,"local":3}.get(x["plan"],4))
+                else:
+                    items.sort(key=lambda x:{"spotlight":0,"plus":1,"priority":2,"local":3}.get(str(x["plan"] or "local").lower(),4))
+                    day_index=int(datetime.date.today().strftime("%j"))
+                    start=0
+                    while start<len(items):
+                        current_rank={"spotlight":0,"plus":1,"priority":2,"local":3}.get(str(items[start]["plan"] or "local").lower(),4)
+                        end=start+1
+                        while end<len(items) and {"spotlight":0,"plus":1,"priority":2,"local":3}.get(str(items[end]["plan"] or "local").lower(),4)==current_rank:
+                            end+=1
+                        cohort=items[start:end]
+                        if len(cohort)>1:
+                            offset=day_index%len(cohort)
+                            cohort=cohort[offset:]+cohort[:offset]
+                            items[start:end]=cohort
+                        start=end
                 for x in items:
                     x.pop("user_id",None); x.pop("photos",None)
                     # Email is intentionally shown only when the provider explicitly supplied it as public contact.
@@ -2508,6 +3514,14 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                 self.rfile.read(int(self.headers.get("Content-Length","0")))
                 return self.sendj({"error":"PayFast is paused. PayPal is the only supported checkout provider."},410)
             d=self.body()
+            if path.startswith("/api/provider/growth/"):
+                return self.handle_provider_growth("POST",path,d)
+            if path=="/api/customer/marketing-preferences":
+                return self.handle_customer_marketing_preferences("POST",d)
+            if path=="/api/team/my-assignments":
+                return self.handle_my_team_assignments("POST",d)
+            if path=="/api/marketing/track":
+                return self.handle_public_marketing_track(d)
             if path=="/api/messages/attachments":
                 u=self.require()
                 if u["role"] not in ("customer","provider","admin"): return self.sendj({"error":"Only account holders can share chat media."},403)
@@ -2614,31 +3628,55 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                 if u["role"] not in ("provider","admin"): return self.sendj({"error":"Only service providers can use this workspace tool."},403)
                 template_path=path.endswith("quote-templates")
                 need_rank=1 if template_path else 3
-                ranks={"local":0,"priority":1,"plus":2,"spotlight":3}
+                ranks=PROVIDER_TIER_RANKS
+                url_query=urllib.parse.parse_qs(urlparse(self.path).query)
+                test_tier=subscription_test_tier(u,url_query,d)
                 with conn() as c:
-                    biz=c.execute("SELECT id,plan,payment_status,status FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1",(u["id"],)).fetchone() if u["role"]=="provider" else None
+                    biz=c.execute("SELECT id,plan,payment_status,status FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1",(u["id"],)).fetchone()
                     if u["role"]=="provider":
                         if not biz or biz["payment_status"]!="verified": return self.sendj({"error":"Complete a verified provider subscription and profile first."},403)
                         tier=ranks.get(str(biz["plan"] or "local").lower(),0)
-                        business_id=int(biz["id"])
+                        business_id=int(biz["id"]);record_user_id=int(u["id"])
                     else:
-                        tier=3;business_id=int(d.get("business_id",0) or 0)
+                        tier=ranks[test_tier] if test_tier else 3
+                        business_id=subscription_test_business_id(u["id"],test_tier) if test_tier else int(d.get("business_id",biz["id"] if biz else 0) or 0)
+                        record_user_id=subscription_test_user_id(u["id"],test_tier) if test_tier else int(u["id"])
                     if tier<need_rank: return self.sendj({"error":"This tool unlocks with the "+("Priority" if need_rank==1 else "Business Spotlight")+" provider plan."},403)
                     if self.command=="GET":
                         if template_path:
-                            rows=c.execute("SELECT id,name,eta,message,created_at,updated_at FROM provider_quote_templates WHERE user_id=? ORDER BY updated_at DESC,id DESC LIMIT 100",(u["id"],)).fetchall()
+                            rows=c.execute("SELECT id,name,eta,message,created_at,updated_at FROM provider_quote_templates WHERE user_id=? ORDER BY updated_at DESC,id DESC LIMIT 100",(record_user_id,)).fetchall()
                         else:
-                            rows=c.execute("SELECT id,title,description,starts_on,ends_on,status,created_at,updated_at FROM provider_campaigns WHERE user_id=? ORDER BY updated_at DESC,id DESC LIMIT 100",(u["id"],)).fetchall()
-                        return self.sendj({"items":[dict(x) for x in rows],"plan":"spotlight" if u["role"]=="admin" else str(biz["plan"])})
+                            rows=c.execute("SELECT id,title,description,starts_on,ends_on,status,created_at,updated_at FROM provider_campaigns WHERE user_id=? ORDER BY updated_at DESC,id DESC LIMIT 100",(record_user_id,)).fetchall()
+                        return self.sendj({"items":[dict(x) for x in rows],"plan":test_tier or ("spotlight" if u["role"]=="admin" else str(biz["plan"]))})
                     if template_path:
                         name=str(d.get("name","")).strip()[:120];eta=str(d.get("eta","")).strip()[:160];message=str(d.get("message","")).strip()[:2000]
                         if len(name)<2 or not eta or len(message)<5: return self.sendj({"error":"Enter a template name, estimated timeline and quotation wording."},400)
-                        cur=c.execute("INSERT INTO provider_quote_templates(user_id,name,eta,message,created_at,updated_at) VALUES(?,?,?,?,?,?) RETURNING id",(u["id"],name,eta,message,now(),now()))
+                        cur=c.execute("INSERT INTO provider_quote_templates(user_id,name,eta,message,created_at,updated_at) VALUES(?,?,?,?,?,?) RETURNING id",(record_user_id,name,eta,message,now(),now()))
                         return self.sendj({"ok":True,"id":cur.fetchone()["id"],"message":"Quotation template saved."},201)
+                    action=str(d.get("action","create"))
+                    if action in ("publish","pause","delete"):
+                        try: campaign_id=int(d.get("id",0))
+                        except (TypeError,ValueError): return self.sendj({"error":"Choose a valid campaign."},400)
+                        existing=c.execute("SELECT * FROM provider_campaigns WHERE id=? AND user_id=? AND business_id=?",(campaign_id,record_user_id,business_id)).fetchone()
+                        if not existing:return self.sendj({"error":"Campaign draft not found for this provider."},404)
+                        if action=="delete":
+                            c.execute("DELETE FROM provider_campaigns WHERE id=? AND user_id=? AND business_id=?",(campaign_id,record_user_id,business_id))
+                            return self.sendj({"ok":True,"message":"Campaign removed."})
+                        if action=="publish":
+                            title=str(existing["title"] or "").strip();description=str(existing["description"] or "").strip()
+                            starts=str(existing["starts_on"] or "").strip();ends=str(existing["ends_on"] or "").strip()
+                            today=datetime.date.today().isoformat()
+                            if len(title)<3 or len(description)<10:return self.sendj({"error":"Campaign title and description are required before publishing."},400)
+                            if starts and ends and ends<starts:return self.sendj({"error":"Campaign end date must be on or after the start date."},400)
+                            if ends and ends<today:return self.sendj({"error":"This campaign's end date has passed. Edit the dates before publishing."},400)
+                            c.execute("UPDATE provider_campaigns SET status='active',updated_at=? WHERE id=? AND user_id=? AND business_id=?",(now(),campaign_id,record_user_id,business_id))
+                            return self.sendj({"ok":True,"status":"active","message":"Campaign is now visible on your public provider listing."})
+                        c.execute("UPDATE provider_campaigns SET status='paused',updated_at=? WHERE id=? AND user_id=? AND business_id=?",(now(),campaign_id,record_user_id,business_id))
+                        return self.sendj({"ok":True,"status":"paused"})
                     title=str(d.get("title","")).strip()[:120];description=str(d.get("description","")).strip()[:2000]
                     starts_on=str(d.get("starts_on","")).strip()[:20];ends_on=str(d.get("ends_on","")).strip()[:20]
                     if len(title)<3 or len(description)<10: return self.sendj({"error":"Enter a campaign title and at least 10 characters describing the promotion."},400)
-                    cur=c.execute("INSERT INTO provider_campaigns(user_id,business_id,title,description,starts_on,ends_on,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'draft',?,?) RETURNING id",(u["id"],business_id,title,description,starts_on,ends_on,now(),now()))
+                    cur=c.execute("INSERT INTO provider_campaigns(user_id,business_id,title,description,starts_on,ends_on,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'draft',?,?) RETURNING id",(record_user_id,business_id,title,description,starts_on,ends_on,now(),now()))
                     return self.sendj({"ok":True,"id":cur.fetchone()["id"],"status":"draft","message":"Campaign saved as a private draft. It has not been published to customers."},201)
             if path=="/api/provider/insights":
                 u=self.require()
@@ -2760,7 +3798,9 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
                 if not client: return self.sendj({"error":"Client account not found."},404)
                 nid=None
                 with conn() as c:
-                    cur=c.execute("INSERT INTO notifications(kind,subject,body,status,created_at,recipient) VALUES(?,?,?,?,?,?) RETURNING id",("client_message",subject,"To: "+client["name"]+" <"+client["email"]+">\\n\\n"+body,"new",now(),client["email"]))
+                    cur=c.execute("INSERT INTO notifications(kind,subject,body,status,created_at,recipient) VALUES(?,?,?,?,?,?) RETURNING id",("client_message",subject,"To: "+client["name"]+" <"+client["email"]+">\
+\
+"+body,"new",now(),client["email"]))
                     nid=cur.fetchone()["id"]
                 if not send_owner_email(subject,body,client["email"]): return self.sendj({"error":"Message saved in Alerts but not sent. Configure SMTP in the server environment first."},503)
                 with conn() as c: c.execute("UPDATE notifications SET status='emailed',emailed_at=? WHERE id=?",(now(),nid))
@@ -3207,6 +4247,8 @@ def main():
         while True:
             try: expire_subscriptions()
             except Exception as e: print("Subscription expiry check failed:",e,flush=True)
+            try: evaluate_provider_automation_due()
+            except Exception as e: print("Provider automation check failed:",e,flush=True)
             threading.Event().wait(3600)
     threading.Thread(target=expiry_loop,daemon=True).start()
     server=ThreadingHTTPServer((HOST,PORT),Handler)
