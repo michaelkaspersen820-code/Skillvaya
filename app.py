@@ -991,6 +991,8 @@ body.messages-screen-mode.messages-conversation-open #messagesScreen .message-co
 body.messages-conversation-open .message-conversation-screen>*{box-sizing:border-box}
 /* Scroll recovery guard: normal pages scroll normally; dedicated chat and account overlays own their own scroll area. */
 html,body{overscroll-behavior-y:auto}body:not(.messages-conversation-open):not(.account-subspace-open):not(.provider-detail-mode){overflow-y:auto!important}body:not(.messages-conversation-open) #messagesScreen{overscroll-behavior:contain}
+/* Keep real content scrollable while removing stacked bottom padding that created a blank tail. */
+main.wrap{padding-bottom:calc(82px + env(safe-area-inset-bottom))!important}main.wrap>.footer{padding-bottom:20px!important;margin-bottom:0!important}body{padding-bottom:0!important}
 /* Consistent Skillvaya blue chrome on every screen; preserve existing handlers and layout. */
 .bottom-tabbar{background:linear-gradient(110deg,#102f60 0%,#174f86 100%)!important;border-top:1px solid #244c80!important;box-shadow:0 -8px 24px #102f6026!important}
 .bottom-tabbar button{background:#174578!important;border:1px solid #3766a8!important;color:#eaf3ff!important;border-radius:12px!important}
@@ -1075,13 +1077,15 @@ const planInfo=[['local','Local',105,'Business profile, category listing, custom
 document.addEventListener('click',function(e){
   const button=e.target&&e.target.closest?e.target.closest('#settings .account-dashboard-links .account-link'):null;
   if(!button)return;
-  const label=(button.innerText||button.textContent||'').trim().toLowerCase();
-  if(label.includes('provider')){
+  // Route by the button's actual heading, not its supporting description.
+  // The Chats card mentions 'Providers & conversations', which must never match Become a Provider.
+  const label=(button.querySelector('strong')?.textContent||button.innerText||button.textContent||'').trim().toLowerCase();
+  if(label==='become a provider'){
     e.preventDefault();e.stopPropagation();
     openProviderOnboarding();
-  }else if(label.includes('messages')){
+  }else if(label==='chats'||label==='messages'){
     e.preventDefault();e.stopPropagation();
-    viewMessages();
+    showMessagesScreen(true);
   }
 },true);
 async function openProviderOnboarding(){
