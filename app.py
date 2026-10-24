@@ -1205,7 +1205,11 @@ function view(v){
  if(!valid.includes(v))v='customer';
  const screenIds=['customer','categoryScreen','provider','account','settings','messagesScreen','terms','providerDetailScreen','servicesTabScreen','contactUsScreen'];
  screenIds.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('hidden')});
- const targetId=({services:'servicesTabScreen',contact:'contactUsScreen',messages:'messagesScreen'})[v]||v;const target=document.getElementById(targetId);if(target)target.classList.remove('hidden');
+ const targetId=({services:'servicesTabScreen',contact:'contactUsScreen',messages:'messagesScreen'})[v]||v;
+ // Keep inactive full-page destinations out of layout even if a later screen-specific CSS rule changes display.
+ const destinationIds=['servicesTabScreen','contactUsScreen','messagesScreen'];
+ destinationIds.forEach(id=>{const node=document.getElementById(id);if(node){const active=id===targetId;node.classList.toggle('hidden',!active);if(active){node.style.removeProperty('display');node.style.removeProperty('visibility');}else{node.style.setProperty('display','none','important');node.style.setProperty('visibility','hidden','important');}}});
+ const target=document.getElementById(targetId);if(target){target.classList.remove('hidden');target.style.removeProperty('display');target.style.removeProperty('visibility');}
  document.body.classList.remove('category-screen-mode','account-screen-mode','messages-screen-mode','provider-detail-mode','provider-screen-mode');['platformRatingCard','platform-rating-card','rateSkillvayaCard'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.toggle('hidden',v!=='customer')});if(v==='settings')document.body.classList.add('account-screen-mode');if(v==='provider')document.body.classList.add('provider-screen-mode');const profileView=v==='settings';const customerDirectory=document.getElementById('customer');if(customerDirectory)customerDirectory.classList.toggle('hidden',v!=='customer');const categoryDirectory=document.getElementById('categoryScreen');if(categoryDirectory)categoryDirectory.classList.add('hidden');
   setHomeChrome(v==='customer');
   // Home alone owns the global category tiles and promotional directory panels.
