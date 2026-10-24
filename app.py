@@ -793,7 +793,7 @@ body{background:var(--design-surface);color:var(--design-ink)}
 
 
 /* Distinct full-page destinations: Services, Contact and Account remain part of the same branded app. */
-.app-destination{max-width:1000px;margin:0 auto;padding:24px 0 120px}.app-destination.hidden{display:none!important}
+.app-destination{max-width:1000px;margin:0 auto;padding:24px 0 0}.app-destination.hidden{display:none!important}
 .destination-hero{padding:28px clamp(18px,4vw,34px);border-radius:22px;background:radial-gradient(ellipse at 90% 0%,#244d94 0,transparent 54%),linear-gradient(125deg,#07142e,#122b5b);color:#fff;margin-bottom:18px}
 .destination-hero h1{font-size:clamp(27px,4vw,38px);line-height:1.12;margin:12px 0}.destination-hero p{color:#d2def6;line-height:1.55;max-width:650px}
 .destination-search{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.destination-search input{flex:1;min-width:220px}
