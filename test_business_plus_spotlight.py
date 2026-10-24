@@ -51,13 +51,13 @@ def main():
                       ((sv.datetime.datetime.now(sv.datetime.timezone.utc)+sv.datetime.timedelta(days=20)).isoformat(), provider["user"]["id"]))
         data = request("/api/business-tools/data", token=token)
         assert data["business"]["plan"] == "plus"
-        assert {"jobs", "customers", "quotes", "invoices", "packages"}.issubset(set(data["available"]))
+        assert {"jobs", "calendar", "customers", "quotes", "invoices", "packages"}.issubset(set(data["available"]))
         assert "campaigns" not in data["available"] and "offers" not in data["available"]
 
         job = request("/api/business-tools/jobs", "POST", {
-            "title": "Leaking tap", "customer_name": "QA Customer", "amount": "1250.50",
+            "title": "Leaking tap", "customer_name": "QA Customer", "amount": "1250.50", "scheduled_for": "2026-11-01",
         }, token=token, expected=201)
-        request("/api/business-tools/jobs/%d" % job["id"], "POST", {
+        request("/api/business-tools/calendar/%d" % job["id"], "POST", {
             "status": "booked",
         }, token=token)
         request("/api/business-tools/customers", "POST", {
@@ -101,6 +101,7 @@ def main():
         data = request("/api/business-tools/data", token=token)
         assert len(data["jobs"]) == 2
         assert any(x["status"] == "booked" for x in data["jobs"])
+        assert any(x["scheduled_for"] == "2026-11-01" for x in data["calendar"])
         assert len(data["customers"]) == 1 and len(data["quotes"]) == 1
         assert data["invoices"][0]["status"] == "paid"
         assert len(data["packages"]) == 1 and len(data["campaigns"]) == 1 and len(data["offers"]) == 1
