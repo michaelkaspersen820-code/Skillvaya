@@ -6,6 +6,10 @@ Every data request is scoped to the signed-in provider's active, verified paid l
 import json
 from html import escape
 
+class SubscriptionAccessError(PermissionError):
+    """A signed-in provider is authenticated but lacks the required paid plan."""
+
+
 TABLES = {
     "jobs": ("sv_business_jobs", "lead_pipeline"),
     "customers": ("sv_business_customers", "crm"),
@@ -79,7 +83,8 @@ function money(cents){return 'R'+(Number(cents||0)/100).toLocaleString('en-ZA',{
 async function init(){if(!token){message('Please sign in to your provider account in Skillvaya first, then reopen Business Workspace.');return}try{data=await api('/api/business-tools/data');me=data.business;document.getElementById('workspace').classList.remove('hidden');message(me.name+' · '+me.plan_name+' · subscription verified','good');renderTabs();renderStats();renderPanel()}catch(e){message(e.message+' Use an active, PayFast-verified Business Plus or Business Spotlight subscription to open these tools.','error')}}
 function renderTabs(){document.getElementById('tabs').innerHTML=tabs.filter(t=>data.available.includes(t[0])).map(t=>'<button class="'+(active===t[0]?'active':'')+'" onclick="active='+JSON.stringify(t[0])+';renderTabs();renderPanel()">'+t[1]+'</button>').join('')}
 function renderStats(){let items=[['Open jobs',(data.jobs||[]).filter(x=>!['completed','lost'].includes(x.status)).length],['Customers',(data.customers||[]).length],['Quotes awaiting decision',(data.quotes||[]).filter(x=>['draft','sent'].includes(x.status)).length],['Unpaid invoices',(data.invoices||[]).filter(x=>!['paid','cancelled'].includes(x.status)).length]];document.getElementById('stats').innerHTML=items.map(x=>'<div class="card"><div class="muted">'+x[0]+'</div><div class="stat">'+x[1]+'</div></div>').join('')}
-function renderPanel(){let p=document.getElementById('panel');let title=tabs.find(t=>t[0]===active)?.[1]||'Workspace';let rows=data[active]||[];let f=fields[active]||[];p.innerHTML='<h2 style="margin-top:0">'+title+'</h2><form id="createForm"><div class="formgrid">'+f.map(x=>'<div class="'+(x[2]==='textarea'?'full':'')+'"><label>'+esc(x[1])+(x[3]?' *':'')+'</label>'+(x[2]==='textarea'?'<textarea name="'+x[0]+'" '+(x[3]?'required':'')+'></textarea>':x[2]==='select'?'<select name="'+x[0]+'">'+x[4].map(v=>'<option>'+esc(v)+'</option>').join('')+'</select>':'<input name="'+x[0]+'" type="'+x[2]+'" '+(x[3]?'required':'')+(x[2]==='number'?' min="0" step="0.01"':'')+'></div>').join('')+'</div><p><button class="primary">Save '+title.toLowerCase().replace(/s$/,'')+'</button></p></form><div id="formMsg" class="muted"></div><div class="tablewrap"><table><thead><tr>'+columns(active).map(x=>'<th>'+x[1]+'</th>').join('')+'<th>Status / action</th></tr></thead><tbody>'+(rows.length?rows.map(x=>'<tr>'+columns(active).map(c=>'<td>'+esc(c[2]?money(x[c[2]]):x[c[0]])+'</td>').join('')+'<td><span class="pill">'+esc(x.status||'active')+'</span><div class="actions" style="margin-top:6px">'+statusButtons(active,x)+'</div></td></tr>').join(''):'<tr><td colspan="8" class="empty">No records yet. Use the form above to add your first record.</td></tr>')+'</tbody></table></div>';
+function fieldHtml(x){let control=x[2]==='textarea'?'<textarea name="'+x[0]+'" '+(x[3]?'required':'')+'></textarea>':x[2]==='select'?'<select name="'+x[0]+'">'+x[4].map(v=>'<option>'+esc(v)+'</option>').join('')+'</select>':'<input name="'+x[0]+'" type="'+x[2]+'" '+(x[3]?'required':'')+(x[2]==='number'?' min="0" step="0.01"':'')+'>';return '<div class="'+(x[2]==='textarea'?'full':'')+'"><label>'+esc(x[1])+(x[3]?' *':'')+'</label>'+control+'</div>'}
+function renderPanel(){let p=document.getElementById('panel');let title=tabs.find(t=>t[0]===active)?.[1]||'Workspace';let rows=data[active]||[];let f=fields[active]||[];p.innerHTML='<h2 style="margin-top:0">'+title+'</h2><form id="createForm"><div class="formgrid">'+f.map(fieldHtml).join('')+'</div><p><button class="primary">Save '+title.toLowerCase().replace(/s$/,'')+'</button></p></form><div id="formMsg" class="muted"></div><div class="tablewrap"><table><thead><tr>'+columns(active).map(x=>'<th>'+x[1]+'</th>').join('')+'<th>Status / action</th></tr></thead><tbody>'+(rows.length?rows.map(x=>'<tr>'+columns(active).map(c=>'<td>'+esc(c[2]?money(x[c[2]]):x[c[0]])+'</td>').join('')+'<td><span class="pill">'+esc(x.status||'active')+'</span><div class="actions" style="margin-top:6px">'+statusButtons(active,x)+'</div></td></tr>').join(''):'<tr><td colspan="8" class="empty">No records yet. Use the form above to add your first record.</td></tr>')+'</tbody></table></div>';
 document.getElementById('createForm').onsubmit=async e=>{e.preventDefault();let fd=Object.fromEntries(new FormData(e.target));try{await api('/api/business-tools/'+active,{method:'POST',body:JSON.stringify(fd)});await refresh();renderPanel();document.getElementById('formMsg').textContent='Saved.'}catch(err){document.getElementById('formMsg').textContent=err.message}}
 }
 function columns(k){return {jobs:[['title','Job'],['customer_name','Customer'],['customer_contact','Contact'],['scheduled_for','Scheduled'],['amount_cents','Estimate','amount_cents']],customers:[['name','Customer'],['phone','Phone'],['email','Email']],quotes:[['customer_name','Customer'],['description','Description'],['amount_cents','Amount','amount_cents'],['follow_up_date','Follow-up']],invoices:[['reference','Invoice'],['customer_name','Customer'],['amount_cents','Amount','amount_cents'],['due_date','Due']],packages:[['title','Package'],['description','Details'],['price_cents','Price','price_cents']],campaigns:[['title','Campaign'],['channel','Channel'],['start_date','Start'],['end_date','End']],offers:[['title','Offer'],['code','Code'],['discount_text','Terms'],['ends_on','Ends'],['redemptions','Redemptions']]}[k]||[]}
@@ -117,7 +122,7 @@ def _access(handler, connection, app, entity):
     from subscription_entitlements import has_feature
     feature = TABLES[entity][1]
     if not has_feature(business["plan"], feature):
-        raise PermissionError("This tool is not included in your current subscription. Upgrade to Business Spotlight to unlock it.")
+        raise SubscriptionAccessError("This tool is not included in your current subscription. Upgrade to Business Spotlight to unlock it.")
     return user, business
 
 def _data(connection, business_id, app):
@@ -201,6 +206,8 @@ def handle_post(handler, path, payload, app):
             if not title or not customer:
                 _json(handler, {"error": "Job title and customer name are required."}, 400); return True
             amount = _cents(payload.get("amount", 0))
+            if amount < 0:
+                _json(handler, {"error": "Estimated amount must be zero or greater."}, 400); return True
             cur = connection.execute("INSERT INTO "+table+"(business_id,title,customer_name,customer_contact,status,scheduled_for,amount_cents,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(business["id"],title,customer,str(payload.get("customer_contact","")).strip()[:160],"new",str(payload.get("scheduled_for",""))[:20],amount,str(payload.get("notes","")).strip()[:2000],stamp,stamp))
         elif entity == "customers":
             name = str(payload.get("name","")).strip()[:160]
