@@ -113,6 +113,18 @@ try:
     request("/api/messages/send","POST",{"business_id":bid,"customer_id":customer["user"]["id"],"message":"Provider reply"},token=pt,expected=201)
     customer_inbox=request("/api/messages",token=customer["token"])
     check("Provider can reply and customer receives the reply",lambda: (_ for _ in ()).throw(AssertionError(str(customer_inbox))) if not any(x.get("message")=="Provider reply" for x in customer_inbox.get("items",[])) else None)
+    # WorkFinder private user-to-user messaging is independent of provider enquiries.
+    other=request("/api/signup","POST",{"name":"QA WorkFinder Peer","email":"qa-workfinder-peer@example.invalid","password":"SafePass789","role":"customer","accept_terms":True})
+    wfconv=request("/api/workfinder/conversations","POST",{"recipient_email":"qa-workfinder-peer@example.invalid"},token=customer["token"],expected=201)
+    wf_id=wfconv["conversation_id"]
+    request("/api/workfinder/messages","POST",{"conversation_id":wf_id,"message":"Private WorkFinder message"},token=customer["token"],expected=201)
+    wf_peer=request("/api/workfinder/conversations",token=other["token"])
+    check("WorkFinder can start an independent customer-to-customer conversation",lambda: (_ for _ in ()).throw(AssertionError(str(wfconv))) if not wfconv.get("conversation_id") else None)
+    check("WorkFinder recipient sees a real delivered message",lambda: (_ for _ in ()).throw(AssertionError(str(wf_peer))) if not any(int(x.get("id",0))==int(wf_id) and x.get("last_message")=="Private WorkFinder message" for x in wf_peer.get("items",[])) else None)
+    wf_messages=request("/api/workfinder/messages?conversation_id=%s"%wf_id,token=other["token"])
+    check("WorkFinder conversation history is persisted and readable by both participants",lambda: (_ for _ in ()).throw(AssertionError(str(wf_messages))) if not any(x.get("message")=="Private WorkFinder message" for x in wf_messages.get("items",[])) else None)
+    request("/api/workfinder/messages?conversation_id=%s"%wf_id,token=pt,expected=404)
+    check("WorkFinder messages are isolated from unrelated accounts",lambda: None)
     check("Customer can submit a complaint",lambda: request("/api/complaints","POST",{"business_id":bid,"reason":"QA-only report"},token=customer["token"],expected=201))
     complaints=request("/api/admin/complaints",token=at)["items"]
     cid=next(x["id"] for x in complaints if x["reason"]=="QA-only report")

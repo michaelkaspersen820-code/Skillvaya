@@ -1,11 +1,12 @@
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 import json, sqlite3, hashlib, hmac, secrets, os, datetime, threading, webbrowser, urllib.parse, urllib.request, urllib.error, base64, time
 from contextlib import contextmanager
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 TERMS_VERSION = "2026-10-21-v1.2"
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+WF_ID_TYPE = "BIGSERIAL" if DATABASE_URL else "INTEGER"
 DB = os.environ.get("SKILLVAYA_DB_PATH", os.path.join(ROOT, "skillvaya.sqlite3"))
 
 # Never allow a hosted service to silently fall back to ephemeral SQLite.
@@ -3201,6 +3202,41 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 self.end_headers()
                 self.wfile.write(workfinder_html)
                 return
+            # WF_STANDALONE_MESSAGING_V1: private WorkFinder user-to-user conversations, separate from provider enquiries.
+            if path in ("/api/workfinder/conversations", "/api/workfinder/messages"):
+                u=self.require()
+                if u.get("role") not in ("customer","provider"):
+                    return self.sendj({"error":"Use a customer or provider account to message in WorkFinder."},403)
+                with conn() as c:
+                    c.execute(f"""CREATE TABLE IF NOT EXISTS workfinder_conversations (
+                        id {WF_ID_TYPE} PRIMARY KEY, user_a_id BIGINT NOT NULL, user_b_id BIGINT NOT NULL,
+                        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                        UNIQUE(user_a_id,user_b_id))""")
+                    c.execute(f"""CREATE TABLE IF NOT EXISTS workfinder_messages (
+                        id {WF_ID_TYPE} PRIMARY KEY, conversation_id BIGINT NOT NULL,
+                        sender_id BIGINT NOT NULL, recipient_id BIGINT NOT NULL,
+                        message TEXT NOT NULL, created_at TEXT NOT NULL, read_at TEXT)""")
+                    if path.endswith("/conversations"):
+                        rows=c.execute("""SELECT wc.id,wc.updated_at,
+                            CASE WHEN wc.user_a_id=? THEN ub.id ELSE ua.id END AS partner_id,
+                            CASE WHEN wc.user_a_id=? THEN ub.name ELSE ua.name END AS partner_name,
+                            CASE WHEN wc.user_a_id=? THEN ub.email ELSE ua.email END AS partner_email,
+                            (SELECT wm.message FROM workfinder_messages wm WHERE wm.conversation_id=wc.id ORDER BY wm.id DESC LIMIT 1) AS last_message,
+                            (SELECT wm.sender_id FROM workfinder_messages wm WHERE wm.conversation_id=wc.id ORDER BY wm.id DESC LIMIT 1) AS last_sender_id,
+                            (SELECT COUNT(*) FROM workfinder_messages wm WHERE wm.conversation_id=wc.id AND wm.recipient_id=? AND wm.read_at IS NULL) AS unread
+                            FROM workfinder_conversations wc
+                            JOIN users ua ON ua.id=wc.user_a_id JOIN users ub ON ub.id=wc.user_b_id
+                            WHERE wc.user_a_id=? OR wc.user_b_id=? ORDER BY wc.updated_at DESC LIMIT 200""",
+                            (u["id"],u["id"],u["id"],u["id"],u["id"],u["id"])).fetchall()
+                        return self.sendj({"items":[dict(r) for r in rows]})
+                    query=urllib.parse.parse_qs(urlparse(self.path).query)
+                    try: cid=int((query.get("conversation_id") or ["0"])[0])
+                    except (ValueError,TypeError): cid=0
+                    convo=c.execute("SELECT * FROM workfinder_conversations WHERE id=? AND (user_a_id=? OR user_b_id=?)",(cid,u["id"],u["id"])).fetchone()
+                    if not convo:return self.sendj({"error":"Conversation not found."},404)
+                    c.execute("UPDATE workfinder_messages SET read_at=? WHERE conversation_id=? AND recipient_id=? AND read_at IS NULL",(now(),cid,u["id"]))
+                    rows=c.execute("SELECT id,conversation_id,sender_id,recipient_id,message,created_at,read_at FROM workfinder_messages WHERE conversation_id=? ORDER BY id ASC LIMIT 1000",(cid,)).fetchall()
+                    return self.sendj({"items":[dict(r) for r in rows],"conversation_id":cid})
             if path.startswith("/api/workfinder/"):
                 u=self.require(); kind=path.rsplit("/",1)[-1]
                 if kind not in ("profile","saved","searches","workwanted","reports","blocked","messages","jobs","applications"): return self.sendj({"error":"Unknown WorkFinder resource."},404)
@@ -3599,6 +3635,51 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
             d=self.body()
             if path.startswith("/api/provider/growth/"):
                 return self.handle_provider_growth("POST",path,d)
+            # WF_STANDALONE_MESSAGING_V1: start or send in a WorkFinder-only thread.
+            if path in ("/api/workfinder/conversations", "/api/workfinder/messages"):
+                u=self.require()
+                if u.get("role") not in ("customer","provider"):
+                    return self.sendj({"error":"Use a customer or provider account to message in WorkFinder."},403)
+                if path.endswith("/conversations"):
+                    email=str(d.get("recipient_email","")).strip().lower()[:254]
+                    if not email or "@" not in email:return self.sendj({"error":"Enter the other person's registered email address."},400)
+                    with conn() as c:
+                        c.execute(f"""CREATE TABLE IF NOT EXISTS workfinder_conversations (
+                            id {WF_ID_TYPE} PRIMARY KEY, user_a_id BIGINT NOT NULL, user_b_id BIGINT NOT NULL,
+                            created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(user_a_id,user_b_id))""")
+                        c.execute(f"""CREATE TABLE IF NOT EXISTS workfinder_messages (
+                            id {WF_ID_TYPE} PRIMARY KEY, conversation_id BIGINT NOT NULL,
+                            sender_id BIGINT NOT NULL, recipient_id BIGINT NOT NULL,
+                            message TEXT NOT NULL, created_at TEXT NOT NULL, read_at TEXT)""")
+                        partner=c.execute("SELECT id,name,email,role FROM users WHERE lower(email)=?",(email,)).fetchone()
+                        if not partner:return self.sendj({"error":"No SkillVaya account was found for that email."},404)
+                        if int(partner["id"])==int(u["id"]):return self.sendj({"error":"You cannot start a conversation with your own account."},400)
+                        if partner["role"] not in ("customer","provider"):return self.sendj({"error":"That account cannot receive WorkFinder messages."},403)
+                        a,b=sorted((int(u["id"]),int(partner["id"])))
+                        stamp=now()
+                        c.execute("INSERT INTO workfinder_conversations(user_a_id,user_b_id,created_at,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_a_id,user_b_id) DO NOTHING",(a,b,stamp,stamp))
+                        row=c.execute("SELECT id FROM workfinder_conversations WHERE user_a_id=? AND user_b_id=?",(a,b)).fetchone()
+                        return self.sendj({"ok":True,"conversation_id":row["id"],"partner":{"id":partner["id"],"name":partner["name"],"email":partner["email"]}},201)
+                try: cid=int(d.get("conversation_id",0))
+                except (ValueError,TypeError): return self.sendj({"error":"Choose a valid conversation."},400)
+                body=str(d.get("message","")).strip()[:4000]
+                if not body:return self.sendj({"error":"Type a message before sending."},400)
+                with conn() as c:
+                    c.execute(f"""CREATE TABLE IF NOT EXISTS workfinder_conversations (
+                        id {WF_ID_TYPE} PRIMARY KEY, user_a_id BIGINT NOT NULL, user_b_id BIGINT NOT NULL,
+                        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(user_a_id,user_b_id))""")
+                    c.execute(f"""CREATE TABLE IF NOT EXISTS workfinder_messages (
+                        id {WF_ID_TYPE} PRIMARY KEY, conversation_id BIGINT NOT NULL,
+                        sender_id BIGINT NOT NULL, recipient_id BIGINT NOT NULL,
+                        message TEXT NOT NULL, created_at TEXT NOT NULL, read_at TEXT)""")
+                    convo=c.execute("SELECT * FROM workfinder_conversations WHERE id=? AND (user_a_id=? OR user_b_id=?)",(cid,u["id"],u["id"])).fetchone()
+                    if not convo:return self.sendj({"error":"Conversation not found."},404)
+                    recipient=int(convo["user_b_id"] if int(convo["user_a_id"])==int(u["id"]) else convo["user_a_id"])
+                    stamp=now()
+                    cur=c.execute("INSERT INTO workfinder_messages(conversation_id,sender_id,recipient_id,message,created_at) VALUES(?,?,?,?,?) RETURNING id",(cid,u["id"],recipient,body,stamp))
+                    mid=cur.fetchone()["id"]
+                    c.execute("UPDATE workfinder_conversations SET updated_at=? WHERE id=?",(stamp,cid))
+                    return self.sendj({"ok":True,"item":{"id":mid,"conversation_id":cid,"sender_id":u["id"],"recipient_id":recipient,"message":body,"created_at":stamp}},201)
             if path.startswith("/api/workfinder/"):
                 u=self.require()
                 kind=path.rsplit("/",1)[-1]
