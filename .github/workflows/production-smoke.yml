@@ -1,0 +1,35 @@
+﻿name: Skillvaya Production Screen Smoke Test
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_run:
+    workflows: [Skillvaya QA]
+    types: [completed]
+    branches: [free-hosting-postgres]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check production screen shells (read-only, retry transient cold starts)
+        env:
+          SKILLVAYA_SMOKE_ATTEMPTS: '6'
+          SKILLVAYA_SMOKE_RETRY_SECONDS: '15'
+        run: python smoke_test_live.py
+
+
