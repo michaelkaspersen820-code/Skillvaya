@@ -387,7 +387,7 @@ public class MainActivity extends Activity {
                     @Override public void onPageFinished(WebView view, String url) {
                         // Render can briefly return its own wake-up/status page while the service starts.
                         // Keep the branded Skillvaya splash visible until the real app document is loaded.
-                        view.evaluateJavascript("(function(){var t=(document.title||'').toLowerCase();var b=document.body?document.body.innerText:'';return t.indexOf('skillvaya')>=0 && b.length>20 && t.indexOf('render')<0 && location.pathname.indexOf('/customer-app')===0;})()", value -> {
+                        view.evaluateJavascript("(function(){var t=(document.title||'').toLowerCase();var b=document.body?document.body.innerText:'';return t.indexOf('skillvaya')>=0 && b.length>20 && t.indexOf('render')<0 && (location.pathname.indexOf('/customer-app')===0 || location.pathname.indexOf('/owner-app')===0);})()", value -> {
                             if ("true".equals(value)) {
                                 hostedAppReady = true;
                                 loadingHandler.removeCallbacks(retryHostedPage);
