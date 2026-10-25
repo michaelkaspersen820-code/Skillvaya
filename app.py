@@ -842,7 +842,13 @@ body{background:radial-gradient(ellipse at 92% 0%,rgba(32,200,193,.08),transpare
 .card{border:1px solid #dce6f1;border-radius:17px;padding:20px;box-shadow:0 12px 34px rgba(18,43,76,.065);transition:box-shadow .18s,transform .18s}.card:hover{box-shadow:0 16px 40px rgba(18,43,76,.1)}
 button{border-radius:11px;padding:11px 15px;box-shadow:0 3px 9px rgba(16,35,63,.08)}button:hover{transform:translateY(-1px);filter:brightness(1.03)}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid rgba(32,200,193,.6);outline-offset:2px}
 input,select,textarea{border:1px solid #d3dfec;border-radius:10px;padding:12px;min-height:44px;width:100%}label{display:block;font-weight:650;margin-top:12px}h1,h2,h3{letter-spacing:-.45px}.stat{font-size:32px;color:#0d6672}.notice{border:1px solid #bfe4d4;border-radius:12px;padding:14px}.tablewrap{border:1px solid #dce6f1;border-radius:14px;overflow:auto}table{border-collapse:separate;border-spacing:0}th{background:#f0f5fa;position:sticky;top:0}td,th{padding:12px;border-bottom:1px solid #e5ecf4}
-@media(max-width:600px){.wrap{padding:12px}.head{padding:14px}.card{padding:15px}}
+@media(max-width:600px){.wrap{padding:12px}.head{padding:14px}.card{padding:15px}}/* Mobile-first owner control: compact the existing console without changing its handlers or APIs. */
+@media(max-width:700px){
+  .head{padding:10px 12px!important}.head>.wrap{padding:0!important}.owner-brand{gap:9px;align-items:center}.owner-brand img{width:38px;height:38px}.head h1{font-size:19px;line-height:1.2}.head .tiny{font-size:12px}.head .wrap>div:nth-child(2){font-size:12px;margin-top:5px!important}.head .wrap>div:nth-child(3){font-size:12px;margin-top:4px!important;overflow-wrap:anywhere}
+  .wrap{padding:10px!important;max-width:100%;width:100%}.grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px}.card{padding:12px!important;margin-bottom:9px;border-radius:12px}.card h2{font-size:18px;margin:3px 0 8px}.card h3{font-size:16px}.card p{margin:7px 0}.stat{font-size:23px!important;overflow-wrap:anywhere}.muted{font-size:13px}
+  #workspacePicker{font-size:16px!important;min-height:44px}.card .grid[style*="align-items:end"]{grid-template-columns:minmax(0,1fr)!important}.card .grid[style*="align-items:end"] button{width:100%;margin:3px 0}.card button{min-height:42px;max-width:100%;white-space:normal;overflow-wrap:anywhere}.tablewrap{max-width:100%;-webkit-overflow-scrolling:touch}.tablewrap table{min-width:600px}input,select,textarea{font-size:16px;max-width:100%}label{font-size:14px}.notice{padding:10px;font-size:13px}
+}
+@media(max-width:380px){.grid{grid-template-columns:minmax(0,1fr)!important}.head h1{font-size:17px}.stat{font-size:21px!important}}
 
 </style></head><body><header class="head"><div class="wrap"><div class="owner-brand"><img src="/sv-logo.jpeg" alt="SV Skillvaya logo"><div><h1 style="margin:0">Skillvaya - Owner Control</h1><div class="tiny">Owner workspace</div></div></div><div>Private owner console · authenticated access required</div><div style="margin-top:8px">Platform email: <span id="ownerEmailLabel">skillvaya@gmail.com</span></div></div></header><main class="wrap"><div class="notice">This control area is separate from the customer app. Owner data and actions require an authenticated owner session. Local loopback development is the only no-login exception.</div><div class="grid" id="stats"></div><section class="card"><h2>Workspace</h2><p class="muted">Choose one work area. Related tools are grouped together so the control screen is easier to navigate.</p><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));align-items:end"><div><label for="workspacePicker">Open a work area</label><select id="workspacePicker" style="width:100%;padding:12px;border:1px solid #cbd6e4;border-radius:8px;background:white;color:#19283b" onchange="if(this.value){load(this.value)}"><option value="">Select a task…</option><optgroup label="Marketplace"><option value="businesses">Business listings</option><option value="owner-promotions">My businesses & promotions (free)</option></optgroup><optgroup label="Platform operations"><option value="clients">Customer accounts</option><option value="owner-statistics">Owner statistics</option><option value="owner-subscribers">Paid subscribers</option><option value="owner-accounts">Account access control</option><option value="complaints">Reports & complaints</option><option value="notifications">Alerts & notifications</option><option value="analytics">Usage & analytics</option></optgroup><optgroup label="Payments"><option value="payments">Payments & refunds</option></optgroup><optgroup label="Communications & settings"><option value="inbox">Owner inbox</option><option value="compose">Compose email</option><option value="settings">Email & platform settings</option></optgroup></select></div><div><button onclick="load('summary')">Refresh overview</button> <button onclick="location.href='/owner-app'" class="secondary">Back to Owner App</button></div></div></section><section class="card" id="panel"><h2>Overview</h2><p class="muted">Select a control above.</p></section></main><script>
 async function api(path,opts={}){const ownerToken=localStorage.getItem('skillvaya_owner_token');opts.headers={'Content-Type':'application/json',...(ownerToken?{Authorization:'Bearer '+ownerToken}:{}),...(opts.headers||{})};let r=await fetch(path,opts);let d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d}
@@ -1469,7 +1475,7 @@ body.subscription-test-screen-mode #ownerEditionBar{display:none!important}
 <div id="svSplash" class="sv-splash" role="status" aria-live="polite"><div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div><div class="sv-loading-dots" aria-hidden="true"><i></i><i></i><i></i></div></div>
 <div id="firstLaunchGate" class="sv-launch-gate" role="dialog" aria-modal="true" aria-labelledby="svLaunchTitle"><div class="sv-launch-card"><div class="sv-launch-mark" aria-hidden="true">SV</div><h1 id="svLaunchTitle">Welcome to Skillvaya</h1><p>Find trusted professionals, connect with service providers, or create your profile to get started.</p><div class="sv-launch-actions"><button type="button" class="sv-launch-signin" onclick="enterLaunchAuth('signin')">Sign in</button><button type="button" class="sv-launch-create" onclick="enterLaunchAuth('signup')">Create profile</button></div><small class="sv-launch-note">Customer accounts are free. You can browse services and choose your next step after signing in.</small></div></div>
 <header class="top"><div class="wrap nav"><div class="brandlock"><img class="sv-logo" src="/sv-logo.jpeg" alt="SV Skillvaya logo"><div><div class="brand">Skillvaya</div><div class="studio-header-subtitle">Digital &amp; Creative Studio</div><div class="tiny studio-header-tagline">Professional. Simple. Powerful.</div></div></div></div></header>
-<section id="hero" class="hero"><div class="wrap"><span class="tag" style="background:#d9ebff;color:#174c91">WELCOME TO SKILLVAYA</span><h1>Find the perfect service for your needs.</h1><p>Search services, explore categories, and connect with professionals across South Africa.</p><div class="search"><input id="q" placeholder="Search plumbers, lawyers, private doctors…"><input id="area" placeholder="Town or suburb"><button class="primary" onclick="searchDirectory()">Search</button></div></div></section><section id="designPromoCard" class="design-promo-card wrap" aria-label="Featured Skillvaya studio"><div class="design-promo-icon" aria-hidden="true">✦</div><div class="design-promo-copy"><strong>Need something creative?</strong><span>Get a quote from Skillvaya Digital &amp; Creative Studio.</span></div><button type="button" class="design-promo-button" onclick="view('contact')">Contact Us <span aria-hidden="true">›</span></button></section><div class="hero-actions-wrap"><div class="wrap"><div class="hero-actions" aria-label="Public directory"><button id="nav-customer" class="active" onclick="view('customer')">Find a service provider</button></div></div></div>
+<div class="wrap" id="workfinderUpgrade" style="padding-top:12px;padding-bottom:0"><a href="/workfinder" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 17px;border-radius:16px;background:linear-gradient(120deg,#080f2b,#174a78);color:#fff;text-decoration:none;border:1px solid #315982;box-shadow:0 8px 24px #0b173022"><span><strong style="display:block;font-size:17px">WorkFinder</strong><span style="display:block;font-size:13px;color:#d6e7ff">Find work, apply for jobs, or hire people</span></span><span aria-hidden="true" style="font-size:24px;font-weight:800">→</span></a></div><section id="hero" class="hero"><div class="wrap"><span class="tag" style="background:#d9ebff;color:#174c91">WELCOME TO SKILLVAYA</span><h1>Find the perfect service for your needs.</h1><p>Search services, explore categories, and connect with professionals across South Africa.</p><div class="search"><input id="q" placeholder="Search plumbers, lawyers, private doctors…"><input id="area" placeholder="Town or suburb"><button class="primary" onclick="searchDirectory()">Search</button></div></div></section><section id="designPromoCard" class="design-promo-card wrap" aria-label="Featured Skillvaya studio"><div class="design-promo-icon" aria-hidden="true">✦</div><div class="design-promo-copy"><strong>Need something creative?</strong><span>Get a quote from Skillvaya Digital &amp; Creative Studio.</span></div><button type="button" class="design-promo-button" onclick="view('contact')">Contact Us <span aria-hidden="true">›</span></button></section><div class="hero-actions-wrap"><div class="wrap"><div class="hero-actions" aria-label="Public directory"><button id="nav-customer" class="active" onclick="view('customer')">Find a service provider</button></div></div></div>
 <main class="wrap">
 <section id="designCategoryPanel" class="design-category-panel card" aria-labelledby="designCategoryTitle">
 <div class="design-section-heading"><div><span class="design-eyebrow">EXPLORE SKILLVAYA</span><h2 id="designCategoryTitle">Service categories</h2><p class="muted">Find the right specialist for your next project.</p></div><button type="button" class="ghost" id="toggleDesignCategories" onclick="toggleDesignCategories()">View all</button></div>
@@ -3181,6 +3187,29 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
             if path=="/website":
                 with open(os.path.join(ROOT,"website.html"),"rb") as f: customer_html = f.read()
                 self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(customer_html))); self.end_headers(); self.wfile.write(customer_html); return
+            if path == "/workfinder":
+                try:
+                    with open(os.path.join(ROOT, "static", "workfinder.html"), "rb") as f:
+                        workfinder_html = f.read()
+                except OSError:
+                    return self.sendj({"error": "WorkFinder is temporarily unavailable."}, 503)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(workfinder_html)))
+                self.end_headers()
+                self.wfile.write(workfinder_html)
+                return
+            if path.startswith("/api/workfinder/"):
+                u=self.require(); kind=path.rsplit("/",1)[-1]
+                if kind not in ("profile","saved","searches","workwanted","reports","blocked","messages","jobs","applications"): return self.sendj({"error":"Unknown WorkFinder resource."},404)
+                with conn() as c:
+                    c.execute("""CREATE TABLE IF NOT EXISTS workfinder_records (
+                        user_id INTEGER NOT NULL, kind TEXT NOT NULL,
+                        record_key TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL, UNIQUE(user_id,kind,record_key))""")
+                    rows=c.execute("SELECT record_key,payload FROM workfinder_records WHERE user_id=? AND kind=? ORDER BY updated_at DESC LIMIT 500",(u["id"],kind)).fetchall()
+                return self.sendj({"items":[{"key":r["record_key"],**json.loads(r["payload"])} for r in rows if not (kind=="saved" and json.loads(r["payload"]).get("removed"))]})
             if path in ("/customer","/customer-app"):
                 # Customer browsing is public; account creation and sign-in live in Profile.
                 customer_html = HTML.encode()
@@ -3569,6 +3598,44 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
             d=self.body()
             if path.startswith("/api/provider/growth/"):
                 return self.handle_provider_growth("POST",path,d)
+            if path.startswith("/api/workfinder/"):
+                u=self.require()
+                kind=path.rsplit("/",1)[-1]
+                with conn() as c:
+                    c.execute("""CREATE TABLE IF NOT EXISTS workfinder_records (
+                        user_id INTEGER NOT NULL, kind TEXT NOT NULL,
+                        record_key TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL, UNIQUE(user_id,kind,record_key))""")
+                    if kind=="applications":
+                        if u["role"] not in ("customer","provider","admin"): return self.sendj({"error":"Sign in required."},403)
+                        action=str(d.get("action","create"))
+                        if action=="create":
+                            title=str(d.get("title","")).strip()[:180]; company=str(d.get("company","")).strip()[:180]
+                            if not title or not company: return self.sendj({"error":"Job title and employer are required."},400)
+                            key=str(d.get("job_id") or (title+"|"+company))[:240]
+                            payload={"title":title,"company":company,"cover_note":str(d.get("cover_note",""))[:5000],"status":"Applied","followUp":"","note":"","job_id":d.get("job_id")}
+                            stamp=now()
+                            c.execute("INSERT INTO workfinder_records(user_id,kind,record_key,payload,created_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,kind,record_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",(u["id"],kind,key,json.dumps(payload),stamp,stamp))
+                            return self.sendj({"ok":True,"item":payload},201)
+                        key=str(d.get("key",""))[:240]
+                        row=c.execute("SELECT payload FROM workfinder_records WHERE user_id=? AND kind=? AND record_key=?",(u["id"],kind,key)).fetchone()
+                        if not row:return self.sendj({"error":"Application not found."},404)
+                        payload=json.loads(row["payload"]); payload.update({k:d[k] for k in ("status","followUp","note") if k in d})
+                        c.execute("UPDATE workfinder_records SET payload=?,updated_at=? WHERE user_id=? AND kind=? AND record_key=?",(json.dumps(payload),now(),u["id"],kind,key))
+                        return self.sendj({"ok":True,"item":payload})
+                    if kind not in ("profile","saved","searches","workwanted","reports","blocked","messages","jobs"):
+                        return self.sendj({"error":"Unknown WorkFinder resource."},404)
+                    if self.command=="GET":
+                        rows=c.execute("SELECT record_key,payload FROM workfinder_records WHERE user_id=? AND kind=? ORDER BY updated_at DESC LIMIT 500",(u["id"],kind)).fetchall()
+                        return self.sendj({"items":[{"key":r["record_key"],**json.loads(r["payload"])} for r in rows if not (kind=="saved" and json.loads(r["payload"]).get("removed"))]})
+                    key=str(d.get("key","default"))[:240]
+                    payload=d.get("payload",d)
+                    if not isinstance(payload,dict):return self.sendj({"error":"Invalid record."},400)
+                    raw=json.dumps(payload,ensure_ascii=False)
+                    if len(raw)>200000:return self.sendj({"error":"Record is too large."},413)
+                    stamp=now()
+                    c.execute("INSERT INTO workfinder_records(user_id,kind,record_key,payload,created_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,kind,record_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",(u["id"],kind,key,raw,stamp,stamp))
+                return self.sendj({"ok":True,"key":key},201)
             if path=="/api/customer/marketing-preferences":
                 return self.handle_customer_marketing_preferences("POST",d)
             if path=="/api/team/my-assignments":

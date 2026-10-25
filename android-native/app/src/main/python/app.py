@@ -1458,7 +1458,7 @@ body.subscription-test-screen-mode #ownerEditionBar{display:none!important}
 </style></head><body>
 <div id="svSplash" class="sv-splash" role="status" aria-live="polite"><div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div><div class="sv-loading-dots" aria-hidden="true"><i></i><i></i><i></i></div></div>
 <header class="top"><div class="wrap nav"><div class="brandlock"><img class="sv-logo" src="/sv-logo.jpeg" alt="SV Skillvaya logo"><div><div class="brand">Skillvaya</div><div class="studio-header-subtitle">Digital &amp; Creative Studio</div><div class="tiny studio-header-tagline">Professional. Simple. Powerful.</div></div></div></div></header>
-<section id="hero" class="hero"><div class="wrap"><span class="tag" style="background:#d9ebff;color:#174c91">WELCOME TO SKILLVAYA</span><h1>Find the perfect service for your needs.</h1><p>Search services, explore categories, and connect with professionals across South Africa.</p><div class="search"><input id="q" placeholder="Search plumbers, lawyers, private doctors…"><input id="area" placeholder="Town or suburb"><button class="primary" onclick="searchDirectory()">Search</button></div></div></section><section id="designPromoCard" class="design-promo-card wrap" aria-label="Featured Skillvaya studio"><div class="design-promo-icon" aria-hidden="true">✦</div><div class="design-promo-copy"><strong>Need something creative?</strong><span>Get a quote from Skillvaya Digital &amp; Creative Studio.</span></div><button type="button" class="design-promo-button" onclick="view('contact')">Contact Us <span aria-hidden="true">›</span></button></section><div class="hero-actions-wrap"><div class="wrap"><div class="hero-actions" aria-label="Public directory"><button id="nav-customer" class="active" onclick="view('customer')">Find a service provider</button></div></div></div>
+<div class="wrap" id="workfinderUpgrade" style="padding-top:12px;padding-bottom:0"><a href="/workfinder" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 17px;border-radius:16px;background:linear-gradient(120deg,#080f2b,#174a78);color:#fff;text-decoration:none;border:1px solid #315982;box-shadow:0 8px 24px #0b173022"><span><strong style="display:block;font-size:17px">WorkFinder</strong><span style="display:block;font-size:13px;color:#d6e7ff">Find work, apply for jobs, or hire people</span></span><span aria-hidden="true" style="font-size:24px;font-weight:800">→</span></a></div><section id="hero" class="hero"><div class="wrap"><span class="tag" style="background:#d9ebff;color:#174c91">WELCOME TO SKILLVAYA</span><h1>Find the perfect service for your needs.</h1><p>Search services, explore categories, and connect with professionals across South Africa.</p><div class="search"><input id="q" placeholder="Search plumbers, lawyers, private doctors…"><input id="area" placeholder="Town or suburb"><button class="primary" onclick="searchDirectory()">Search</button></div></div></section><section id="designPromoCard" class="design-promo-card wrap" aria-label="Featured Skillvaya studio"><div class="design-promo-icon" aria-hidden="true">✦</div><div class="design-promo-copy"><strong>Need something creative?</strong><span>Get a quote from Skillvaya Digital &amp; Creative Studio.</span></div><button type="button" class="design-promo-button" onclick="view('contact')">Contact Us <span aria-hidden="true">›</span></button></section><div class="hero-actions-wrap"><div class="wrap"><div class="hero-actions" aria-label="Public directory"><button id="nav-customer" class="active" onclick="view('customer')">Find a service provider</button></div></div></div>
 <main class="wrap">
 <section id="designCategoryPanel" class="design-category-panel card" aria-labelledby="designCategoryTitle">
 <div class="design-section-heading"><div><span class="design-eyebrow">EXPLORE SKILLVAYA</span><h2 id="designCategoryTitle">Service categories</h2><p class="muted">Find the right specialist for your next project.</p></div><button type="button" class="ghost" id="toggleDesignCategories" onclick="toggleDesignCategories()">View all</button></div>
@@ -3125,6 +3125,29 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
             if path=="/website":
                 with open(os.path.join(ROOT,"website.html"),"rb") as f: customer_html = f.read()
                 self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(customer_html))); self.end_headers(); self.wfile.write(customer_html); return
+            if path == "/workfinder":
+                try:
+                    with open(os.path.join(ROOT, "static", "workfinder.html"), "rb") as f:
+                        workfinder_html = f.read()
+                except OSError:
+                    return self.sendj({"error": "WorkFinder is temporarily unavailable."}, 503)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(workfinder_html)))
+                self.end_headers()
+                self.wfile.write(workfinder_html)
+                return
+            if path.startswith("/api/workfinder/"):
+                u=self.require(); kind=path.rsplit("/",1)[-1]
+                if kind not in ("profile","saved","searches","workwanted","reports","blocked","messages","jobs","applications"): return self.sendj({"error":"Unknown WorkFinder resource."},404)
+                with conn() as c:
+                    c.execute("""CREATE TABLE IF NOT EXISTS workfinder_records (
+                        user_id INTEGER NOT NULL, kind TEXT NOT NULL,
+                        record_key TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL, UNIQUE(user_id,kind,record_key))""")
+                    rows=c.execute("SELECT record_key,payload FROM workfinder_records WHERE user_id=? AND kind=? ORDER BY updated_at DESC LIMIT 500",(u["id"],kind)).fetchall()
+                return self.sendj({"items":[{"key":r["record_key"],**json.loads(r["payload"])} for r in rows if not (kind=="saved" and json.loads(r["payload"]).get("removed"))]})
             if path in ("/customer","/customer-app"):
                 # Customer browsing is public; account creation and sign-in live in Profile.
                 customer_html = HTML.encode()
@@ -3513,6 +3536,44 @@ document.addEventListener('DOMContentLoaded',startUniversalEditControls);setTime
             d=self.body()
             if path.startswith("/api/provider/growth/"):
                 return self.handle_provider_growth("POST",path,d)
+            if path.startswith("/api/workfinder/"):
+                u=self.require()
+                kind=path.rsplit("/",1)[-1]
+                with conn() as c:
+                    c.execute("""CREATE TABLE IF NOT EXISTS workfinder_records (
+                        user_id INTEGER NOT NULL, kind TEXT NOT NULL,
+                        record_key TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL, UNIQUE(user_id,kind,record_key))""")
+                    if kind=="applications":
+                        if u["role"] not in ("customer","provider","admin"): return self.sendj({"error":"Sign in required."},403)
+                        action=str(d.get("action","create"))
+                        if action=="create":
+                            title=str(d.get("title","")).strip()[:180]; company=str(d.get("company","")).strip()[:180]
+                            if not title or not company: return self.sendj({"error":"Job title and employer are required."},400)
+                            key=str(d.get("job_id") or (title+"|"+company))[:240]
+                            payload={"title":title,"company":company,"cover_note":str(d.get("cover_note",""))[:5000],"status":"Applied","followUp":"","note":"","job_id":d.get("job_id")}
+                            stamp=now()
+                            c.execute("INSERT INTO workfinder_records(user_id,kind,record_key,payload,created_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,kind,record_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",(u["id"],kind,key,json.dumps(payload),stamp,stamp))
+                            return self.sendj({"ok":True,"item":payload},201)
+                        key=str(d.get("key",""))[:240]
+                        row=c.execute("SELECT payload FROM workfinder_records WHERE user_id=? AND kind=? AND record_key=?",(u["id"],kind,key)).fetchone()
+                        if not row:return self.sendj({"error":"Application not found."},404)
+                        payload=json.loads(row["payload"]); payload.update({k:d[k] for k in ("status","followUp","note") if k in d})
+                        c.execute("UPDATE workfinder_records SET payload=?,updated_at=? WHERE user_id=? AND kind=? AND record_key=?",(json.dumps(payload),now(),u["id"],kind,key))
+                        return self.sendj({"ok":True,"item":payload})
+                    if kind not in ("profile","saved","searches","workwanted","reports","blocked","messages","jobs"):
+                        return self.sendj({"error":"Unknown WorkFinder resource."},404)
+                    if self.command=="GET":
+                        rows=c.execute("SELECT record_key,payload FROM workfinder_records WHERE user_id=? AND kind=? ORDER BY updated_at DESC LIMIT 500",(u["id"],kind)).fetchall()
+                        return self.sendj({"items":[{"key":r["record_key"],**json.loads(r["payload"])} for r in rows if not (kind=="saved" and json.loads(r["payload"]).get("removed"))]})
+                    key=str(d.get("key","default"))[:240]
+                    payload=d.get("payload",d)
+                    if not isinstance(payload,dict):return self.sendj({"error":"Invalid record."},400)
+                    raw=json.dumps(payload,ensure_ascii=False)
+                    if len(raw)>200000:return self.sendj({"error":"Record is too large."},413)
+                    stamp=now()
+                    c.execute("INSERT INTO workfinder_records(user_id,kind,record_key,payload,created_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,kind,record_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",(u["id"],kind,key,raw,stamp,stamp))
+                return self.sendj({"ok":True,"key":key},201)
             if path=="/api/customer/marketing-preferences":
                 return self.handle_customer_marketing_preferences("POST",d)
             if path=="/api/team/my-assignments":
