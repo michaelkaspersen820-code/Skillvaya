@@ -2518,6 +2518,50 @@ def issue_session(user):
         c.execute("INSERT INTO auth_sessions(token,user_id,expires_at,created_at) VALUES(?,?,?,?)",(token,user["id"],expires,now()))
     SESSIONS[token]=user
     return token
+def seo_robots_body():
+    # Public discovery is allowed; private APIs and owner-only screens are not search content.
+    return ("""User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /owner-control
+Disallow: /owner-app
+Disallow: /login
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /api/
+Disallow: /owner-control
+Disallow: /owner-app
+Disallow: /login
+
+Sitemap: https://skillvaya.onrender.com/sitemap.xml
+""").encode("utf-8")
+
+
+def seo_sitemap_body():
+    today = datetime.date.today().isoformat()
+    pages = [
+        ("/", "weekly", "1.0"),
+        ("/customer", "daily", "0.9"),
+        ("/downloads", "weekly", "0.8"),
+        ("/workfinder", "weekly", "0.7"),
+        ("/terms", "monthly", "0.3"),
+        ("/privacy", "monthly", "0.3"),
+        ("/refund", "monthly", "0.3"),
+        ("/cancellation", "monthly", "0.3"),
+        ("/delivery", "monthly", "0.3"),
+    ]
+    entries = "".join(
+        "<url><loc>https://skillvaya.onrender.com" + path +
+        "</loc><lastmod>" + today + "</lastmod><changefreq>" + freq +
+        "</changefreq><priority>" + priority + "</priority></url>"
+        for path, freq, priority in pages
+    )
+    return ('<?xml version="1.0" encoding="UTF-8"?>'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
+            entries + '</urlset>').encode("utf-8")
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*a): pass
     def sendj(self,obj,status=200):
@@ -3049,6 +3093,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_HEAD(self):
         path=urlparse(self.path).path
+        if path in ("/robots.txt", "/sitemap.xml"):
+            body = seo_robots_body() if path == "/robots.txt" else seo_sitemap_body()
+            content_type = "text/plain; charset=utf-8" if path == "/robots.txt" else "application/xml; charset=utf-8"
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=3600")
+            self.end_headers()
+            return
         if path=="/healthz":
             b=json.dumps({"ok":True,"service":"skillvaya"}).encode()
             self.send_response(200); self.send_header("Content-Type","application/json; charset=utf-8"); self.send_header("Content-Length",str(len(b))); self.end_headers(); return
@@ -3072,6 +3125,24 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(404); self.end_headers()
     def do_GET(self):
         path=urlparse(self.path).path
+        if path == "/robots.txt":
+            body = seo_robots_body()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=3600")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/sitemap.xml":
+            body = seo_sitemap_body()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/xml; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=3600")
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path.startswith("/api/provider/growth/"):
             return self.handle_provider_growth("GET",path,{})
         if path=="/api/customer/marketing-preferences":
@@ -3249,7 +3320,15 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return self.sendj({"items":[{"key":r["record_key"],**json.loads(r["payload"])} for r in rows if not (kind=="saved" and json.loads(r["payload"]).get("removed"))]})
             if path in ("/customer","/customer-app"):
                 # Customer browsing is public; account creation and sign-in live in Profile.
-                customer_html = HTML.encode()
+                customer_page = HTML
+                if path == "/customer":
+                    customer_page = customer_page.replace(
+                        "<title>Skillvaya</title>",
+                        '<title>Find Service Providers Across South Africa | Skillvaya</title>'
+                        '<meta name="description" content="Find tradespeople, professionals and local businesses across South Africa with Skillvaya. Browse service providers and contact them free, without downloading an app.">'
+                        '<link rel="canonical" href="https://skillvaya.onrender.com/customer">'
+                    )
+                customer_html = customer_page.encode("utf-8")
                 self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(customer_html))); self.end_headers(); self.wfile.write(customer_html); return
             if path=="/owner-control":
                 try:
