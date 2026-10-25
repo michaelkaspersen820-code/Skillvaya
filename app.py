@@ -3714,7 +3714,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     payload=d.get("payload",d)
                     if not isinstance(payload,dict):return self.sendj({"error":"Invalid record."},400)
                     raw=json.dumps(payload,ensure_ascii=False)
-                    if len(raw)>200000:return self.sendj({"error":"Record is too large."},413)
+                    record_limit=2_500_000 if kind=="profile" and key in ("portfolio_files","documents") else 200000
+                    if len(raw)>record_limit:return self.sendj({"error":"Record is too large. Choose files within the 1.5 MB combined upload limit." if record_limit>200000 else "Record is too large."},413)
                     stamp=now()
                     c.execute("INSERT INTO workfinder_records(user_id,kind,record_key,payload,created_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,kind,record_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",(u["id"],kind,key,raw,stamp,stamp))
                 return self.sendj({"ok":True,"key":key},201)
