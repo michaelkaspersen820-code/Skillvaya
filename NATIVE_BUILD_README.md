@@ -31,10 +31,10 @@ $env:SKILLVAYA_KEY_ALIAS = 'skillvaya-release'
 The portable EXE is built with PyInstaller. The package bundles `website.html`, icons, logo, and `downloads/Skillvaya.apk`.
 
 ```powershell
-python -m PyInstaller --noconfirm --clean --onefile --windowed --name Skillvaya --icon skillvaya.ico --add-data 'website.html;.' --add-data 'icon-192.png;.' --add-data 'icon-512.png;.' --add-data 'sv-logo.jpeg;.' --add-data 'downloads\Skillvaya.apk;downloads' desktop_launcher.py
+python -m PyInstaller --noconfirm --clean --onefile --windowed --name Skillvaya --icon skillvaya.ico --add-data 'website.html;.' --add-data 'icon-192.png;.' --add-data 'icon-512.png;.' --add-data 'sv-logo.jpeg;.' --add-data 'deployment.json;.' --add-data 'downloads\Skillvaya.apk;downloads' desktop_launcher.py
 Copy-Item dist\Skillvaya.exe downloads\Skillvaya.exe -Force
 ```
 
 ## Current release scope
 
-Both native packages run a local Skillvaya service and a device-local SQLite database. They are usable as standalone builds, but different users' devices do not share one marketplace yet. A shared online marketplace and live PayFast transactions require production hosting, a stable public HTTPS URL, the approved merchant credentials, and an end-to-end payment notification test. The EXE is not Authenticode-signed, so Windows may display its normal unknown-publisher warning.
+The Windows EXE bundles deployment.json and opens the shared hosted SkillVaya HTTPS app, including WorkFinder messaging, so the PC and Android clients can use the same server-side accounts and conversations. The Android package also targets the shared hosted app. A shared online marketplace and live PayFast transactions require production hosting, a stable public HTTPS URL, the approved merchant credentials, and an end-to-end payment notification test. The EXE is not Authenticode-signed, so Windows may display its normal unknown-publisher warning.
