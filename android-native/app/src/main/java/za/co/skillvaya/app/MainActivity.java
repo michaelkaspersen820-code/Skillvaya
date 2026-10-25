@@ -168,9 +168,13 @@ public class MainActivity extends Activity {
     };
     private final Runnable retryHostedPage = new Runnable() {
         @Override public void run() {
-            if (!hostedAppReady && webView != null && hostedRetryCount < 80) {
+            if (!hostedAppReady && webView != null && hostedRetryCount < 5) {
                 hostedRetryCount++;
-                webView.loadUrl(BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", "") + "/customer-app?native_refresh=" + System.currentTimeMillis());
+                String baseUrl = BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", "");
+                String currentUrl = webView.getUrl();
+                String targetPath = "/customer-app";
+                if (currentUrl != null && Uri.parse(currentUrl).getPath() != null && Uri.parse(currentUrl).getPath().startsWith("/owner-app")) targetPath = "/owner-app";
+                webView.loadUrl(baseUrl + targetPath + "?native_refresh=" + System.currentTimeMillis());
             }
         }
     };
@@ -387,7 +391,7 @@ public class MainActivity extends Activity {
                     @Override public void onPageFinished(WebView view, String url) {
                         // Render can briefly return its own wake-up/status page while the service starts.
                         // Keep the branded Skillvaya splash visible until the real app document is loaded.
-                        view.evaluateJavascript("(function(){var t=(document.title||'').toLowerCase();var b=document.body?document.body.innerText:'';return t.indexOf('skillvaya')>=0 && b.length>20 && t.indexOf('render')<0 && (location.pathname.indexOf('/customer-app')===0 || location.pathname.indexOf('/owner-app')===0);})()", value -> {
+                        view.evaluateJavascript("(function(){var p=location.pathname||'';var b=document.body;var owner=p.indexOf('/owner-app')===0;var customer=p.indexOf('/customer-app')===0;var t=(document.title||'').toLowerCase();if(owner)return !!(b&&b.children.length>0&&(document.getElementById('loginScreen')||document.getElementById('appShell')));return customer&&!!b&&t.indexOf('skillvaya')>=0&&t.indexOf('render')<0&&b.innerText.trim().length>20;})()", value -> {
                             if ("true".equals(value)) {
                                 hostedAppReady = true;
                                 loadingHandler.removeCallbacks(retryHostedPage);
