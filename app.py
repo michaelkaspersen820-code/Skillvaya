@@ -3329,7 +3329,15 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     convo=c.execute("SELECT * FROM workfinder_conversations WHERE id=? AND (user_a_id=? OR user_b_id=?)",(cid,u["id"],u["id"])).fetchone()
                     if not convo:return self.sendj({"error":"Conversation not found."},404)
                     c.execute("UPDATE workfinder_messages SET read_at=? WHERE conversation_id=? AND recipient_id=? AND read_at IS NULL",(now(),cid,u["id"]))
+                    c.execute(f"""CREATE TABLE IF NOT EXISTS workfinder_message_attachments (id {WF_ID_TYPE} PRIMARY KEY, message_id BIGINT NOT NULL UNIQUE, filename TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes BIGINT NOT NULL, data_base64 TEXT NOT NULL)""")
                     rows=c.execute("SELECT id,conversation_id,sender_id,recipient_id,message,created_at,read_at FROM workfinder_messages WHERE conversation_id=? ORDER BY id ASC LIMIT 1000",(cid,)).fetchall()
+                    out=[]
+                    for row in rows:
+                        item=dict(row)
+                        att=c.execute("SELECT filename,mime_type,size_bytes,data_base64 FROM workfinder_message_attachments WHERE message_id=?",(row["id"],)).fetchone()
+                        if att:item["attachment"]={"filename":att["filename"],"mime_type":att["mime_type"],"size_bytes":att["size_bytes"],"url":"data:"+att["mime_type"]+";base64,"+att["data_base64"]}
+                        out.append(item)
+                    return self.sendj({"items":out})
                     return self.sendj({"items":[dict(r) for r in rows],"conversation_id":cid})
             if path.startswith("/api/workfinder/"):
                 u=self.require(); kind=path.rsplit("/",1)[-1]
@@ -3738,7 +3746,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
             if path.startswith("/api/provider/growth/"):
                 return self.handle_provider_growth("POST",path,d)
             # WF_STANDALONE_MESSAGING_V1: start or send in a WorkFinder-only thread.
-            if path in ("/api/workfinder/conversations", "/api/workfinder/messages"):
+            if path in ("/api/workfinder/conversations", "/api/workfinder/messages", "/api/workfinder/attachments"):
                 u=self.require()
                 if u.get("role") not in ("customer","provider"):
                     return self.sendj({"error":"Use a customer or provider account to message in WorkFinder."},403)
@@ -3762,6 +3770,30 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         c.execute("INSERT INTO workfinder_conversations(user_a_id,user_b_id,created_at,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_a_id,user_b_id) DO NOTHING",(a,b,stamp,stamp))
                         row=c.execute("SELECT id FROM workfinder_conversations WHERE user_a_id=? AND user_b_id=?",(a,b)).fetchone()
                         return self.sendj({"ok":True,"conversation_id":row["id"],"partner":{"id":partner["id"],"name":partner["name"],"email":partner["email"]}},201)
+                if path.endswith("/attachments"):
+                    try: cid=int(d.get("conversation_id",0))
+                    except (ValueError,TypeError): return self.sendj({"error":"Choose a valid conversation."},400)
+                    filename=str(d.get("filename","attachment")).replace("\\\\","/").split("/")[-1].strip()[:160]
+                    filename="".join(ch for ch in filename if ch.isprintable() and ch not in '<>:"/\\\\|?*') or "attachment"
+                    mime=str(d.get("mime_type","")).strip().lower()[:100]
+                    allowed={"image/jpeg","image/png","image/webp","application/pdf","application/msword","application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+                    if mime not in allowed:return self.sendj({"error":"Choose a JPG, PNG, WebP, PDF, DOC or DOCX file."},400)
+                    encoded=str(d.get("data","")).strip()
+                    if encoded.startswith("data:") and "," in encoded:encoded=encoded.split(",",1)[1]
+                    try: payload=base64.b64decode(encoded,validate=True)
+                    except Exception:return self.sendj({"error":"The selected attachment could not be read."},400)
+                    if not payload or len(payload)>1572864:return self.sendj({"error":"Attachments must be 1.5 MB or smaller."},413)
+                    with conn() as c:
+                        c.execute(f"""CREATE TABLE IF NOT EXISTS workfinder_conversations (id {WF_ID_TYPE} PRIMARY KEY, user_a_id BIGINT NOT NULL, user_b_id BIGINT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(user_a_id,user_b_id))""")
+                        c.execute(f"""CREATE TABLE IF NOT EXISTS workfinder_messages (id {WF_ID_TYPE} PRIMARY KEY, conversation_id BIGINT NOT NULL, sender_id BIGINT NOT NULL, recipient_id BIGINT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL, read_at TEXT)""")
+                        c.execute(f"""CREATE TABLE IF NOT EXISTS workfinder_message_attachments (id {WF_ID_TYPE} PRIMARY KEY, message_id BIGINT NOT NULL UNIQUE, filename TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes BIGINT NOT NULL, data_base64 TEXT NOT NULL)""")
+                        convo=c.execute("SELECT * FROM workfinder_conversations WHERE id=? AND (user_a_id=? OR user_b_id=?)",(cid,u["id"],u["id"])).fetchone()
+                        if not convo:return self.sendj({"error":"Conversation not found."},404)
+                        recipient=int(convo["user_b_id"] if int(convo["user_a_id"])==int(u["id"]) else convo["user_a_id"])
+                        stamp=now();cur=c.execute("INSERT INTO workfinder_messages(conversation_id,sender_id,recipient_id,message,created_at) VALUES(?,?,?,?,?) RETURNING id",(cid,u["id"],recipient,"Shared file: "+filename,stamp));mid=cur.fetchone()["id"]
+                        c.execute("INSERT INTO workfinder_message_attachments(message_id,filename,mime_type,size_bytes,data_base64) VALUES(?,?,?,?,?)",(mid,filename,mime,len(payload),base64.b64encode(payload).decode("ascii")))
+                        c.execute("UPDATE workfinder_conversations SET updated_at=? WHERE id=?",(stamp,cid))
+                    return self.sendj({"ok":True,"message_id":mid,"filename":filename},201)
                 try: cid=int(d.get("conversation_id",0))
                 except (ValueError,TypeError): return self.sendj({"error":"Choose a valid conversation."},400)
                 body=str(d.get("message","")).strip()[:4000]
@@ -3816,7 +3848,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     payload=d.get("payload",d)
                     if not isinstance(payload,dict):return self.sendj({"error":"Invalid record."},400)
                     raw=json.dumps(payload,ensure_ascii=False)
-                    record_limit=2_500_000 if kind=="profile" and key in ("portfolio_files","documents") else 200000
+                    record_limit=2_500_000 if kind=="profile" and key in ("portfolio_files","documents","business_files") else 200000
                     if len(raw)>record_limit:return self.sendj({"error":"Record is too large. Choose files within the 1.5 MB combined upload limit." if record_limit>200000 else "Record is too large."},413)
                     stamp=now()
                     c.execute("INSERT INTO workfinder_records(user_id,kind,record_key,payload,created_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,kind,record_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",(u["id"],kind,key,raw,stamp,stamp))
