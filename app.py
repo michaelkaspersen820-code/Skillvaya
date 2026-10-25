@@ -3205,7 +3205,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     try:
                         paypal_access_token()
                         oauth_valid=True
-                        message="PayPal "+cfg["mode"].title()+" OAuth authentication succeeded. Order creation and capture still need an approved checkout test."
+                        if cfg["mode"]=="live":
+                            message="PayPal Live OAuth authentication succeeded. Live checkout is enabled; paid plans activate only after PayPal confirms a completed capture matching the order reference, currency and amount."
+                        else:
+                            message="PayPal Sandbox OAuth authentication succeeded. Sandbox is for testing only; its transactions are not real payments."
                     except Exception as e:
                         message=str(e)[:220]
                 return self.sendj({"provider":"paypal","paypal_ready":configured,"oauth_valid":oauth_valid,"checkout_ready":configured and oauth_valid,"mode":cfg["mode"],"message":message})
