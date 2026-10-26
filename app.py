@@ -664,7 +664,7 @@ class Handler(BaseHTTPRequestHandler):
                 if amount<1 or len(reason)<3: return self.sendj({"error":"Enter a refund amount greater than zero and a reason of at least 3 characters."},400)
                 with conn() as c: row=c.execute("SELECT * FROM payments WHERE id=?",(pid,)).fetchone()
                 if not row: return self.sendj({"error":"Payment not found."},404)
-                if row["status"]!="verified" or not row["pf_payment_id"]: return self.sendj({"error":"Only PayFast-confirmed transactions can be refunded."},400)
+                if row["status"]!="verified" or not row["pf_payment_id"] or str(row["pf_payment_id"]).startswith("BANK-TRANSFER:"): return self.sendj({"error":"Only PayFast-confirmed transactions can be refunded through PayFast. Bank-transfer refunds must be handled separately in the bank."},400)
                 if amount+int(row["refunded_amount"] or 0)>int(row["amount"])*100: return self.sendj({"error":"Refund exceeds the remaining amount paid."},400)
                 query=pf_api_request("GET","/refunds/query/"+urllib.parse.quote(str(row["pf_payment_id"]),safe=""))
                 qdata=query.get("data",query)
