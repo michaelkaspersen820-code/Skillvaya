@@ -10,8 +10,8 @@ WF_ID_TYPE = "BIGSERIAL" if DATABASE_URL else "INTEGER"
 DB = os.environ.get("SKILLVAYA_DB_PATH", os.path.join(ROOT, "skillvaya.sqlite3"))
 
 # Never allow a hosted service to silently fall back to ephemeral SQLite.
-if os.environ.get("PORT") and not DATABASE_URL:
-    raise RuntimeError("Hosted Skillvaya startup blocked: set DATABASE_URL to the Neon PostgreSQL connection string. SQLite is for local development only.")
+if os.environ.get("PORT") and not DATABASE_URL and os.environ.get("SKILLVAYA_ALLOW_EPHEMERAL_STAGING_SQLITE", "").lower() != "true":
+    raise RuntimeError("Hosted Skillvaya startup blocked: set DATABASE_URL to the PostgreSQL connection string. SQLite is allowed on a hosted service only when the explicit isolated-staging flag is enabled.")
 
 # SQLite remains the zero-configuration local development database. Hosted free deployments
 # use managed PostgreSQL so customer records survive web-service restarts and redeploys.
