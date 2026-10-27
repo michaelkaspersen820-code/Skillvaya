@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1730">
+<meta name="description" content="How to request deletion of a Skillvaya account and associated personal information.">
+<title>Request Account Deletion | Skillvaya</title>
+<style>
+:root{color-scheme:light;font-family:Inter,"Segoe UI",Arial,sans-serif;color:#17243b;background:#f3f6fc;line-height:1.6}
+*{box-sizing:border-box}body{margin:0}.top{background:linear-gradient(120deg,#080f2b,#142653);color:white;padding:24px 18px}
+.wrap{width:min(100% - 28px,820px);margin:auto}.brand{font-weight:850;font-size:25px;letter-spacing:-.6px}.brand span{color:#20d7e8}
+main{padding:28px 0 48px}.card{background:white;border:1px solid #dfe7f5;border-radius:20px;padding:clamp(20px,4vw,34px);box-shadow:0 12px 32px #0b17300b}
+h1{font-size:clamp(27px,5vw,38px);line-height:1.15;margin:4px 0 12px;letter-spacing:-.8px}h2{font-size:19px;margin-top:26px}
+p,li{font-size:15px}.muted{color:#61708a}.notice{background:#edf7ff;border-left:4px solid #2864f5;padding:14px 16px;border-radius:10px}
+.button{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:12px 18px;border-radius:12px;background:#2864f5;color:#fff;font-weight:800;text-decoration:none;margin:10px 0}
+.secondary{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 16px;border:1px solid #d7e2f3;border-radius:12px;color:#234b94;text-decoration:none;font-weight:750}
+footer{padding:0 0 32px;color:#65738a;font-size:13px}a{color:#2056b4}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap"><a class="brand" href="/" style="color:white;text-decoration:none">skill<span>vaya</span></a></div></header>
+<main class="wrap">
+<article class="card">
+<p class="muted">Account and privacy support</p>
+<h1>Request deletion of your Skillvaya account</h1>
+<p>You can request deletion of your Skillvaya account and associated personal information using the signed-in app or by emailing Skillvaya from the email address registered to your account.</p>
+<div class="notice"><strong>For an in-app request:</strong> open Skillvaya, sign in, open Profile, scroll to the account actions and select <strong>Request account deletion</strong>. Follow the confirmation prompt. A request is recorded for review; it does not instantly delete the account.</div>
+<h2>Submit a request from this device</h2>
+<p>If you are signed in to Skillvaya on this browser or app, you can send a request directly. The request does not delete your account immediately; an owner must verify and process it.</p>
+<p><button class="button" id="submitDeletion" type="button">Submit account-deletion request</button></p>
+<p id="deletionStatus" role="status" aria-live="polite" class="muted"></p>
+<script>
+(()=>{const b=document.getElementById('submitDeletion'),s=document.getElementById('deletionStatus');b.addEventListener('click',async()=>{const token=localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token');if(!token){s.textContent='Please sign in to Skillvaya first, then return here. If you cannot sign in, use the email request below.';return;}if(!confirm('Submit an account-deletion request? Your account will not be deleted until Skillvaya verifies and completes the request.'))return;b.disabled=true;s.textContent='Submitting request…';try{const r=await fetch('/api/account/delete-request',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({reason:'Requested from the public account-deletion page'})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Request could not be submitted.');s.textContent=d.message||('Request #'+d.request_id+' recorded.');}catch(e){s.textContent=e.message+' You can still request deletion by email below.';}finally{b.disabled=false;}});})();
+</script>
+<h2>Request by email</h2>
+<p>If you cannot sign in, send an email from your registered email address. Include “Account deletion request” in the subject and the email address linked to your Skillvaya account. Do not include your password, one-time PIN, full card number or bank credentials.</p>
+<p><a class="button" href="mailto:skillvaya@gmail.com?subject=Skillvaya%20account%20deletion%20request">Email Skillvaya to request deletion</a></p>
+<h2>What happens next?</h2>
+<ol>
+<li>Skillvaya verifies that the request comes from the account holder or an authorised representative.</li>
+<li>We review the account and related records so that linked provider listings, messages, attachments, job requests and other personal information are handled appropriately.</li>
+<li>We delete or de-identify personal information that no longer needs to be retained, subject to legal obligations, payment/accounting records, fraud prevention, security, active disputes and the rights of other users.</li>
+<li>We aim to complete verified requests within 30 days. If a request is complex or a lawful retention requirement applies, we will explain the delay and what limited records must be kept.</li>
+<li>We contact you when the outcome is confirmed. Sending a request alone does not mean the account has already been deleted.</li>
+</ol>
+<p class="muted">If you have a paid provider plan, requesting account deletion does not automatically issue a refund or cancel an independent agreement with a service provider. Billing and refund questions can be included in your request.</p>
+<h2>Need help?</h2>
+<p>Email <a href="mailto:skillvaya@gmail.com">skillvaya@gmail.com</a>. For your privacy, do not send passwords or payment-card security details.</p>
+<p><a class="secondary" href="/privacy">Read the Privacy Policy</a> <a class="secondary" href="/">Return to Skillvaya</a></p>
+</article>
+</main>
+<footer class="wrap">Skillvaya · South Africa · <a href="mailto:skillvaya@gmail.com">skillvaya@gmail.com</a></footer>
+</body>
+</html>

@@ -157,6 +157,128 @@ def conn():
         raise
     finally:
         c.close()
+def delete_account_data(c, user_id, request_id=None):
+    """Delete account-linked personal data transactionally; retain only minimized financial/audit records."""
+    user_id = int(user_id)
+    user = c.execute("SELECT id, role FROM users WHERE id=?", (user_id,)).fetchone()
+    if not user:
+        raise ValueError("Account no longer exists.")
+    if user["role"] == "admin":
+        raise PermissionError("Owner/admin accounts are protected from account deletion.")
+    business_ids = [int(r["id"]) for r in c.execute("SELECT id FROM businesses WHERE user_id=?", (user_id,)).fetchall()]
+    bids = business_ids
+    def delete_where(table, where, params):
+        try:
+            cols = table_columns(c, table)
+        except Exception:
+            return
+        if cols:
+            c.execute("DELETE FROM " + table + " WHERE " + where, tuple(params))
+    def update_where(table, sql, params):
+        try:
+            cols = table_columns(c, table)
+        except Exception:
+            return
+        if cols:
+            c.execute(sql, tuple(params))
+    def anonymize_payments(condition, params):
+        try:
+            cols = set(table_columns(c, "payments"))
+        except Exception:
+            return
+        assignments=[]
+        if "user_id" in cols: assignments.append("user_id=0")
+        if "business_id" in cols: assignments.append("business_id=NULL")
+        for col in ("pf_payment_id","paypal_order_id","paypal_capture_id"):
+            if col in cols: assignments.append(col+"=NULL")
+        if assignments:
+            c.execute("UPDATE payments SET "+",".join(assignments)+" WHERE "+condition, tuple(params))
+    # Remove content created by, addressed to, or stored for this account.
+    delete_where("analytics", "user_id=?", [user_id])
+    delete_where("auth_sessions", "user_id=?", [user_id])
+    delete_where("customer_marketing_preferences", "user_id=?", [user_id])
+    delete_where("platform_ratings", "rater_id=?", [user_id])
+    delete_where("favorites", "customer_id=?", [user_id])
+    delete_where("contacts", "customer_id=?", [user_id])
+    delete_where("ratings", "rater_id=? OR target_user_id=?", [user_id, user_id])
+    delete_where("provider_quote_templates", "user_id=?", [user_id])
+    delete_where("provider_campaigns", "user_id=?", [user_id])
+    delete_where("provider_bookings", "user_id=? OR customer_id=?", [user_id, user_id])
+    delete_where("provider_invoices", "user_id=? OR customer_id=?", [user_id, user_id])
+    delete_where("provider_customer_notes", "user_id=? OR customer_id=?", [user_id, user_id])
+    delete_where("provider_followups", "user_id=? OR customer_id=?", [user_id, user_id])
+    delete_where("provider_review_replies", "user_id=?", [user_id])
+    delete_where("provider_service_packages", "user_id=?", [user_id])
+    delete_where("provider_team_members", "owner_user_id=? OR user_id=?", [user_id, user_id])
+    delete_where("provider_job_assignments", "owner_user_id=?", [user_id])
+    delete_where("provider_offers", "user_id=?", [user_id])
+    delete_where("provider_marketing_events", "user_id=? OR customer_id=?", [user_id, user_id])
+    delete_where("provider_announcements", "user_id=?", [user_id])
+    delete_where("provider_automation_rules", "user_id=?", [user_id])
+    delete_where("provider_notifications", "user_id=?", [user_id])
+    # Remove conversations and their media, including every conversation attached to a deleted provider listing.
+    if bids:
+        marks = ",".join("?" for _ in bids)
+        calls = c.execute("SELECT id FROM video_calls WHERE caller_id=? OR callee_id=? OR customer_id=? OR business_id IN ("+marks+")",
+                          tuple([user_id, user_id, user_id] + bids)).fetchall()
+    else:
+        calls = c.execute("SELECT id FROM video_calls WHERE caller_id=? OR callee_id=? OR customer_id=?", (user_id, user_id, user_id)).fetchall()
+    call_ids = [str(r["id"]) for r in calls]
+    if call_ids:
+        marks = ",".join("?" for _ in call_ids)
+        delete_where("video_call_signals", "call_id IN ("+marks+")", call_ids)
+        delete_where("video_calls", "id IN ("+marks+")", call_ids)
+    if bids:
+        marks = ",".join("?" for _ in bids)
+        where = "customer_id=? OR sender_id=? OR business_id IN ("+marks+")"
+        params = [user_id, user_id] + bids
+        msgrows = c.execute("SELECT id FROM messages WHERE "+where, tuple(params)).fetchall()
+        msgids = [int(r["id"]) for r in msgrows]
+        if msgids:
+            imarks = ",".join("?" for _ in msgids)
+            delete_where("message_attachments", "message_id IN ("+imarks+") OR customer_id=? OR sender_id=? OR business_id IN ("+marks+")", msgids+[user_id,user_id]+bids)
+        else:
+            delete_where("message_attachments", "customer_id=? OR sender_id=? OR business_id IN ("+marks+")", [user_id,user_id]+bids)
+        delete_where("messages", where, params)
+        delete_where("enquiries", "customer_id=? OR business_id IN ("+marks+")", [user_id]+bids)
+        jobrows = c.execute("SELECT id FROM job_requests WHERE customer_id=? OR business_id IN ("+marks+")", tuple([user_id]+bids)).fetchall()
+        jobids = [int(r["id"]) for r in jobrows]
+        if jobids:
+            jmarks = ",".join("?" for _ in jobids)
+            delete_where("job_quotes", "job_id IN ("+jmarks+") OR business_id IN ("+marks+") OR provider_id=?", jobids+bids+[user_id])
+        else:
+            delete_where("job_quotes", "business_id IN ("+marks+") OR provider_id=?", bids+[user_id])
+        delete_where("job_requests", "customer_id=? OR business_id IN ("+marks+")", [user_id]+bids)
+        delete_where("complaints", "customer_id=? OR business_id IN ("+marks+")", [user_id]+bids)
+        delete_where("subscriptions", "user_id=? OR business_id IN ("+marks+")", [user_id]+bids)
+        delete_where("contacts", "business_id IN ("+marks+")", bids)
+        delete_where("favorites", "business_id IN ("+marks+")", bids)
+        delete_where("ratings", "business_id IN ("+marks+")", bids)
+        # Keep bookkeeping rows only where needed, but remove direct account/business linkage and gateway identifiers.
+        anonymize_payments("user_id=? OR business_id IN ("+marks+")", [user_id]+bids)
+        update_where("owner_promotions", "UPDATE owner_promotions SET directory_business_id=NULL WHERE directory_business_id IN ("+marks+")", bids)
+        delete_where("businesses", "user_id=?", [user_id])
+    else:
+        delete_where("message_attachments", "customer_id=? OR sender_id=?", [user_id, user_id])
+        delete_where("enquiries", "customer_id=?", [user_id])
+        delete_where("messages", "customer_id=? OR sender_id=?", [user_id, user_id])
+        delete_where("job_requests", "customer_id=?", [user_id])
+        delete_where("job_quotes", "provider_id=?", [user_id])
+        delete_where("complaints", "customer_id=?", [user_id])
+        delete_where("subscriptions", "user_id=?", [user_id])
+        anonymize_payments("user_id=?", [user_id])
+    if request_id is not None:
+        delete_where("notifications", "kind='account_deletion_request' AND body LIKE ?", ["%Request ID: "+str(int(request_id))+".%"])
+        cur = c.execute("UPDATE account_deletion_requests SET status='completed',user_email='',reason='',reviewed_at=?,review_notes='Account and associated app data deleted; minimized payment ledger retained where required.' WHERE id=? AND user_id=? AND status='pending'", (now(), int(request_id), user_id))
+        if getattr(cur, "rowcount", 1) == 0:
+            raise ValueError("Deletion request is not pending; no account data was deleted.")
+    else:
+        delete_where("account_deletion_requests", "user_id=?", [user_id])
+    delete_where("owner_account_access", "user_id=?", [user_id])
+    c.execute("DELETE FROM users WHERE id=?", (user_id,))
+    return {"businesses_removed": len(bids), "payment_records_retained_minimized": True}
+
+
 def init():
     # Public deployments must provide a dedicated owner identity and a strong password.
     # This prevents a fresh public database from having no way to authenticate its owner.
@@ -287,6 +409,7 @@ def init():
         CREATE TABLE IF NOT EXISTS complaints(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, customer_id INTEGER NOT NULL, reason TEXT NOT NULL, evidence TEXT DEFAULT '', status TEXT DEFAULT 'open', priority TEXT DEFAULT 'normal', created_at TEXT NOT NULL, admin_note TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS payments(id BIGSERIAL PRIMARY KEY, user_id INTEGER NOT NULL, business_id INTEGER, plan TEXT NOT NULL, billing TEXT NOT NULL, amount INTEGER NOT NULL, reference TEXT NOT NULL UNIQUE, status TEXT DEFAULT 'pending', created_at TEXT NOT NULL, verified_at TEXT, pf_payment_id TEXT, refunded_amount INTEGER NOT NULL DEFAULT 0, refund_status TEXT NOT NULL DEFAULT 'none');
         CREATE TABLE IF NOT EXISTS analytics(id BIGSERIAL PRIMARY KEY, event TEXT NOT NULL, user_id INTEGER, detail TEXT DEFAULT '', created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS account_deletion_requests(id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL, user_email TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', requested_at TEXT NOT NULL, reviewed_at TEXT DEFAULT '', review_notes TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS notifications(id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL, emailed_at TEXT, recipient TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS broadcast_notifications(id BIGSERIAL PRIMARY KEY, subject TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL, created_by BIGINT, active BOOLEAN NOT NULL DEFAULT TRUE);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
@@ -899,10 +1022,10 @@ input,select,textarea{border:1px solid #d3dfec;border-radius:10px;padding:12px;m
 }
 @media(max-width:380px){.grid{grid-template-columns:minmax(0,1fr)!important}.head h1{font-size:17px}.stat{font-size:21px!important}}
 
-</style></head><body><header class="head"><div class="wrap"><div class="owner-brand"><img src="/sv-logo.jpeg" alt="SV Skillvaya logo"><div><h1 style="margin:0">Skillvaya - Owner Control</h1><div class="tiny">Owner workspace</div></div></div><div>Private owner console · authenticated access required</div><div style="margin-top:8px">Platform email: <span id="ownerEmailLabel">skillvaya@gmail.com</span></div></div></header><main class="wrap"><div class="notice">This control area is separate from the customer app. Owner data and actions require an authenticated owner session. Local loopback development is the only no-login exception.</div><div class="grid" id="stats"></div><section class="card"><h2>Workspace</h2><p class="muted">Choose one work area. Related tools are grouped together so the control screen is easier to navigate.</p><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));align-items:end"><div><label for="workspacePicker">Open a work area</label><select id="workspacePicker" style="width:100%;padding:12px;border:1px solid #cbd6e4;border-radius:8px;background:white;color:#19283b" onchange="if(this.value){load(this.value)}"><option value="">Select a task…</option><optgroup label="Marketplace"><option value="businesses">Business listings</option><option value="owner-promotions">My businesses & promotions (free)</option></optgroup><optgroup label="Platform operations"><option value="clients">Customer accounts</option><option value="owner-statistics">Owner statistics</option><option value="owner-subscribers">Paid subscribers</option><option value="owner-accounts">Account access control</option><option value="complaints">Reports & complaints</option><option value="notifications">Alerts & notifications</option><option value="analytics">Usage & analytics</option></optgroup><optgroup label="Payments"><option value="payments">Payments & refunds</option></optgroup><optgroup label="Communications & settings"><option value="inbox">Owner inbox</option><option value="compose">Compose email</option><option value="settings">Email & platform settings</option></optgroup></select></div><div><button onclick="load('summary')">Refresh overview</button> <button onclick="location.href='/owner-app'" class="secondary">Back to Owner App</button></div></div></section><section class="card" id="panel"><h2>Overview</h2><p class="muted">Select a control above.</p></section></main><script>
+</style></head><body><header class="head"><div class="wrap"><div class="owner-brand"><img src="/sv-logo.jpeg" alt="SV Skillvaya logo"><div><h1 style="margin:0">Skillvaya - Owner Control</h1><div class="tiny">Owner workspace</div></div></div><div>Private owner console · authenticated access required</div><div style="margin-top:8px">Platform email: <span id="ownerEmailLabel">skillvaya@gmail.com</span></div></div></header><main class="wrap"><div class="notice">This control area is separate from the customer app. Owner data and actions require an authenticated owner session. Local loopback development is the only no-login exception.</div><div class="grid" id="stats"></div><section class="card"><h2>Workspace</h2><p class="muted">Choose one work area. Related tools are grouped together so the control screen is easier to navigate.</p><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));align-items:end"><div><label for="workspacePicker">Open a work area</label><select id="workspacePicker" style="width:100%;padding:12px;border:1px solid #cbd6e4;border-radius:8px;background:white;color:#19283b" onchange="if(this.value){load(this.value)}"><option value="">Select a task…</option><optgroup label="Marketplace"><option value="businesses">Business listings</option><option value="owner-promotions">My businesses & promotions (free)</option></optgroup><optgroup label="Platform operations"><option value="clients">Customer accounts</option><option value="account-deletions">Account deletion requests</option><option value="owner-statistics">Owner statistics</option><option value="owner-subscribers">Paid subscribers</option><option value="owner-accounts">Account access control</option><option value="complaints">Reports & complaints</option><option value="notifications">Alerts & notifications</option><option value="analytics">Usage & analytics</option></optgroup><optgroup label="Payments"><option value="payments">Payments & refunds</option></optgroup><optgroup label="Communications & settings"><option value="inbox">Owner inbox</option><option value="compose">Compose email</option><option value="settings">Email & platform settings</option></optgroup></select></div><div><button onclick="load('summary')">Refresh overview</button> <button onclick="location.href='/owner-app'" class="secondary">Back to Owner App</button></div></div></section><section class="card" id="panel"><h2>Overview</h2><p class="muted">Select a control above.</p></section></main><script>
 async function api(path,opts={}){const ownerToken=localStorage.getItem('skillvaya_owner_token');opts.headers={'Content-Type':'application/json',...(ownerToken?{Authorization:'Bearer '+ownerToken}:{}),...(opts.headers||{})};let r=await fetch(path,opts);let d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d}
 function esc(x){return String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-async function load(tab){let p=document.getElementById('panel');try{if(tab==='summary'){let d=await api('/api/admin/summary');document.getElementById('stats').innerHTML=Object.entries({Businesses:d.businesses,'Open complaints':d.complaints,'Payment requests':d.payments,'Pending listings':d.pending}).map(([k,v])=>'<div class="card"><div class="muted">'+k+'</div><div class="stat">'+v+'</div></div>').join('');p.innerHTML='<h2>Owner overview</h2><p>Local developer access is active. Customer accounts remain separate and are not automatically signed in.</p>';return}
+async function load(tab){let p=document.getElementById('panel');try{if(tab==='account-deletions'){const d=await api('/api/admin/account-deletion-requests'),items=d.items||[];p.innerHTML='<h2>Account deletion requests</h2><p class="muted">Verify each request before completing it. Completion permanently deletes the account and associated app personal data; limited financial/security records may be retained where required. This cannot be undone.</p><p>'+items.length+' pending request(s).</p>'+(items.length?'<div class="tablewrap"><table><tr><th>Request</th><th>Account</th><th>Reason</th><th>Requested</th><th>Action</th></tr>'+items.map(x=>'<tr><td>#'+Number(x.id)+'</td><td>'+esc(x.user_name||'Account unavailable')+'<br>'+esc(x.user_email||'')+'<br>User ID '+Number(x.user_id)+'</td><td>'+esc(x.reason||'No reason supplied')+'</td><td>'+esc(x.requested_at||'')+'</td><td><button class="danger" onclick="completeAccountDeletion('+Number(x.id)+')">Verify & delete</button></td></tr>').join('')+'</table></div>':'<p>No pending requests.</p>')+'<p><button class="secondary" onclick="load(\'account-deletions\')">Refresh</button></p>';return}if(tab==='summary'){let d=await api('/api/admin/summary');document.getElementById('stats').innerHTML=Object.entries({Businesses:d.businesses,'Open complaints':d.complaints,'Payment requests':d.payments,'Pending listings':d.pending}).map(([k,v])=>'<div class="card"><div class="muted">'+k+'</div><div class="stat">'+v+'</div></div>').join('');p.innerHTML='<h2>Owner overview</h2><p>Local developer access is active. Customer accounts remain separate and are not automatically signed in.</p>';return}
 
  if(tab==='owner-statistics'){
  const a=await api('/api/admin/analytics'),s=a.stats||{};
@@ -947,6 +1070,7 @@ if(tab==='payments'){let g=await api('/api/admin/paypal/status');p.innerHTML='<h
 if(tab==='complaints'){p.innerHTML='<h2>Reports & complaints</h2>'+table(['Date','Business','Reason','Status'],items.map(x=>[x.created_at,x.business_name,x.reason,x.status]));return}
 }catch(e){p.innerHTML='<h2>Could not load control data</h2><p>'+esc(e.message)+'</p>'}}
 function table(headers,rows){return '<div class="tablewrap"><table><tr>'+headers.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr>'+rows.map(row=>'<tr>'+row.map((x,i)=>'<td>'+(i===row.length-1&&String(x).startsWith('<button')?x:esc(x))+'</td>').join('')+'</tr>').join('')+'</table></div>'}
+async function completeAccountDeletion(id){if(!confirm('FINAL CONFIRMATION: permanently delete the account and associated Skillvaya personal data for request #'+id+'? This cannot be undone. Verify the request holder first.'))return;try{const d=await api('/api/admin/account-deletion-requests/'+encodeURIComponent(id)+'/complete',{method:'POST',body:JSON.stringify({confirm:true})});alert((d.message||'Deletion completed.')+'\nCompletion acknowledgement email confirmed: '+(d.acknowledgement_email_sent?'Yes':'No'));await load('account-deletions')}catch(e){alert('Deletion not completed: '+e.message)}}
 async function ownerAccountAccess(id,action){const msg=action==='suspend'?'Kick out this paid subscriber and suspend access on all active sessions?':'Restore this account to its previous customer/provider role?';if(!confirm(msg))return;try{const d=await api('/api/admin/accounts/'+id+'/access',{method:'POST',body:JSON.stringify({action})});alert(d.message||'Account access updated.');await load('owner-accounts')}catch(e){alert(e.message)}}
 async function refund(id,amount,already){let remaining=amount*100-Number(already||0);let value=prompt('Refund amount in Rands (maximum R'+(remaining/100).toFixed(2)+')',''+(remaining/100).toFixed(2));if(value===null)return;let cents=Math.round(Number(value)*100);if(!Number.isFinite(cents)||cents<1||cents>remaining){alert('Enter a valid amount within the remaining paid balance.');return}let reason=prompt('Reason for refund (at least 3 characters):');if(!reason||reason.trim().length<3)return;if(!confirm('Submit a PayPal refund request for R'+(cents/100).toFixed(2)+'?'))return;try{let d=await api('/api/admin/refunds/'+id,{method:'POST',body:JSON.stringify({amount:cents,reason})});alert(d.message||'PayPal response received for the refund request.');load('payments')}catch(e){alert(e.message)}}
 async function ownerPromoStatus(id,status){try{await api('/api/admin/owner-promotions/'+id,{method:'POST',body:JSON.stringify({status})});await load('owner-promotions');const st=document.getElementById('ownerPromoStatus');if(st)st.textContent=status==='paused'?'Promotion and directory listing paused.':status==='removed'?'Promotion removed from public listings.':'Promotion republished.'}catch(e){alert(e.message)}}
@@ -3182,6 +3306,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_HEAD(self):
         path=urlparse(self.path).path
+        if path == "/account-deletion":
+            page_path=os.path.join(ROOT,"account_deletion.html")
+            if os.path.isfile(page_path):
+                size=os.path.getsize(page_path); self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Content-Length",str(size)); self.send_header("Cache-Control","no-store"); self.end_headers(); return
+
         if path in ("/robots.txt", "/sitemap.xml"):
             body = seo_robots_body() if path == "/robots.txt" else seo_sitemap_body()
             content_type = "text/plain; charset=utf-8" if path == "/robots.txt" else "application/xml; charset=utf-8"
@@ -3214,6 +3343,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(404); self.end_headers()
     def do_GET(self):
         path=urlparse(self.path).path
+        if path == "/account-deletion":
+            page_path=os.path.join(ROOT,"account_deletion.html")
+            if not os.path.isfile(page_path): return self.sendj({"error":"Deletion information is unavailable."},404)
+            with open(page_path,"rb") as f: page=f.read()
+            self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(page))); self.end_headers(); self.wfile.write(page); return
+
         if path == "/robots.txt":
             body = seo_robots_body()
             self.send_response(200)
@@ -3803,6 +3938,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 with conn() as c:
                     rows=c.execute("SELECT op.*,b.area AS area,b.phone AS phone,b.whatsapp AS whatsapp,b.email AS contact_email FROM owner_promotions op LEFT JOIN businesses b ON b.id=op.directory_business_id ORDER BY op.created_at DESC").fetchall()
                 return self.sendj({"items":[dict(x) for x in rows]})
+            if path == "/api/admin/account-deletion-requests":
+                self.require("admin")
+                with conn() as c:
+                    rows=c.execute("SELECT r.id,r.user_id,r.user_email,r.reason,r.status,r.requested_at,r.reviewed_at,u.name AS user_name FROM account_deletion_requests r LEFT JOIN users u ON u.id=r.user_id WHERE r.status='pending' ORDER BY r.requested_at ASC").fetchall()
+                return self.sendj({"items":[dict(x) for x in rows]})
             if path.startswith("/api/admin/"):
                 self.require("admin")
                 with conn() as c:
@@ -3822,6 +3962,18 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 self.rfile.read(int(self.headers.get("Content-Length","0")))
                 return self.sendj({"error":"PayFast is paused. PayPal is the only supported checkout provider."},410)
             d=self.body()
+            if path == "/api/account/delete-request":
+                u=self.require()
+                if u.get("role")=="admin": return self.sendj({"error":"The owner account cannot be deleted through this flow."},403)
+                reason=str(d.get("reason","")).strip()[:1000]
+                with conn() as c:
+                    existing=c.execute("SELECT id FROM account_deletion_requests WHERE user_id=? AND status='pending' ORDER BY id DESC LIMIT 1",(u["id"],)).fetchone()
+                    if existing: request_id=int(existing["id"]); already=True
+                    else:
+                        cur=c.execute("INSERT INTO account_deletion_requests(user_id,user_email,reason,status,requested_at) VALUES(?,?,?,'pending',?) RETURNING id",(u["id"],u["email"],reason,now()))
+                        request_id=int(cur.fetchone()["id"]); already=False
+                if not already: notify("account_deletion_request","Account deletion request received","Request ID: "+str(request_id)+". Account email: "+str(u["email"])+". Review and verify before processing.")
+                return self.sendj({"ok":True,"request_id":request_id,"already_pending":already,"message":"Your account-deletion request has been recorded. Your account has not yet been deleted; the request will be verified and records subject to legal retention reviewed."},202)
             if path.startswith("/api/provider/growth/"):
                 return self.handle_provider_growth("POST",path,d)
             # WF_STANDALONE_MESSAGING_V1: start or send in a WorkFinder-only thread.
@@ -4563,6 +4715,23 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         ).fetchone()["id"]
                         c.execute("UPDATE owner_promotions SET directory_business_id=? WHERE id=?",(directory_id,promotion_id))
                 return self.sendj({"ok":True,"id":promotion_id,"directory_business_id":directory_id,"owner_free":True,"payment_required":False},201)
+            if path.startswith("/api/admin/account-deletion-requests/") and path.endswith("/complete"):
+                self.require("admin")
+                try: request_id=int(path.split("/")[-2])
+                except (ValueError,TypeError): return self.sendj({"error":"Invalid deletion request ID."},400)
+                with conn() as c:
+                    req=c.execute("SELECT id,user_id,status FROM account_deletion_requests WHERE id=?",(request_id,)).fetchone()
+                    if not req: return self.sendj({"error":"Deletion request not found."},404)
+                    if req["status"]!="pending": return self.sendj({"error":"This deletion request is not pending."},409)
+                    target=c.execute("SELECT id,name,email,role FROM users WHERE id=?",(req["user_id"],)).fetchone()
+                    if not target:
+                        c.execute("UPDATE account_deletion_requests SET status='completed',user_email='',reason='',reviewed_at=?,review_notes='Account was already absent; request closed.' WHERE id=?",(now(),request_id))
+                        return self.sendj({"ok":True,"message":"Account was already absent; request closed.","acknowledgement_email_sent":False})
+                    if target["role"]=="admin": return self.sendj({"error":"Owner/admin accounts cannot be deleted through this workflow."},403)
+                    deleted_email=str(target["email"] or ""); deleted_name=str(target["name"] or "Skillvaya customer")
+                    result=delete_account_data(c,int(req["user_id"]),request_id=request_id)
+                email_sent=send_owner_email("Account deletion completed","Hello "+deleted_name+",\n\nSkillvaya has completed your verified account-deletion request #"+str(request_id)+". Your account and associated app personal data have been deleted. Limited payment/accounting or security records may be retained where required by law; external payment-provider records may be governed separately.\n\nFor questions, contact skillvaya@gmail.com.\n\nSkillvaya",deleted_email) if deleted_email else False
+                return self.sendj({"ok":True,"request_id":request_id,"message":"Account and associated Skillvaya data were deleted. Minimized payment records may be retained where required.","details":result,"acknowledgement_email_sent":bool(email_sent)})
             if path.startswith("/api/admin/accounts/") and path.endswith("/access"):
                 self.require("admin")
                 try: account_id=int(path.split("/")[-2])
