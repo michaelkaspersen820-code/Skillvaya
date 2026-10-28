@@ -32,6 +32,7 @@ public final class PlayBillingBridge implements PurchasesUpdatedListener {
     private final List<ProductDetails> cachedProducts = new ArrayList<>();
     private String pendingAccountId = "";
     private String pendingAuthToken = "";
+    private boolean restoreAfterConnect = false;
 
     public PlayBillingBridge(Activity activity, String baseUrl) {
         this.activity = activity;
@@ -50,8 +51,10 @@ public final class PlayBillingBridge implements PurchasesUpdatedListener {
         if (billingClient.isReady()) return;
         billingClient.startConnection(new BillingClientStateListener() {
             @Override public void onBillingSetupFinished(BillingResult result) {
-                if (result.getResponseCode() == BillingClient.BillingResponseCode.OK) querySubscriptions();
-                else emit("window.svPlayBillingError", "Google Play Billing could not connect (code " + result.getResponseCode() + ").");
+                if (result.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                    querySubscriptions();
+                    if (restoreAfterConnect) { restoreAfterConnect = false; queryAndRestorePurchases(); }
+                } else emit("window.svPlayBillingError", "Google Play Billing could not connect (code " + result.getResponseCode() + ").");
             }
             @Override public void onBillingServiceDisconnected() {
                 activity.runOnUiThread(() -> emit("window.svPlayBillingError", "Google Play Billing disconnected. Please retry."));
@@ -122,13 +125,67 @@ public final class PlayBillingBridge implements PurchasesUpdatedListener {
             if (o.getOfferToken().equals(offerToken)) { selectedOffer = o; break; }
         }
         if (selectedOffer == null) { querySubscriptions(); emit("window.svPlayBillingError", "This subscription offer expired. Prices are refreshing; please try again."); return; }
-        BillingFlowParams.ProductDetailsParams detailParams = BillingFlowParams.ProductDetailsParams.newBuilder()
-            .setProductDetails(selected).setOfferToken(selectedOffer.getOfferToken()).build();
-        BillingFlowParams params = BillingFlowParams.newBuilder()
-            .setProductDetailsParamsList(Arrays.asList(detailParams))
-            .setObfuscatedAccountId(obfuscatedId(pendingAccountId))
-            .build();
+        final ProductDetails selectedProduct = selected;
+        final ProductDetails.SubscriptionOfferDetails selectedSubscriptionOffer = selectedOffer;
+        QueryPurchasesParams existingParams = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build();
+        billingClient.queryPurchasesAsync(existingParams, (result, purchases) -> {
+            if (result.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                emit("window.svPlayBillingError", "Could not check your current subscription before checkout. Please retry.");
+                return;
+            }
+            List<Purchase> active = new ArrayList<>();
+            boolean pending = false;
+            for (Purchase purchase : purchases) {
+                if (purchase.getPurchaseState() == Purchase.PurchaseState.PENDING) pending = true;
+                else if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) active.add(purchase);
+            }
+            if (pending) {
+                emit("window.svPlayBillingError", "A Google Play payment is still pending. Wait for it to finish before changing plans.");
+                return;
+            }
+            if (active.size() > 1) {
+                emit("window.svPlayBillingError", "More than one active Google Play subscription was found. Manage subscriptions in Google Play before changing plans to avoid duplicate charges.");
+                return;
+            }
+            launchPurchaseFlow(selectedProduct, selectedSubscriptionOffer, active.isEmpty() ? null : active.get(0));
+        });
+    }
+
+    private void launchPurchaseFlow(ProductDetails selected, ProductDetails.SubscriptionOfferDetails selectedOffer, Purchase existingPurchase) {
+        BillingFlowParams.ProductDetailsParams.Builder detailBuilder = BillingFlowParams.ProductDetailsParams.newBuilder()
+            .setProductDetails(selected).setOfferToken(selectedOffer.getOfferToken());
+        BillingFlowParams.Builder flowBuilder = BillingFlowParams.newBuilder()
+            .setObfuscatedAccountId(obfuscatedId(pendingAccountId));
+        if (existingPurchase != null) {
+            List<String> oldProducts = existingPurchase.getProducts();
+            String oldProductId = oldProducts == null || oldProducts.isEmpty() ? "" : oldProducts.get(0);
+            int oldRank = productRank(oldProductId);
+            int newRank = productRank(selected.getProductId());
+            if (oldRank == 0 || newRank == 0) {
+                emit("window.svPlayBillingError", "Your current subscription cannot be replaced safely in-app. Manage it in Google Play before choosing another plan.");
+                return;
+            }
+            int replacementMode = newRank > oldRank
+                ? BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.ReplacementMode.CHARGE_PRORATED_PRICE
+                : (newRank < oldRank
+                    ? BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.ReplacementMode.DEFERRED
+                    : BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.ReplacementMode.WITHOUT_PRORATION);
+            detailBuilder.setSubscriptionProductReplacementParams(BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.newBuilder()
+                .setOldProductId(oldProductId).setReplacementMode(replacementMode).build());
+            flowBuilder.setSubscriptionUpdateParams(BillingFlowParams.SubscriptionUpdateParams.newBuilder()
+                .setOldPurchaseToken(existingPurchase.getPurchaseToken()).build());
+        }
+        BillingFlowParams.ProductDetailsParams detailParams = detailBuilder.build();
+        BillingFlowParams params = flowBuilder.setProductDetailsParamsList(Arrays.asList(detailParams)).build();
         activity.runOnUiThread(() -> billingClient.launchBillingFlow(activity, params));
+    }
+
+    private int productRank(String productId) {
+        if ("skillvaya_local".equals(productId)) return 1;
+        if ("skillvaya_priority".equals(productId)) return 2;
+        if ("skillvaya_business_plus".equals(productId)) return 3;
+        if ("skillvaya_business_spotlight".equals(productId)) return 4;
+        return 0;
     }
 
     @JavascriptInterface
@@ -138,7 +195,11 @@ public final class PlayBillingBridge implements PurchasesUpdatedListener {
             return;
         }
         pendingAccountId = accountId.trim(); pendingAuthToken = authToken.trim();
-        if (!billingClient.isReady()) { connect(); return; }
+        if (!billingClient.isReady()) { restoreAfterConnect = true; connect(); return; }
+        queryAndRestorePurchases();
+    }
+
+    private void queryAndRestorePurchases() {
         QueryPurchasesParams params = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build();
         billingClient.queryPurchasesAsync(params, (result, purchases) -> {
             if (result.getResponseCode() != BillingClient.BillingResponseCode.OK) {

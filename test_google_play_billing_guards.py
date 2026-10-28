@@ -60,6 +60,30 @@ class GooglePlayBillingGuards(unittest.TestCase):
         self.assertIn("SKILLVAYA_EXPECTED_DATABASE", APP)
         self.assertIn("SELECT current_database() AS name", APP)
 
+    def test_subscription_changes_replace_existing_plan_instead_of_double_charging(self):
+        self.assertIn("queryPurchasesAsync(existingParams", JAVA)
+        self.assertIn("setOldPurchaseToken(existingPurchase.getPurchaseToken())", JAVA)
+        self.assertIn("setSubscriptionProductReplacementParams", JAVA)
+        self.assertIn("ReplacementMode.CHARGE_PRORATED_PRICE", JAVA)
+        self.assertIn("ReplacementMode.DEFERRED", JAVA)
+        self.assertIn("active.size() > 1", JAVA)
+
+    def test_server_rejects_unknown_base_plan_and_retires_replaced_token(self):
+        route = APP[APP.index('if path=="/api/google-play/verify":'):APP.index('if path=="/api/paypal/create-order":')]
+        self.assertIn('base_plan not in ("monthly","annual")', route)
+        self.assertIn('linkedPurchaseToken', route)
+        self.assertIn("state='REPLACED'", route)
+        rtdn = APP[APP.index('if path == "/api/google-play/rtdn":'):APP.index('if path == "/api/account/delete-request":')]
+        self.assertIn('record["state"]=="REPLACED"', rtdn)
+
+    def test_subscription_lifecycle_has_polling_fallback_without_pubsub(self):
+        self.assertIn("refresh_google_play_subscription_for_user(int(u[\"id\"]))", APP)
+        self.assertIn("total_seconds()>=600", APP)
+        self.assertIn("subscriptionsv2().get", APP)
+        self.assertIn("status='expired'", APP)
+        self.assertIn("refresh_google_play_subscription_for_user(int(play_user[\"user_id\"]))", APP)
+        self.assertIn("CREATE TABLE IF NOT EXISTS google_play_subscriptions", APP)
+
     def test_recurring_subscription_lifecycle_endpoint_is_authenticated(self):
         self.assertIn('if path == "/api/google-play/rtdn":', APP)
         self.assertIn("verify_oauth2_token", APP)

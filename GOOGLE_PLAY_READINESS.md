@@ -13,7 +13,7 @@
 - Gradle rejects hosted URLs that are not HTTPS.
 - Manifest cleartext traffic is enabled only for local/offline mode; hosted builds use `usesCleartextTraffic=false`.
 - `prepare-play-bundle.ps1` requires an explicit HTTPS staging URL, refuses the production host, checks essential public routes, and requires explicit confirmation that staging uses a separate non-production database before building.
-- The billing implementation was committed and pushed to the staging branch as `2b1fb2db427a816e99f616f4dfa6b69e4dbd09db`. A staging-only expected-database environment guard was configured. The billing commit has not yet been observed in a successful Render deployment.
+- The base billing commit `2b1fb2d` is pushed. The local merge commit includes production commit `e8efbad` (password recovery and owner deletion queue) plus subscription replacement, no-Pub/Sub lifecycle polling and deletion-token cleanup; it is not pushed yet.
 - No production deployment, production database migration, live payment change, Play Console submission, or public APK replacement was performed.
 
 ## Public endpoint checks on 28 October 2026
@@ -27,10 +27,10 @@ GET requests returned HTTP 200 for:
 
 The live customer-app HTML contains the account-deletion request text; the public deletion page includes a submit-request UI and an email fallback. Page availability is verified; authenticated request capture, owner processing, completion acknowledgement and legal-retention handling still require an isolated end-to-end test.
 
-**Database isolation is not confirmed for the Render staging service. Do not perform destructive account-deletion or payment tests there until the service's database is confirmed to be separate from production.**
+**Database isolation is not confirmed for the Render staging service. Do not perform destructive account-deletion or payment tests there until the service's database is confirmed to be separate from production.** The separate database resource exists, but the staging service is not yet connected because `DATABASE_URL` is absent.
 
 ## Play release blockers
-1. **Native Google Play Billing has been added locally.** The Android build uses Billing Library 9.1.0 and routes native provider checkout through Play Billing. Backend purchase verification and an authenticated Pub/Sub lifecycle endpoint have been added. Real purchases have not been tested; Play Console products, API credentials, Pub/Sub and isolated staging verification are still required.
+Play Console products, API credentials and isolated staging verification are still required; Pub/Sub is not a release prerequisite for the polling design.
 2. **Play Console product setup is pending.** The selected model is recurring auto-renewing subscriptions with cancellation through Google Play. Product IDs, base plans and prices are documented in `PLAY_BILLING_SETUP.md`; existing IDs must be checked before creation; product IDs must be checked in Console before creation.
 3. **Data safety is not final.** `DATA_SAFETY_WORKSHEET.md` is an evidence checklist, not a completed Play Console declaration.
 4. **Deletion workflow needs staging verification.** The public URLs respond, but test request/queue/completion/email using a confirmed isolated database and physical device.
@@ -46,4 +46,4 @@ The live customer-app HTML contains the account-deletion request text; the publi
 - Subscription setup: https://support.google.com/googleplay/android-developer/answer/140504
 
 ## Release decision
-**Not ready to upload.** The current source baseline is 1.3.3 / code 34, hosted-build safety guards are in place, and public deletion/privacy page reachability has been checked. Do not submit until Play Billing products and credentials, staging isolation, Data Safety and device purchase tests are complete.
+The current source baseline is 1.3.3 / code 34; local regression tests and Android Java compilation pass. The latest staging deploy failed safely because `DATABASE_URL` is missing, so the database guard prevented the new code from starting. Render currently reports no open port and the staging URL timed out; staging is unavailable until the database is connected. Production was not changed.

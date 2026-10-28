@@ -8,19 +8,21 @@
 - [x] Staging bundle script blocks the known production host, preflights key routes, and requires explicit confirmation of database isolation.
 - [x] Gradle release manifest-processing task passed with an HTTPS URL.
 - [x] `app.py` syntax compilation passed.
-- [x] Local deletion lifecycle tests passed against a temporary database.
-- [x] Seven static Google Play Billing guard tests passed.
-- [x] Final Android Java compilation passed after the billing changes.
+- [x] Seven account-deletion workflow checks passed against a temporary database, including Play token and password-reset token cleanup.
+- [x] Ten static Google Play Billing guard tests passed.
+- [x] Four password-recovery tests passed; owner access-control, 35 growth-feature and 17 Job Hub checks passed.
+- [x] Owner terms and admin API smoke checks passed against a temporary local database.
+- [x] Final Android Java compilation passed after billing replacement/polling changes.
 - [x] Public live GET checks passed for `/customer-app`, `/privacy`, and `/account-deletion`.
 - [x] No AAB has been built from this latest clone; no install, push, deployment, production migration, payment change or Play Console submission was performed.
 
 ## Not yet verified — release blockers
 - [ ] Verify the staging startup guard reports the expected isolated database before any purchase/deletion tests.
 - [ ] Create/confirm recurring auto-renewing Google Play subscription products and monthly/annual base plans.
-- [ ] Configure Google Android Publisher API credentials and authenticated Pub/Sub lifecycle notifications on staging.
+- [ ] Configure Google Android Publisher API service-account credentials on staging. Pub/Sub/RTDN is optional; no-Pub/Sub lifecycle polling is implemented.
+- [ ] Connect the staging service to `skillvaya_deletion_staging_db`; the latest deployment failed safely because `DATABASE_URL` is missing; Render reports no open port and the staging URL timed out.
 - [ ] Test successful, pending, invalid, duplicate and wrong-user purchases with Play license testers in isolated staging.
-- [ ] Verify renewals, cancellation, expiry, refund/revocation, restore and cross-device handling.
-- [ ] Test successful, pending, invalid, duplicate and wrong-user purchases with Play license testers in isolated staging.
+- [ ] Verify renewals, cancellation, expiry, refund/revocation, restore, tier replacement and cross-device handling.
 - [ ] Verify deletion request capture, owner queue, completion and email acknowledgement in isolated staging.
 - [ ] Review data inventory and complete evidence-based Data safety answers.
 - [ ] Review privacy policy and account-deletion page content/fulfilment process.

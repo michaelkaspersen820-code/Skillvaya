@@ -195,6 +195,7 @@ def delete_account_data(c, user_id, request_id=None):
             c.execute("UPDATE payments SET "+",".join(assignments)+" WHERE "+condition, tuple(params))
     # Remove content created by, addressed to, or stored for this account.
     delete_where("analytics", "user_id=?", [user_id])
+    delete_where("password_reset_tokens", "user_id=?", [user_id])
     delete_where("auth_sessions", "user_id=?", [user_id])
     delete_where("customer_marketing_preferences", "user_id=?", [user_id])
     delete_where("platform_ratings", "rater_id=?", [user_id])
@@ -254,6 +255,8 @@ def delete_account_data(c, user_id, request_id=None):
         delete_where("contacts", "business_id IN ("+marks+")", bids)
         delete_where("favorites", "business_id IN ("+marks+")", bids)
         delete_where("ratings", "business_id IN ("+marks+")", bids)
+        # Purchase tokens are account-linked credentials for subscription management; remove them with the deleted account.
+        delete_where("google_play_subscriptions", "user_id=? OR business_id IN ("+marks+")", [user_id]+bids)
         # Keep bookkeeping rows only where needed, but remove direct account/business linkage and gateway identifiers.
         anonymize_payments("user_id=? OR business_id IN ("+marks+")", [user_id]+bids)
         update_where("owner_promotions", "UPDATE owner_promotions SET directory_business_id=NULL WHERE directory_business_id IN ("+marks+")", bids)
@@ -266,6 +269,7 @@ def delete_account_data(c, user_id, request_id=None):
         delete_where("job_quotes", "provider_id=?", [user_id])
         delete_where("complaints", "customer_id=?", [user_id])
         delete_where("subscriptions", "user_id=?", [user_id])
+        delete_where("google_play_subscriptions", "user_id=?", [user_id])
         anonymize_payments("user_id=?", [user_id])
     if request_id is not None:
         delete_where("notifications", "kind='account_deletion_request' AND body LIKE ?", ["%Request ID: "+str(int(request_id))+".%"])
@@ -298,6 +302,7 @@ def init():
     with conn() as c:
         execute_script(c, """
         CREATE TABLE IF NOT EXISTS users(id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', created_at TEXT NOT NULL, phone TEXT DEFAULT '', accepted_terms_version TEXT NOT NULL DEFAULT '', accepted_terms_at TEXT NOT NULL DEFAULT '');
+        CREATE TABLE IF NOT EXISTS password_reset_tokens(id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL, token_hash TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS businesses(id BIGSERIAL PRIMARY KEY, user_id INTEGER, name TEXT NOT NULL, category TEXT NOT NULL, area TEXT NOT NULL, phone TEXT NOT NULL, email TEXT, website TEXT, description TEXT NOT NULL, photos TEXT DEFAULT '', plan TEXT NOT NULL DEFAULT 'local', billing TEXT NOT NULL DEFAULT 'monthly', status TEXT NOT NULL DEFAULT 'pending', payment_status TEXT NOT NULL DEFAULT 'unpaid', rating REAL DEFAULT 0, created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS enquiries(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, customer_id INTEGER NOT NULL, message TEXT NOT NULL, status TEXT DEFAULT 'new', created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS messages(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, customer_id INTEGER NOT NULL, sender_id INTEGER NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL, read_at TEXT);
@@ -422,7 +427,8 @@ def init():
         CREATE TABLE IF NOT EXISTS broadcast_notifications(id BIGSERIAL PRIMARY KEY, subject TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL, created_by BIGINT, active BOOLEAN NOT NULL DEFAULT TRUE);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS auth_sessions(token TEXT PRIMARY KEY, user_id BIGINT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS subscriptions(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, user_id INTEGER NOT NULL, plan TEXT NOT NULL, billing TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', started_at TEXT NOT NULL, expires_at TEXT NOT NULL, cancelled_at TEXT, UNIQUE(business_id));
+        CREATE TABLE IF NOT EXISTS google_play_subscriptions(purchase_token TEXT PRIMARY KEY,user_id BIGINT NOT NULL,business_id BIGINT,product_id TEXT NOT NULL,base_plan_id TEXT NOT NULL,order_id TEXT,state TEXT NOT NULL,expiry_time TEXT NOT NULL,auto_renew_enabled BOOLEAN NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS subscriptions(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, user_id INTEGER NOT NULL, plan TEXT NOT NULL, billing TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', started_at TEXT NOT NULL, expires_at TEXT NOT NULL, cancelled_at TEXT, UNIQUE(business_id));
         CREATE TABLE IF NOT EXISTS job_requests(
             id BIGSERIAL PRIMARY KEY, customer_id INTEGER NOT NULL, business_id INTEGER NOT NULL,
             title TEXT NOT NULL, description TEXT NOT NULL, area TEXT NOT NULL DEFAULT '',
@@ -734,6 +740,84 @@ def activate_payment(c, row, pfid):
     c.execute("INSERT INTO notifications(kind,subject,body,created_at,recipient) VALUES(?,?,?,?,?)",("payment_verified",gateway+" payment verified","Payment reference "+row["reference"]+" was confirmed by "+gateway+". Amount: R"+str(row["amount"])+".",now(),setting("owner_email")))
     return True
 
+def refresh_google_play_subscription_for_user(user_id):
+    """Refresh Google Play subscription state lazily, without requiring Pub/Sub/RTDN."""
+    try:
+        with conn() as c:
+            latest=c.execute("SELECT reference,payment_gateway FROM payments WHERE user_id=? ORDER BY created_at DESC LIMIT 1",(user_id,)).fetchone()
+            if not latest: return
+            latest_gateway=str(latest["payment_gateway"] or "").lower() if "payment_gateway" in latest.keys() else ""
+            latest_reference=str(latest["reference"] or "")
+            if latest_gateway!="google_play" and not latest_reference.startswith("GP-"): return
+            rows=c.execute("SELECT purchase_token,business_id,product_id,base_plan_id,state,expiry_time,auto_renew_enabled,updated_at FROM google_play_subscriptions WHERE user_id=? AND state<>'REPLACED'",(user_id,)).fetchall()
+        if not rows: return
+        current_time=datetime.datetime.now(datetime.timezone.utc)
+        stale=[]
+        for row in rows:
+            try:
+                checked=datetime.datetime.fromisoformat(str(row["updated_at"]).replace("Z","+00:00"))
+                if checked.tzinfo is None: checked=checked.replace(tzinfo=datetime.timezone.utc)
+            except Exception: checked=current_time-datetime.timedelta(days=1)
+            try:
+                recorded_expiry=datetime.datetime.fromisoformat(str(row["expiry_time"]).replace("Z","+00:00"))
+                if recorded_expiry.tzinfo is None: recorded_expiry=recorded_expiry.replace(tzinfo=datetime.timezone.utc)
+            except Exception: recorded_expiry=None
+            still_entitled_state=row["state"] in ("SUBSCRIPTION_STATE_ACTIVE","SUBSCRIPTION_STATE_IN_GRACE_PERIOD","SUBSCRIPTION_STATE_CANCELED")
+            if (current_time-checked).total_seconds()>=600 or (still_entitled_state and recorded_expiry and recorded_expiry<=current_time): stale.append(row)
+        if stale:
+            raw_creds=os.environ.get("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON","").strip()
+            creds_path=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS","").strip()
+            if raw_creds or creds_path:
+                from google.oauth2 import service_account
+                from googleapiclient.discovery import build
+                scopes=["https://www.googleapis.com/auth/androidpublisher"]
+                creds=service_account.Credentials.from_service_account_info(json.loads(raw_creds),scopes=scopes) if raw_creds else service_account.Credentials.from_service_account_file(creds_path,scopes=scopes)
+                publisher=build("androidpublisher","v3",credentials=creds,cache_discovery=False)
+                package_name=os.environ.get("GOOGLE_PLAY_PACKAGE_NAME","za.co.skillvaya.app").strip()
+                for row in stale:
+                    try:
+                        current=publisher.purchases().subscriptionsv2().get(packageName=package_name,token=row["purchase_token"]).execute()
+                        lines=current.get("lineItems") or []
+                        line=next((item for item in lines if item.get("productId")==row["product_id"]),None)
+                        expiry=str(line.get("expiryTime", "")) if line else ""
+                        try: expiry_dt=datetime.datetime.fromisoformat(expiry.replace("Z","+00:00"))
+                        except Exception: expiry_dt=None
+                        state=str(current.get("subscriptionState", "UNKNOWN"))
+                        auto_renew=bool((line or {}).get("autoRenewingPlan",{}).get("autoRenewEnabled",False))
+                        with conn() as c:
+                            c.execute("UPDATE google_play_subscriptions SET state=?,expiry_time=?,auto_renew_enabled=?,order_id=?,updated_at=? WHERE purchase_token=?",(state,expiry_dt.isoformat() if expiry_dt else expiry,auto_renew,str(current.get("latestOrderId", ""))[:160],now(),row["purchase_token"]))
+                    except Exception:
+                        continue
+        with conn() as c:
+            rows=c.execute("SELECT purchase_token,business_id,product_id,base_plan_id,state,expiry_time,updated_at FROM google_play_subscriptions WHERE user_id=? AND state<>'REPLACED'",(user_id,)).fetchall()
+            entitled=[]
+            for row in rows:
+                if row["state"] not in ("SUBSCRIPTION_STATE_ACTIVE","SUBSCRIPTION_STATE_IN_GRACE_PERIOD","SUBSCRIPTION_STATE_CANCELED"): continue
+                try: exp=datetime.datetime.fromisoformat(str(row["expiry_time"]).replace("Z","+00:00"))
+                except Exception: continue
+                if exp.tzinfo is None: exp=exp.replace(tzinfo=datetime.timezone.utc)
+                if exp>current_time: entitled.append((row,exp))
+            if entitled:
+                chosen=max(entitled,key=lambda pair:str(pair[0]["updated_at"] or ""))[0]
+                expiry_dt=max(exp for _,exp in entitled)
+                plan_by_product={"skillvaya_local":"local","skillvaya_priority":"priority","skillvaya_business_plus":"plus","skillvaya_business_spotlight":"spotlight"}
+                plan=plan_by_product.get(str(chosen["product_id"]))
+                billing="yearly" if str(chosen["base_plan_id"])=="annual" else "monthly"
+                biz_id=chosen["business_id"]
+                if not biz_id:
+                    biz=c.execute("SELECT id FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1",(user_id,)).fetchone()
+                    biz_id=int(biz["id"]) if biz else None
+                    if biz_id: c.execute("UPDATE google_play_subscriptions SET business_id=? WHERE purchase_token=?",(biz_id,chosen["purchase_token"]))
+                if biz_id and plan:
+                    c.execute("UPDATE businesses SET plan=?,billing=?,payment_status='verified',status='active',subscription_expires_at=? WHERE id=? AND user_id=?",(plan,billing,expiry_dt.isoformat(),biz_id,user_id))
+                    c.execute("UPDATE subscriptions SET plan=?,billing=?,status='active',expires_at=?,cancelled_at=NULL WHERE business_id=? AND user_id=?",(plan,billing,expiry_dt.isoformat(),biz_id,user_id))
+            else:
+                c.execute("UPDATE businesses SET payment_status='expired',status='suspended' WHERE user_id=?",(user_id,))
+                c.execute("UPDATE subscriptions SET status='expired' WHERE user_id=?",(user_id,))
+    except Exception:
+        # A transient Google API outage must not break unrelated provider screens. Existing expiry checks remain authoritative.
+        return
+
 def process_payfast_itn(raw):
     cfg=payfast_config()
     try: fields={k:v[-1] for k,v in urllib.parse.parse_qs(raw.decode("utf-8"),keep_blank_values=True).items()}
@@ -774,6 +858,13 @@ def process_payfast_itn(raw):
     return True,"Notification processed"
 
 def expire_subscriptions():
+    try:
+        with conn() as c:
+            play_users=c.execute("SELECT p.user_id FROM payments p WHERE p.payment_gateway='google_play' AND p.id=(SELECT p2.id FROM payments p2 WHERE p2.user_id=p.user_id ORDER BY p2.created_at DESC,p2.id DESC LIMIT 1)").fetchall()
+        for play_user in play_users:
+            refresh_google_play_subscription_for_user(int(play_user["user_id"]))
+    except Exception as e:
+        print("Google Play subscription reconciliation failed:",str(e)[:200],flush=True)
     with conn() as c:
         rows=c.execute("SELECT id,name,user_id,subscription_expires_at FROM businesses WHERE status='active' AND payment_status='verified' AND subscription_expires_at IS NOT NULL AND subscription_expires_at<=?",(now(),)).fetchall()
         for b in rows:
@@ -936,7 +1027,7 @@ input{min-height:48px;border-radius:11px;border:1px solid #d2dfec;transition:box
 button{border-radius:12px!important;min-height:48px;background:linear-gradient(135deg,#087f83,#0b9e9e)!important;box-shadow:0 8px 18px rgba(8,127,131,.2)}
 button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #23bebb;outline-offset:3px}
 
-</style></head><body><main class="card"><div class="brand">Skill<span>vaya</span></div><p class="sub">Sign in to open your Skillvaya workspace.</p><p class="notice">By signing in or creating an account, you confirm that you agree to Skillvaya’s current <a href="/terms" target="_blank" rel="noopener">Terms, Conditions, Rules & Safety</a>, including the payment and price-change rules.</p><form id="loginForm"><label for="email">Email address</label><input id="email" type="email" autocomplete="username" required autofocus><label for="password">Password</label><span style="position:relative;display:block"><input id="password" type="password" autocomplete="current-password" required style="padding-right:48px"><button type="button" aria-label="Show password" onclick="const p=document.getElementById('password');const s=p.type==='password';p.type=s?'text':'password';this.setAttribute('aria-label',s?'Hide password':'Show password')" style="position:absolute;right:5px;top:50%;transform:translateY(-50%);width:38px;height:36px;padding:7px;background:transparent;color:#52647b;display:grid;place-items:center"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></span><label class="agree" for="agreeTerms"><input id="agreeTerms" type="checkbox" required> I have read and agree to the current <a href="/terms" target="_blank" rel="noopener">Terms & Conditions</a>.</label><button id="submit" type="submit">Sign in</button><p id="status" role="status" aria-live="polite"></p></form><p class="hint">Your account determines which workspace opens. The public marketing page is separate from the installed app.</p></main><script>const form=document.getElementById('loginForm'),statusEl=document.getElementById('status'),submit=document.getElementById('submit');form.addEventListener('submit',async e=>{e.preventDefault();statusEl.textContent='Signing in…';submit.disabled=true;try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value.trim(),password:document.getElementById('password').value,accept_terms:document.getElementById('agreeTerms').checked})});const d=await r.json();if(!r.ok||!d.token||!d.user){statusEl.textContent=d.error||'Sign-in failed. Check your details and try again.';return;}if(d.user.role==='admin'){localStorage.setItem('skillvaya_owner_token',d.token);localStorage.setItem('skillvaya_token',d.token);localStorage.removeItem('sv_token');location.replace('/owner-app');return;}localStorage.setItem('skillvaya_token',d.token);localStorage.setItem('sv_token',d.token);localStorage.setItem('skillvaya_user',JSON.stringify({id:d.user.id,name:d.user.name,email:d.user.email,role:d.user.role}));location.replace('/customer-app');}catch(err){statusEl.textContent='Could not connect. Please check your connection and try again.';}finally{submit.disabled=false;}});</script></body></html>"""
+</style></head><body><main class="card"><div class="brand">Skill<span>vaya</span></div><p class="sub">Sign in to open your Skillvaya workspace.</p><p class="notice">By signing in or creating an account, you confirm that you agree to Skillvaya’s current <a href="/terms" target="_blank" rel="noopener">Terms, Conditions, Rules & Safety</a>, including the payment and price-change rules.</p><form id="loginForm"><label for="email">Email address</label><input id="email" type="email" autocomplete="username" required autofocus><label for="password">Password</label><span style="position:relative;display:block"><input id="password" type="password" autocomplete="current-password" required style="padding-right:48px"><button type="button" aria-label="Show password" onclick="const p=document.getElementById('password');const s=p.type==='password';p.type=s?'text':'password';this.setAttribute('aria-label',s?'Hide password':'Show password')" style="position:absolute;right:5px;top:50%;transform:translateY(-50%);width:38px;height:36px;padding:7px;background:transparent;color:#52647b;display:grid;place-items:center"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></span><label class="agree" for="agreeTerms"><input id="agreeTerms" type="checkbox" required> I have read and agree to the current <a href="/terms" target="_blank" rel="noopener">Terms & Conditions</a>.</label><button id="submit" type="submit">Sign in</button><p style="text-align:right;margin:8px 0"><a href="/forgot-password">Forgot password?</a></p><p id="status" role="status" aria-live="polite"></p></form><p class="hint">Your account determines which workspace opens. The public marketing page is separate from the installed app.</p></main><script>const form=document.getElementById('loginForm'),statusEl=document.getElementById('status'),submit=document.getElementById('submit');form.addEventListener('submit',async e=>{e.preventDefault();statusEl.textContent='Signing in…';submit.disabled=true;try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value.trim(),password:document.getElementById('password').value,accept_terms:document.getElementById('agreeTerms').checked})});const d=await r.json();if(!r.ok||!d.token||!d.user){statusEl.textContent=d.error||'Sign-in failed. Check your details and try again.';return;}if(d.user.role==='admin'){localStorage.setItem('skillvaya_owner_token',d.token);localStorage.setItem('skillvaya_token',d.token);localStorage.removeItem('sv_token');location.replace('/owner-app');return;}localStorage.setItem('skillvaya_token',d.token);localStorage.setItem('sv_token',d.token);localStorage.setItem('skillvaya_user',JSON.stringify({id:d.user.id,name:d.user.name,email:d.user.email,role:d.user.role}));location.replace('/customer-app');}catch(err){statusEl.textContent='Could not connect. Please check your connection and try again.';}finally{submit.disabled=false;}});</script></body></html>"""
 
 OWNER_APP_HTML = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#071426"><title>Skillvaya | Owner App</title>
@@ -945,10 +1036,10 @@ OWNER_APP_HTML = r"""<!doctype html>
 #zoomTools{position:fixed;right:10px;bottom:12px;z-index:9999;display:none;align-items:center;gap:5px;padding:6px;border:1px solid #3c6586;border-radius:12px;background:#071426ee;box-shadow:0 6px 24px #0008}#zoomTools button{min-width:38px;min-height:38px;padding:6px 10px;font-size:18px}#zoomTools span{min-width:48px;text-align:center;font-size:12px;font-weight:700}body.owner-app-active #zoomTools{display:flex}body{zoom:var(--ui-zoom,1)}@media(max-width:480px){#zoomTools{right:6px;bottom:6px;gap:3px;padding:4px}#zoomTools button{min-width:34px;min-height:34px;padding:4px 8px}}
 </style></head><body><div id="zoomTools" aria-label="Screen zoom controls"><button type="button" onclick="changeUiZoom(-0.1)" aria-label="Zoom out">−</button><span id="zoomValue">100%</span><button type="button" onclick="changeUiZoom(0.1)" aria-label="Zoom in">+</button><button type="button" onclick="resetUiZoom()" aria-label="Reset zoom">Reset</button></div>
 <section id="loginScreen" class="login-wrap"><div class="login-card"><div class="brand"><img src="/sv-logo.jpeg" alt="Skillvaya"><div>Skillvaya <span class="crown">♛</span><div class="muted" style="font-size:14px;font-weight:600">Owner App · Full Platform Control</div></div></div><div class="hero"><h2>Complete control. A stronger platform.</h2><p class="muted">Manage users, providers, reports, subscriptions, payments, promotions and settings from one protected console.</p></div><form id="ownerLoginForm"><label for="ownerEmail">Owner email</label><input id="ownerEmail" type="email" autocomplete="username" required><label for="ownerPassword">Password</label><input id="ownerPassword" type="password" autocomplete="current-password" required><label><input id="ownerAgree" type="checkbox" style="width:auto;margin-right:8px">I agree to the current Skillvaya Terms & Conditions.</label><button class="primary" type="submit" style="width:100%;margin-top:12px">Sign in to Owner App</button><p id="loginStatus" class="status" role="status"></p><p class="muted">Only the authorised owner account can access these controls.</p></form></div></section>
-<div id="appShell" class="layout hidden"><aside><div class="brand"><img src="/sv-logo.jpeg" alt=""><div>Skillvaya <span class="crown">♛</span><div class="muted" style="font-size:12px">OWNER APP</div></div></div><nav id="ownerNav"><button class="active" data-area="dashboard" onclick="showArea('dashboard')">▦ Dashboard</button><button data-area="clients" onclick="showArea('clients')">♙ Customers & Providers</button><button data-area="inbox" onclick="showArea('inbox')">✉ Email Centre & Inbox</button><button data-area="complaints" onclick="showArea('complaints')">⚑ Reports & Complaints</button><button data-area="payments" onclick="showArea('payments')">▤ Payments & Subscriptions</button><button data-area="owner-promotions" onclick="showArea('owner-promotions')">✧ Advertising & Promotions</button><button data-area="accessControl" onclick="showArea('accessControl')">🔒 Customer & Provider Access</button><button data-area="settings" onclick="showArea('settings')">⚙ Platform Settings</button></nav><div style="margin-top:auto" class="muted">Private owner access<br><button onclick="ownerLogout()" style="width:100%;margin-top:10px">Sign out</button></div></aside>
+<div id="appShell" class="layout hidden"><aside><div class="brand"><img src="/sv-logo.jpeg" alt=""><div>Skillvaya <span class="crown">♛</span><div class="muted" style="font-size:12px">OWNER APP</div></div></div><nav id="ownerNav"><button class="active" data-area="dashboard" onclick="showArea('dashboard')">▦ Dashboard</button><button data-area="clients" onclick="showArea('clients')">♙ Customers & Providers</button><button data-area="inbox" onclick="showArea('inbox')">✉ Email Centre & Inbox</button><button data-area="complaints" onclick="showArea('complaints')">⚑ Reports & Complaints</button><button data-area="payments" onclick="showArea('payments')">▤ Payments & Subscriptions</button><button data-area="owner-promotions" onclick="showArea('owner-promotions')">✧ Advertising & Promotions</button><button data-area="account-deletions" onclick="showArea(\'account-deletions\')">Account deletion requests</button><button data-area="accessControl" onclick="showArea('accessControl')">🔒 Customer & Provider Access</button><button data-area="settings" onclick="showArea('settings')">⚙ Platform Settings</button></nav><div style="margin-top:auto" class="muted">Private owner access<br><button onclick="ownerLogout()" style="width:100%;margin-top:10px">Sign out</button></div></aside>
 <main><div class="top"><div><h1 id="pageTitle">Owner Dashboard</h1><div class="muted">Your platform, your oversight — with protected, auditable controls.</div></div><button onclick="refreshCurrent()">↻ Refresh</button></div><div id="globalStatus" class="status" role="status"></div><section id="panel"></section></main></div>
 <script>
-const titles={accessControl:'Customer & Provider Access',dashboard:'Owner Dashboard',clients:'Customers & Providers',inbox:'Email Centre & Inbox',complaints:'Reports, Warnings & Complaints',payments:'Payments & Subscriptions','owner-promotions':'Advertising & Promotions',settings:'Platform Settings'};
+const titles={accessControl:'Customer & Provider Access',dashboard:'Owner Dashboard',clients:'Customers & Providers',inbox:'Email Centre & Inbox',complaints:'Reports, Warnings & Complaints',payments:'Payments & Subscriptions','owner-promotions':'Advertising & Promotions','account-deletions':'Account deletion requests',settings:'Platform Settings'};
 let currentArea='dashboard',ownerToken='';
 const $=id=>document.getElementById(id);
 let uiZoom=1;
@@ -960,7 +1051,7 @@ function esc(x){return String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 async function api(path,opts={}){const token=ownerToken||localStorage.getItem('skillvaya_owner_token')||localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token')||sessionStorage.getItem('skillvaya_token')||sessionStorage.getItem('sv_token');const headers={'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(opts.headers||{})};const r=await fetch(path,{...opts,headers,cache:opts.cache||'no-store'});let d={};try{d=await r.json()}catch(e){}if(!r.ok)throw Error(d.error||'Request failed ('+r.status+')');return d}
 function status(msg){$('globalStatus').textContent=msg||''}
 async function activateShell(){try{document.body.classList.add('owner-app-active');$('loginScreen').classList.add('hidden');$('appShell').classList.remove('hidden');$('pageTitle').textContent='Owner Dashboard';$('panel').innerHTML='<div class="hero"><h2>Opening Owner Dashboard…</h2><p class="muted">Loading your platform controls. Please wait.</p></div>';window.scrollTo(0,0);await showArea('dashboard')}catch(e){const p=$('panel');if(p)p.innerHTML='<div class="hero"><h2>Welcome to Skillvaya Owner Control</h2><p class="muted">Your owner workspace is open. Dashboard statistics could not be loaded yet.</p><button class="primary" onclick="showArea(\'dashboard\')">Retry dashboard</button> <button onclick="showArea(\'clients\')">Manage users & providers</button></div>';console.error('Owner dashboard activation failed:',e)}}
-async function showArea(area){currentArea=area;$('pageTitle').textContent=titles[area]||area;document.querySelectorAll('#ownerNav button').forEach(b=>b.classList.toggle('active',b.dataset.area===area));status('');$('panel').innerHTML='<div class="panel">Loading '+esc(titles[area]||area)+'…</div>';try{if(area==='dashboard')await renderDashboard();else if(area==='clients')await renderClients();else if(area==='inbox')await renderInbox();else if(area==='complaints')await renderComplaints();else if(area==='payments')await renderPayments();else if(area==='owner-promotions')await renderPromotions();else if(area==='settings')await renderSettings();else if(area==='accessControl')await renderAccessControl()}catch(e){$('panel').innerHTML='<div class="panel"><h2>Could not load this section</h2><p>'+esc(e.message)+'</p><button onclick="showArea(currentArea)">Try again</button></div>'}window.scrollTo(0,0)}
+async function showArea(area){currentArea=area;$('pageTitle').textContent=titles[area]||area;document.querySelectorAll('#ownerNav button').forEach(b=>b.classList.toggle('active',b.dataset.area===area));status('');$('panel').innerHTML='<div class="panel">Loading '+esc(titles[area]||area)+'…</div>';try{if(area==='dashboard')await renderDashboard();else if(area==='clients')await renderClients();else if(area==='inbox')await renderInbox();else if(area==='complaints')await renderComplaints();else if(area==='payments')await renderPayments();else if(area==='owner-promotions')await renderPromotions();else if(area==='account-deletions')await renderAccountDeletions();else if(area==='settings')await renderSettings();else if(area==='accessControl')await renderAccessControl()}catch(e){$('panel').innerHTML='<div class="panel"><h2>Could not load this section</h2><p>'+esc(e.message)+'</p><button onclick="showArea(currentArea)">Try again</button></div>'}window.scrollTo(0,0)}
 function metric(label,value,note=''){return '<div class="stat"><span class="muted">'+esc(label)+'</span><strong>'+esc(value)+'</strong><span class="muted">'+esc(note)+'</span></div>'}
 function table(headers,rows){return '<div class="tablewrap"><table><thead><tr>'+headers.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr></thead><tbody>'+(rows.length?rows.map(row=>'<tr>'+row.map(x=>'<td>'+x+'</td>').join('')+'</tr>').join(''):'<tr><td colspan="'+headers.length+'" class="empty">No records found.</td></tr>')+'</tbody></table></div>'}
 async function renderDashboard(){
@@ -1003,6 +1094,8 @@ function resetPromo(){$('promoForm').reset();$('promoForm').elements.promotion_i
 function editPromo(id){const x=(window.ownerPromotionItems||[]).find(v=>Number(v.id)===id),f=$('promoForm');if(!x)return;for(const k of ['promotion_id','kind','business_name','title','category','target_url','image_url','description','area','phone','whatsapp'])if(f.elements[k])f.elements[k].value=x[k]||'';if(f.elements.contact_email)f.elements.contact_email.value=x.contact_email||'';$('promoStatus').textContent='Editing '+x.business_name}
 async function promoStatus(id,st){if(st==='removed'&&!confirm('Remove this promotion from public listings?'))return;try{await api('/api/admin/owner-promotions/'+id,{method:'POST',body:JSON.stringify({status:st})});status('Promotion status updated.');await renderPromotions()}catch(e){alert(e.message)}}
 async function renderAccessControl(){const d=await api('/api/admin/access-control');$('panel').innerHTML='<div class="panel"><h2>Customer & Service Provider Access</h2><p class="muted">Owner access always stays available. Notify both customer and Work Finder/provider sides before switching access off.</p><div class="notice"><strong>Current status: '+(d.enabled?'ON — customers and providers can use Skillvaya':'OFF — customer and provider access is paused')+'</strong></div><h3>Send an in-app notification first</h3><form id="broadcastForm"><label>Notification title<input name="subject" maxlength="160" required placeholder="Important Skillvaya notice"></label><label>Message<textarea name="body" maxlength="5000" rows="5" required placeholder="Type the notice customers and service providers should receive…"></textarea></label><button class="primary">Send to customers and providers</button><p class="muted">Saved for both customer and provider/Work Finder sides.</p></form><hr><h3>Access switch</h3><p>Turning access off does not disable this Owner Control panel or owner payment approval.</p><button class="primary" id="accessOn" '+(d.enabled?'disabled':'')+'>Turn customer/provider access ON</button> <button id="accessOff" '+(!d.enabled?'disabled':'')+'>Turn customer/provider access OFF</button><p id="accessStatus" class="status"></p><h3>Recent notices</h3>'+table(['Sent','Title','Message'],(d.notices||[]).map(x=>[esc(x.created_at),esc(x.subject),esc(x.body)]))+'</div>';document.getElementById('broadcastForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget);if(!confirm('Send this notification to both customers and service providers?'))return;try{await api('/api/admin/broadcast-notification',{method:'POST',body:JSON.stringify({subject:f.get('subject'),body:f.get('body')})});$('accessStatus').textContent='Notification saved for both sides.';await renderAccessControl()}catch(err){$('accessStatus').textContent=err.message}};async function setAccess(enabled){if(!confirm(enabled?'Restore customer and service provider access now?':'Switch customer and service provider access OFF? The owner panel will remain available.'))return;try{await api('/api/admin/access-control',{method:'POST',body:JSON.stringify({enabled})});await renderAccessControl()}catch(err){$('accessStatus').textContent=err.message}}document.getElementById('accessOn').onclick=()=>setAccess(true);document.getElementById('accessOff').onclick=()=>setAccess(false)}
+async function renderAccountDeletions(){const d=await api('/api/admin/account-deletion-requests');const items=d.items||[];$('panel').innerHTML='<div class="panel"><h2>Account deletion requests</h2><p class="muted">Verify each request before completing it. Completion permanently deletes the account and associated app personal data; limited financial or security records may be retained where required. This cannot be undone.</p><div class="toolbar"><span>'+items.length+' pending request(s)</span><button onclick="renderAccountDeletions()">Refresh</button></div>'+table(['Request','Account','Reason','Requested','Action'],items.map(x=>['#'+Number(x.id),esc(x.user_name||'Account unavailable')+'<br>'+esc(x.user_email||'')+'<br>User ID '+Number(x.user_id),esc(x.reason||'No reason supplied'),esc(x.requested_at||''),'<button class="danger" onclick="completeAccountDeletion('+Number(x.id)+')">Verify & delete</button>']))+'</div>'}
+async function completeAccountDeletion(id){if(!confirm('FINAL CONFIRMATION: permanently delete the account and associated Skillvaya personal data for request #'+id+'? Verify the requester first. This cannot be undone.'))return;try{const d=await api('/api/admin/account-deletion-requests/'+encodeURIComponent(id)+'/complete',{method:'POST',body:JSON.stringify({confirm:true})});alert((d.message||'Deletion completed.')+'\nCompletion acknowledgement email confirmed: '+(d.acknowledgement_email_sent?'Yes':'No'));await renderAccountDeletions()}catch(e){alert('Deletion not completed: '+e.message)}}
 async function renderSettings(){const d=await api('/api/admin/settings');$('panel').innerHTML='<div class="panel"><h2>Platform Settings</h2><p class="muted">Owner notifications and email delivery status. Existing live payment settings are not changed here.</p><form id="settingsForm"><label>Owner notification email<input type="email" name="owner_email" value="'+esc(d.owner_email)+'" maxlength="254" required></label><button class="primary">Save notification email</button> <button type="button" onclick="testEmail()">Send test email</button><p id="settingsStatus" class="status"></p></form><div class="notice">'+(d.smtp_configured?'SMTP credentials detected.':'SMTP is not configured on the server; messages may be recorded but cannot be delivered.')+' '+esc(d.note||'')+'</div><h3>Security</h3><p class="muted">Admin API requests are authenticated server-side. Do not share owner credentials.</p></div>';$('settingsForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/admin/settings',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});$('settingsStatus').textContent='Owner email saved.'}catch(err){$('settingsStatus').textContent=err.message}}}
 async function testEmail(){try{await api('/api/admin/test-email',{method:'POST',body:'{}'});alert('Test email sent.')}catch(e){alert(e.message)}}
 function refreshCurrent(){showArea(currentArea)}
@@ -2595,7 +2688,7 @@ function filterMessageThreads(query){const q=String(query||'').trim().toLowerCas
 function formatMessageDate(value){if(!value)return '';const d=new Date(value);if(Number.isNaN(d.getTime()))return String(value);const now=new Date();const same=d.toDateString()===now.toDateString();return same?d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString([], {day:'2-digit',month:'short'});}
 async function loadMessageThreads(){document.body.classList.remove('messages-conversation-open');const root=document.getElementById('messagesList'),count=document.getElementById('messagesCount');if(!root)return;if(!me){root.innerHTML='<div class="messages-empty-state"><h3>Sign in to view contacts</h3><p>Your private conversations appear here after you sign in.</p></div>';if(count)count.textContent='';return;}root.innerHTML='<div class="messages-loading"><span class="messages-loading-dot"></span>Loading conversations…</div>';if(count)count.textContent='';try{const results=await Promise.allSettled([api('/api/messages'),api('/api/contacts')]);if(results[0].status==='rejected'&&results[1].status==='rejected')throw results[0].reason||results[1].reason;const d=results[0].status==='fulfilled'?results[0].value:{items:[]},contactData=results[1].status==='fulfilled'?results[1].value:{items:[]};const items=(d.items||[]).filter(m=>me.role!=='admin'||Number(m.customer_id)===Number(me.id)||Number(m.business_owner_id)===Number(me.id)),contacts=contactData.items||[],threads=new Map();for(const c of contacts){const key=String(c.business_id)+'|'+String(c.customer_id);if(!threads.has(key))threads.set(key,{business_id:Number(c.business_id),customer_id:Number(c.customer_id),business_name:c.business_name,customer_name:c.customer_name,created_at:c.created_at,messages:[]});}for(const m of items){const key=String(m.business_id)+'|'+String(m.customer_id);if(!threads.has(key))threads.set(key,{business_id:Number(m.business_id),customer_id:Number(m.customer_id),business_name:m.business_name,customer_name:m.customer_name,created_at:m.created_at,messages:[]});threads.get(key).messages.push(m);}const grouped=Array.from(threads.values()).sort((a,b)=>String((b.messages[b.messages.length-1]||{}).created_at||b.created_at||'').localeCompare(String((a.messages[a.messages.length-1]||{}).created_at||a.created_at||'')));if(count)count.textContent=grouped.length+' conversation'+(grouped.length===1?'':'s');root.innerHTML=grouped.map(t=>{t.messages.sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||Number(a.id)-Number(b.id));const last=t.messages[t.messages.length-1],title=(me.role==='provider'||(me.role==='admin'&&t.messages.some(m=>Number(m.business_owner_id)===Number(me.id))))?t.customer_name:t.business_name,preview=last?last.message:'Tap to start a conversation',when=last?.created_at||t.created_at||'',unread=t.messages.filter(m=>Number(m.sender_id)!==Number(me.id)&&!m.read_at).length;return '<button type="button" class="conversation-list-item" onclick="openMessageConversation('+t.business_id+','+t.customer_id+')"><span class="conversation-avatar">'+esc(String(title||'?').slice(0,1).toUpperCase())+'</span><span class="conversation-summary"><strong>'+esc(title||'Conversation')+'</strong><span>'+esc(preview)+'</span></span><span class="conversation-meta"><small>'+esc(formatMessageDate(when))+'</small>'+(unread?'<span class="conversation-count">'+unread+'</span>':'')+'</span></button>';}).join('')||'<div class="messages-empty-state"><h3>No conversations yet</h3><p>When you contact a service provider, your conversations will appear here.</p></div>';const search=document.getElementById('messageSearch');if(search&&search.value)filterMessageThreads(search.value);}catch(e){root.innerHTML='<div class="messages-empty-state"><h3>Couldn’t load conversations</h3><p>'+esc(e&&e.message?e.message:'Please check your connection and try again.')+'</p><button type="button" class="ghost" onclick="loadMessageThreads()">Try again</button></div>';}}
 async function replyMessage(e,business_id,customer_id){e.preventDefault();const f=e.target,field=f.elements.message,body=field.value.trim();if(!body)return;const button=f.querySelector('button[type=submit]');if(button){button.disabled=true;button.textContent='Sending...'}try{await api('/api/messages/send',{method:'POST',body:JSON.stringify({business_id,customer_id,message:body})});f.reset();msg('messagesStatus','Reply sent and saved to this conversation.',true);await loadMessageThreads()}catch(x){msg('messagesStatus','Reply not sent: '+x.message)}finally{if(button){button.disabled=false;button.textContent='Send reply'}}}
-async function requestAccountDeletion(){if(!me||!token){alert('Please sign in to request account deletion.');return}if(me.role==='admin'){alert('The owner account cannot be deleted through the public account-deletion flow.');return}const reason=prompt('Optional reason for your account-deletion request:')||'';if(!confirm('Submit an account-deletion request for '+(me.email||'this account')+'? Your account is not deleted immediately. Skillvaya will verify the request and review lawful retention requirements.'))return;try{const d=await api('/api/account/delete-request',{method:'POST',body:JSON.stringify({reason})});alert(d.message||('Your request #'+d.request_id+' has been recorded.'));}catch(e){alert('Could not submit your deletion request: '+e.message+'\nYou can use the public deletion information page to contact Skillvaya.')}}
+async function requestAccountDeletion(){if(!me||!token){alert('Please sign in to request account deletion.');return}if(me.role==='admin'){alert('The owner account cannot be deleted through the public account-deletion flow.');return}const reason=prompt('Optional reason for your account-deletion request:')||'';if(!confirm('Submit an account-deletion request for '+(me.email||'this account')+'? Your account is not deleted immediately. Skillvaya will verify the request and review lawful retention requirements. If your provider plan is billed by Google Play, cancel it separately in Play Store > Payments & subscriptions > Subscriptions; deleting your Skillvaya account does not stop Google Play billing.'))return;try{const d=await api('/api/account/delete-request',{method:'POST',body:JSON.stringify({reason})});alert(d.message||('Your request #'+d.request_id+' has been recorded.'));}catch(e){alert('Could not submit your deletion request: '+e.message+'\nYou can use the public deletion information page to contact Skillvaya.')}}
 async function logout(){const t=token||localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token');try{if(t)await fetch('/api/logout',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:'{}'})}catch(e){}token='';me=null;localStorage.removeItem('sv_token');localStorage.removeItem('skillvaya_token');localStorage.removeItem('skillvaya_owner_token');localStorage.removeItem('skillvaya_user');sessionStorage.removeItem('sv_token');sessionStorage.removeItem('skillvaya_token');location.replace('/');}
 document.getElementById('profileForm').onsubmit=async e=>{e.preventDefault();try{let d=await api('/api/account/profile',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});me=d.user;document.getElementById('profileIdentity').textContent=me.email+' ? '+me.role;msg('profileMsg','Profile saved successfully.',true);await sessionInfo();setProfileEditing(false)}catch(x){msg('profileMsg',x.message)}};
 document.getElementById('passwordForm').onsubmit=async e=>{e.preventDefault();let f=e.target;if(f.elements.new_password.value!==f.elements.confirm_password.value){msg('passwordMsg','The new password and confirmation do not match.');return}try{let d=await api('/api/account/password',{method:'POST',body:JSON.stringify({current_password:f.elements.current_password.value,new_password:f.elements.new_password.value})});f.reset();msg('passwordMsg',d.message||'Password changed successfully.',true)}catch(x){msg('passwordMsg',x.message)}};
@@ -2843,6 +2936,7 @@ class Handler(BaseHTTPRequestHandler):
         if role and u["role"]!=role: raise PermissionError("This action requires a "+role+" account.")
         if u.get("role") in ("customer","provider") and setting("customer_provider_access","on")=="off" and urlparse(getattr(self,"path","/")).path!="/api/notifications":
             raise PermissionError("Customer and service provider access is temporarily paused by Skillvaya. Please try again later.")
+        if u.get("role")=="provider": refresh_google_play_subscription_for_user(int(u["id"]))
         return u
     def do_OPTIONS(self):
         self.send_response(204); self.send_header("Access-Control-Allow-Headers","Content-Type, Authorization"); self.send_header("Access-Control-Allow-Methods","GET, POST, OPTIONS"); self.end_headers()
@@ -3366,6 +3460,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(404); self.end_headers()
     def do_GET(self):
         path=urlparse(self.path).path
+        if path == "/forgot-password":
+            page = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Forgot Skillvaya password</title><style>body{font:16px system-ui;background:#f2f6fb;color:#142b4a;min-height:100vh;display:grid;place-items:center;margin:0;padding:18px}.card{background:white;width:min(100%,440px);padding:28px;border-radius:16px;box-shadow:0 10px 32px #10294b18}h1{font-size:24px}label{display:block;margin:16px 0 6px}input,button{box-sizing:border-box;width:100%;padding:13px;border-radius:9px;font:inherit}input{border:1px solid #c8d5e5}button{margin-top:16px;background:#102f5a;color:white;border:0;font-weight:700}a{color:#1b5d99}#status{min-height:24px}</style></head><body><main class="card"><h1>Reset your Skillvaya password</h1><p>Enter your registered email. If an account matches, a secure reset link will be sent.</p><form id="f"><label>Email address</label><input id="email" type="email" autocomplete="email" maxlength="254" required><button>Send reset link</button><p id="status" role="status"></p></form><a href="/">Back to sign in</a></main><script>document.getElementById('f').onsubmit=async e=>{e.preventDefault();let s=document.getElementById('status');try{let r=await fetch('/api/password-reset/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value.trim()})});let d=await r.json();s.textContent=d.message||'If an account matches, a reset link will be sent shortly.'}catch(_){s.textContent='Could not connect. Please try again.'}};</script></body></html>"""
+            data=page.encode(); self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(data))); self.end_headers(); self.wfile.write(data); return
+        if path == "/reset-password":
+            page = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Choose a new password</title><style>body{font:16px system-ui;background:#f2f6fb;color:#142b4a;min-height:100vh;display:grid;place-items:center;margin:0;padding:18px}.card{background:white;width:min(100%,440px);padding:28px;border-radius:16px}label{display:block;margin:16px 0 6px}input,button{box-sizing:border-box;width:100%;padding:13px;border-radius:9px;font:inherit}input{border:1px solid #c8d5e5}button{margin-top:16px;background:#102f5a;color:white;border:0;font-weight:700}a{color:#1b5d99}#status{min-height:24px}</style></head><body><main class="card"><h1>Choose a new password</h1><p>Use at least 12 characters. The link expires after 30 minutes and works once.</p><form id="f"><label>New password</label><input id="pw" type="password" minlength="12" maxlength="256" autocomplete="new-password" required><label>Confirm password</label><input id="confirm" type="password" minlength="12" maxlength="256" autocomplete="new-password" required><button>Update password</button><p id="status" role="status"></p></form><a href="/">Back to sign in</a></main><script>document.getElementById('f').onsubmit=async e=>{e.preventDefault();let s=document.getElementById('status'),p=document.getElementById('pw').value,c=document.getElementById('confirm').value;if(p!==c){s.textContent='Passwords do not match.';return}let token=new URLSearchParams(location.search).get('token');if(!token){s.textContent='Invalid link. Request another.';return}try{let r=await fetch('/api/password-reset/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:p})}),d=await r.json();if(!r.ok)throw Error(d.error||'Could not reset password');s.textContent='Password updated. You can now sign in.';e.target.reset()}catch(x){s.textContent=x.message}};</script></body></html>"""
+            data=page.encode(); self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(data))); self.end_headers(); self.wfile.write(data); return
         if path == "/account-deletion":
             page_path=os.path.join(ROOT,"account_deletion.html")
             if not os.path.isfile(page_path): return self.sendj({"error":"Deletion information is unavailable."},404)
@@ -3985,6 +4085,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 self.rfile.read(int(self.headers.get("Content-Length","0")))
                 return self.sendj({"error":"PayFast is paused. PayPal is the only supported checkout provider."},410)
             d=self.body()
+
             if path == "/api/google-play/rtdn":
                 expected_audience=os.environ.get("GOOGLE_PLAY_RTDN_AUDIENCE","").strip()
                 expected_email=os.environ.get("GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL","").strip()
@@ -4000,7 +4101,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     if purchase_token:
                         with conn() as c:
                             c.execute("CREATE TABLE IF NOT EXISTS google_play_subscriptions (purchase_token TEXT PRIMARY KEY,user_id BIGINT NOT NULL,business_id BIGINT,product_id TEXT NOT NULL,base_plan_id TEXT NOT NULL,order_id TEXT,state TEXT NOT NULL,expiry_time TEXT NOT NULL,auto_renew_enabled BOOLEAN NOT NULL,updated_at TEXT NOT NULL)")
-                            record=c.execute("SELECT user_id,business_id,product_id FROM google_play_subscriptions WHERE purchase_token=?",(purchase_token,)).fetchone()
+                            record=c.execute("SELECT user_id,business_id,product_id,state FROM google_play_subscriptions WHERE purchase_token=?",(purchase_token,)).fetchone()
+                        if record and record["state"]=="REPLACED": return self.sendj({"ok":True,"ignored":"replaced_purchase"})
                         if record:
                             raw_creds=os.environ.get("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON","").strip(); creds_path=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS","").strip()
                             if not raw_creds and not creds_path: return self.sendj({"error":"Google Play verification credentials are missing."},503)
@@ -4025,6 +4127,56 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 except Exception:
                     return self.sendj({"error":"Pub/Sub event could not be authenticated or reconciled."},503)
                 return self.sendj({"ok":True})
+
+            if path == "/api/password-reset/request":
+                email=str(d.get("email","")).strip().lower()[:254]
+                generic={"ok":True,"message":"If an account matches that email, a secure password-reset link will be sent shortly."}
+                if not email or "@" not in email: return self.sendj(generic,202)
+                with conn() as c:
+                    user=c.execute("SELECT id,email,name FROM users WHERE lower(email)=?",(email,)).fetchone()
+                    if not user: return self.sendj(generic,202)
+                    recent=c.execute("SELECT created_at FROM password_reset_tokens WHERE user_id=? ORDER BY id DESC LIMIT 1",(user["id"],)).fetchone()
+                    if recent:
+                        try:
+                            last=datetime.datetime.fromisoformat(recent["created_at"])
+                            if (datetime.datetime.now(datetime.timezone.utc)-last).total_seconds()<60: return self.sendj(generic,202)
+                        except (ValueError,TypeError): pass
+                    c.execute("UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at=''",(now(),user["id"]))
+                    raw=secrets.token_urlsafe(32); th=hashlib.sha256(raw.encode()).hexdigest()
+                    created=now(); expires=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(minutes=30)).isoformat()
+                    c.execute("INSERT INTO password_reset_tokens(user_id,token_hash,created_at,expires_at,used_at) VALUES(?,?,?,?, '')",(user["id"],th,created,expires))
+                base=os.environ.get("SKILLVAYA_PUBLIC_URL","https://skillvaya.onrender.com").strip().rstrip("/")
+                link=base+"/reset-password?token="+urllib.parse.quote(raw,safe="")
+                body="Hello "+str(user["name"] or "Skillvaya user")+",\n\nWe received a request to reset your Skillvaya password. Open this one-time link within 30 minutes:\n\n"+link+"\n\nIf you did not request this, ignore this email. Your current password remains unchanged. Do not share this link."
+                if not send_owner_email("Reset your password",body,recipient=email):
+                    with conn() as c: c.execute("UPDATE password_reset_tokens SET used_at=? WHERE token_hash=? AND used_at=''",(now(),th))
+                return self.sendj(generic,202)
+            if path == "/api/password-reset/confirm":
+                raw=str(d.get("token","")).strip(); password=d.get("password","")
+                if not isinstance(password,str) or len(password)<12 or len(password)>256: return self.sendj({"error":"Choose a password between 12 and 256 characters."},400)
+                if len(raw)<30 or len(raw)>200: return self.sendj({"error":"This reset link is invalid or expired. Request a new one."},400)
+                th=hashlib.sha256(raw.encode()).hexdigest(); current=datetime.datetime.now(datetime.timezone.utc)
+                with conn() as c:
+                    row=c.execute("SELECT id,user_id,expires_at,used_at FROM password_reset_tokens WHERE token_hash=?",(th,)).fetchone()
+                    if not row or row["used_at"]: return self.sendj({"error":"This reset link is invalid, expired, or already used. Request a new one."},400)
+                    try: expires=datetime.datetime.fromisoformat(row["expires_at"])
+                    except (ValueError,TypeError): expires=current-datetime.timedelta(seconds=1)
+                    if expires.tzinfo is None: expires=expires.replace(tzinfo=datetime.timezone.utc)
+                    if expires<=current:
+                        c.execute("UPDATE password_reset_tokens SET used_at=? WHERE id=? AND used_at='' ",(now(),row["id"]))
+                        return self.sendj({"error":"This reset link has expired. Request a new one."},400)
+                    changed=c.execute("UPDATE password_reset_tokens SET used_at=? WHERE id=? AND used_at='' ",(now(),row["id"]))
+                    if getattr(changed,"rowcount",1)==0: return self.sendj({"error":"This reset link has already been used. Request a new one."},400)
+                    user=c.execute("SELECT id FROM users WHERE id=?",(row["user_id"],)).fetchone()
+                    if not user: return self.sendj({"error":"This account no longer exists."},400)
+                    c.execute("UPDATE users SET password_hash=? WHERE id=?",(hashpw(password),row["user_id"]))
+                    c.execute("UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND id<>? AND used_at=''",(now(),row["user_id"],row["id"]))
+                # Force re-authentication on every session after a password reset.
+                for session_token, session_user in list(SESSIONS.items()):
+                    if int(session_user.get("id", 0)) == int(row["user_id"]):
+                        SESSIONS.pop(session_token, None)
+                return self.sendj({"ok":True,"message":"Password updated. You can now sign in with your new password."})
+
             if path == "/api/account/delete-request":
                 u=self.require()
                 if u.get("role")=="admin": return self.sendj({"error":"The owner account cannot be deleted through this flow."},403)
@@ -4381,7 +4533,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 if state not in ("SUBSCRIPTION_STATE_ACTIVE","SUBSCRIPTION_STATE_IN_GRACE_PERIOD","SUBSCRIPTION_STATE_CANCELED") or not expiry_dt or expiry_dt<=now_dt:
                     return self.sendj({"error":"This Google Play subscription is not currently entitled to paid access."},409)
                 offer=line.get("offerDetails") or {}
-                base_plan=str(offer.get("basePlanId", "monthly"))
+                base_plan=str(offer.get("basePlanId", "")).strip()
+                if base_plan not in ("monthly","annual"): return self.sendj({"error":"The verified Google Play subscription has an unsupported base plan. No paid access was granted."},409)
                 billing="yearly" if base_plan=="annual" else "monthly"
                 amount=int(PLANS[plan]["monthly"]*(11 if billing=="yearly" else 1))
                 order_id=str(verified.get("latestOrderId", d.get("order_id", "")))[:160]
@@ -4395,6 +4548,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     expected_external=base64.urlsafe_b64encode(hashlib.sha256(str(u["id"]).encode()).digest()).decode().rstrip("=")[:64]
                     if external_id and not hmac.compare_digest(external_id,expected_external): return self.sendj({"error":"The Google Play purchase account does not match this Skillvaya account."},409)
                     if not existing and not external_id: return self.sendj({"error":"This purchase is not linked to the signed-in Skillvaya account. Please start checkout again from this app."},409)
+                    linked_token=str(verified.get("linkedPurchaseToken", "")).strip()
+                    if linked_token and linked_token!=purchase_token:
+                        linked=c.execute("SELECT user_id FROM google_play_subscriptions WHERE purchase_token=?",(linked_token,)).fetchone()
+                        if linked and int(linked["user_id"])!=int(u["id"]): return self.sendj({"error":"The replaced Google Play subscription belongs to a different Skillvaya account."},409)
+                        if linked: c.execute("UPDATE google_play_subscriptions SET state='REPLACED',auto_renew_enabled=FALSE,updated_at=? WHERE purchase_token=?",(now(),linked_token))
                     biz=c.execute("SELECT id FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1",(u["id"],)).fetchone()
                     business_id=int(biz["id"]) if biz else (int(existing["business_id"]) if existing and existing["business_id"] else None)
                     reference="GP-"+hashlib.sha256(purchase_token.encode()).hexdigest()[:20].upper()

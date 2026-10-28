@@ -18,7 +18,7 @@ Confirm whether and how the app collects, transmits, shares, or stores each cate
 - Contacts: user-entered contact details and provider business contact information. Do not assume device contacts are read; verify final code.
 - Audio/video: microphone/camera streams for voice/video calls; confirm whether calls are peer-to-peer or relayed and whether media is recorded or stored.
 - Files/media: user-selected profile/portfolio photos and chat attachments.
-- Financial data: plan selection, amount, currency, transaction references, payment status, refund status, and payment-provider identifiers. Audit whether card/bank details are ever handled by SkillVaya (the stated design delegates checkout to PayPal).
+- Financial data and purchase history: plan/tier, billing period, amount/currency, transaction reference, Google Play purchase token/order ID, subscription state/expiry/auto-renew flag, payment/refund status and provider identifiers. Google Play retains payment instrument details; SkillVaya verifies subscription purchases and stores the minimum token/state needed for entitlement management. Account deletion removes stored Play purchase tokens and account-linked password-reset tokens.
 - App activity and diagnostics: server request logs, timestamps, analytics events, IP address, device/browser user-agent and error logs.
 - Messages and support content: private messages, account deletion requests, safety reports and support communications.
 
@@ -26,6 +26,7 @@ Confirm whether and how the app collects, transmits, shares, or stores each cate
 - Render hosting and logs.
 - Neon PostgreSQL hosting.
 - PayPal checkout and transaction records.
+- Google Play Billing and the Google Play Android Publisher API (purchase verification, subscription state and expiry). The current design does not require Pub/Sub/RTDN.
 - Any email/SMTP provider configured in the production environment.
 - Browser/WebView services involved in voice recognition or video calling.
 - Any analytics, monitoring, crash reporting or external SDK that is actually enabled.
@@ -46,6 +47,6 @@ Confirm whether and how the app collects, transmits, shares, or stores each cate
 - No evidence-based final Data safety answers yet.
 - Live GET checks now return HTTP 200 for `/account-deletion` and `/privacy`, and the live customer-app HTML includes the account-deletion request text. The authenticated request API, owner queue, fulfilment and email acknowledgement still need end-to-end verification against a confirmed isolated test database.
 - The isolated copy has a deletion-request workflow with owner-only completion and local tests, but that does not by itself prove the live backend's behaviour or legal-retention compliance.
-- Native Play Billing and server verification code have been added to the isolated source and compile checks pass. Play Console products, API credentials, authenticated lifecycle notifications and real purchase tests remain incomplete.
+- Native Play Billing, server verification and no-Pub/Sub polling lifecycle code have been added to the isolated source and compile checks pass. Play Console products, API credentials, staging database connection and real purchase tests remain incomplete.
 
 Official account-deletion policy: https://support.google.com/googleplay/android-developer/answer/13327111
