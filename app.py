@@ -287,6 +287,14 @@ def init():
         owner_password = os.environ.get("SKILLVAYA_OWNER_PASSWORD", "")
         if "@" not in owner_email or len(owner_password) < 14:
             raise RuntimeError("Public deployment blocked: set SKILLVAYA_OWNER_EMAIL and a unique SKILLVAYA_OWNER_PASSWORD of at least 14 characters before starting Skillvaya.")
+    expected_database = os.environ.get("SKILLVAYA_EXPECTED_DATABASE", "").strip()
+    if expected_database:
+        if not DATABASE_URL:
+            raise RuntimeError("Database safety check failed: an expected PostgreSQL database was configured, but DATABASE_URL is missing.")
+        with conn() as guard_conn:
+            actual_database = str(guard_conn.execute("SELECT current_database() AS name").fetchone()["name"])
+        if actual_database != expected_database:
+            raise RuntimeError("Database safety check failed: this service is connected to a database other than its configured isolated staging database. No schema initialization was performed.")
     with conn() as c:
         execute_script(c, """
         CREATE TABLE IF NOT EXISTS users(id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', created_at TEXT NOT NULL, phone TEXT DEFAULT '', accepted_terms_version TEXT NOT NULL DEFAULT '', accepted_terms_at TEXT NOT NULL DEFAULT '');
@@ -722,7 +730,7 @@ def activate_payment(c, row, pfid):
         expires=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(days=days)).isoformat()
         c.execute("UPDATE businesses SET plan=?,billing=?,payment_status='verified',status='active',subscription_expires_at=? WHERE id=?",(row["plan"],row["billing"],expires,row["business_id"]))
         c.execute("INSERT INTO subscriptions(business_id,user_id,plan,billing,status,started_at,expires_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(business_id) DO UPDATE SET user_id=excluded.user_id,plan=excluded.plan,billing=excluded.billing,status='active',started_at=excluded.started_at,expires_at=excluded.expires_at,cancelled_at=NULL",(row["business_id"],row["user_id"],row["plan"],row["billing"],"active",now(),expires))
-    gateway="PayPal" if ("payment_gateway" in row.keys() and row["payment_gateway"]=="paypal") else "legacy gateway"
+    gateway="Google Play" if ("payment_gateway" in row.keys() and row["payment_gateway"]=="google_play") else ("PayPal" if ("payment_gateway" in row.keys() and row["payment_gateway"]=="paypal") else "legacy gateway")
     c.execute("INSERT INTO notifications(kind,subject,body,created_at,recipient) VALUES(?,?,?,?,?)",("payment_verified",gateway+" payment verified","Payment reference "+row["reference"]+" was confirmed by "+gateway+". Amount: R"+str(row["amount"])+".",now(),setting("owner_email")))
     return True
 
@@ -2688,7 +2696,21 @@ fields.forEach(([label,value])=>{
 });
 panel.querySelector('#svCloseBank').onclick=()=>overlay.remove();
 }
+function showGooglePlayCheckout(plan,billing){
+ const ids={local:'skillvaya_local',priority:'skillvaya_priority',plus:'skillvaya_business_plus',spotlight:'skillvaya_business_spotlight'},productId=ids[plan];
+ const old=document.getElementById('svPlayCheckout');if(old)old.remove();
+ const overlay=document.createElement('div');overlay.id='svPlayCheckout';overlay.style.cssText='position:fixed;inset:0;z-index:100002;background:#071426cc;display:flex;align-items:center;justify-content:center;padding:18px';
+ const panel=document.createElement('section');panel.style.cssText='width:min(100%,460px);background:#fff;color:#15253b;border-radius:18px;padding:24px;box-shadow:0 20px 70px #0006';
+ panel.innerHTML='<h2 style="margin:0 0 8px;color:#102b49">Google Play subscription</h2><p id="svPlayPrice">Checking Google Play prices…</p><p style="font-size:13px;color:#60738a">Your subscription renews automatically for the billing period shown until you cancel in Google Play subscriptions. Skillvaya activates paid access only after server verification.</p><p id="svPlayError" role="status" style="color:#a12b2b"></p><button id="svPlayBuy" class="primary" disabled>Continue with Google Play</button> <button id="svPlayRestore" class="ghost">Restore purchases</button> <button id="svPlayCancel" class="ghost">Close</button>';
+ overlay.appendChild(panel);document.body.appendChild(overlay);panel.querySelector('#svPlayCancel').onclick=()=>overlay.remove();panel.querySelector('#svPlayRestore').onclick=()=>{if(!me||me.role!=='provider'||!token){panel.querySelector('#svPlayError').textContent='Sign in with your provider account to restore purchases.';return}panel.querySelector('#svPlayError').textContent='Checking your Google Play subscriptions…';window.SkillvayaBilling.restorePurchases(String(me.id),token)};
+ window.svPlayBillingProducts=(json,code)=>{let items=[];try{items=JSON.parse(json||'[]')}catch(e){}const product=items.find(x=>x.productId===productId);const wanted=billing==='yearly'?'annual':'monthly';const offer=product?.offers?.find(x=>x.basePlanId===wanted);if(!product||!offer){panel.querySelector('#svPlayPrice').textContent='This plan is not available in Google Play yet.';panel.querySelector('#svPlayError').textContent='The product and base plan must be created and activated in Play Console.';return}panel.querySelector('#svPlayPrice').textContent=product.title+' · '+offer.price+' / '+(billing==='yearly'?'year':'month');const buy=panel.querySelector('#svPlayBuy');buy.disabled=false;buy.onclick=()=>{if(!me||me.role!=='provider'||!token){panel.querySelector('#svPlayError').textContent='Please sign in with your provider account before purchasing.';return}buy.disabled=true;panel.querySelector('#svPlayError').textContent='Opening Google Play checkout…';window.SkillvayaBilling.purchaseSubscription(productId,offer.offerToken,String(me.id),token)}};
+ window.svPlayBillingResult=(json)=>{let d={};try{d=typeof json==='string'?JSON.parse(json):json||{}}catch(e){}if(d.ok){panel.querySelector('#svPlayError').style.color='#146c43';panel.querySelector('#svPlayError').textContent=d.message||'Purchase verified. Refreshing provider access…';setTimeout(()=>{refreshProviderGate().catch(()=>{});if(!panel.querySelector('#svManageSubscription'))panel.querySelector('#svPlayError').insertAdjacentHTML('afterend','<p id="svManageSubscription"><a href="https://play.google.com/store/account/subscriptions?package=za.co.skillvaya.app" style="color:#155ca8;font-weight:700">Manage or cancel in Google Play</a></p>')},900)}else{panel.querySelector('#svPlayError').textContent=d.message||'Purchase was not completed.';panel.querySelector('#svPlayBuy').disabled=false}};
+ window.svPlayBillingError=(message)=>{panel.querySelector('#svPlayError').textContent=String(message||'Google Play could not complete this purchase.');panel.querySelector('#svPlayBuy').disabled=false};
+ window.SkillvayaBilling.querySubscriptions();
+ if(me&&me.role==='provider'&&token)window.SkillvayaBilling.restorePurchases(String(me.id),token);
+}
 function showPaymentChoice(plan,billing){
+ if(/SkillvayaNative/i.test(navigator.userAgent)&&window.SkillvayaBilling){showGooglePlayCheckout(plan,billing);return}
  const old=document.getElementById('svPaymentChoice');if(old)old.remove();
  const overlay=document.createElement('div');overlay.id='svPaymentChoice';overlay.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(5,18,38,.72);display:flex;align-items:center;justify-content:center;padding:18px;overflow:auto';
  const card=document.createElement('section');card.style.cssText='width:min(100%,480px);background:#fff;color:#17263b;border-radius:22px;overflow:hidden;box-shadow:0 24px 80px #0005;font:15px/1.5 Arial,sans-serif';
@@ -3963,6 +3985,46 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 self.rfile.read(int(self.headers.get("Content-Length","0")))
                 return self.sendj({"error":"PayFast is paused. PayPal is the only supported checkout provider."},410)
             d=self.body()
+            if path == "/api/google-play/rtdn":
+                expected_audience=os.environ.get("GOOGLE_PLAY_RTDN_AUDIENCE","").strip()
+                expected_email=os.environ.get("GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL","").strip()
+                auth=self.headers.get("Authorization","").removeprefix("Bearer ").strip()
+                if not expected_audience or not expected_email or not auth: return self.sendj({"error":"Authenticated Pub/Sub push is not configured."},401)
+                try:
+                    from google.auth.transport.requests import Request as GoogleAuthRequest
+                    from google.oauth2 import id_token
+                    claims=id_token.verify_oauth2_token(auth,GoogleAuthRequest(),audience=expected_audience)
+                    if expected_email and claims.get("email")!=expected_email: return self.sendj({"error":"Pub/Sub identity did not match the configured service account."},403)
+                    message=d.get("message") or {}; event=json.loads(base64.b64decode(message.get("data","")).decode("utf-8"))
+                    notice_data=event.get("subscriptionNotification") or {}; purchase_token=str(notice_data.get("purchaseToken", ""))
+                    if purchase_token:
+                        with conn() as c:
+                            c.execute("CREATE TABLE IF NOT EXISTS google_play_subscriptions (purchase_token TEXT PRIMARY KEY,user_id BIGINT NOT NULL,business_id BIGINT,product_id TEXT NOT NULL,base_plan_id TEXT NOT NULL,order_id TEXT,state TEXT NOT NULL,expiry_time TEXT NOT NULL,auto_renew_enabled BOOLEAN NOT NULL,updated_at TEXT NOT NULL)")
+                            record=c.execute("SELECT user_id,business_id,product_id FROM google_play_subscriptions WHERE purchase_token=?",(purchase_token,)).fetchone()
+                        if record:
+                            raw_creds=os.environ.get("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON","").strip(); creds_path=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS","").strip()
+                            if not raw_creds and not creds_path: return self.sendj({"error":"Google Play verification credentials are missing."},503)
+                            from google.oauth2 import service_account
+                            from googleapiclient.discovery import build
+                            scopes=["https://www.googleapis.com/auth/androidpublisher"]
+                            creds=service_account.Credentials.from_service_account_info(json.loads(raw_creds),scopes=scopes) if raw_creds else service_account.Credentials.from_service_account_file(creds_path,scopes=scopes)
+                            publisher=build("androidpublisher","v3",credentials=creds,cache_discovery=False)
+                            current=publisher.purchases().subscriptionsv2().get(packageName=os.environ.get("GOOGLE_PLAY_PACKAGE_NAME","za.co.skillvaya.app"),token=purchase_token).execute()
+                            lines=current.get("lineItems") or []; line=next((x for x in lines if x.get("productId")==record["product_id"]),None)
+                            expiry=str(line.get("expiryTime", "")) if line else ""
+                            try: expiry_dt=datetime.datetime.fromisoformat(expiry.replace("Z","+00:00"))
+                            except Exception: expiry_dt=None
+                            state=str(current.get("subscriptionState", "UNKNOWN")); valid=bool(expiry_dt and expiry_dt>datetime.datetime.now(datetime.timezone.utc) and state in ("SUBSCRIPTION_STATE_ACTIVE","SUBSCRIPTION_STATE_IN_GRACE_PERIOD","SUBSCRIPTION_STATE_CANCELED"))
+                            with conn() as c:
+                                c.execute("UPDATE google_play_subscriptions SET state=?,expiry_time=?,auto_renew_enabled=?,order_id=?,updated_at=? WHERE purchase_token=?",(state,expiry_dt.isoformat() if expiry_dt else expiry,bool((line or {}).get("autoRenewingPlan",{}).get("autoRenewEnabled",False)),str(current.get("latestOrderId", ""))[:160],now(),purchase_token))
+                                if record["business_id"]:
+                                    if valid: c.execute("UPDATE businesses SET subscription_expires_at=? WHERE id=? AND user_id=?",(expiry_dt.isoformat(),record["business_id"],record["user_id"]))
+                                    else:
+                                        c.execute("UPDATE businesses SET payment_status='expired',status='suspended' WHERE id=? AND user_id=?",(record["business_id"],record["user_id"]))
+                                        c.execute("UPDATE subscriptions SET status='expired' WHERE business_id=? AND user_id=?",(record["business_id"],record["user_id"]))
+                except Exception:
+                    return self.sendj({"error":"Pub/Sub event could not be authenticated or reconciled."},503)
+                return self.sendj({"ok":True})
             if path == "/api/account/delete-request":
                 u=self.require()
                 if u.get("role")=="admin": return self.sendj({"error":"The owner account cannot be deleted through this flow."},403)
@@ -4289,6 +4351,63 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 if not row or row["role"]!="provider":
                     return self.sendj({"error":"Provider access could not be activated. Please sign in again and retry."},409)
                 return self.sendj({"ok":True,"user":dict(row)})
+            if path=="/api/google-play/verify":
+                u=self.require("provider")
+                purchase_token=str(d.get("purchase_token","")).strip()
+                if not purchase_token or len(purchase_token)>4096: return self.sendj({"error":"A valid Google Play purchase token is required."},400)
+                raw_creds=os.environ.get("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON","").strip()
+                creds_path=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS","").strip()
+                package_name=os.environ.get("GOOGLE_PLAY_PACKAGE_NAME","za.co.skillvaya.app").strip()
+                if not raw_creds and not creds_path: return self.sendj({"error":"Google Play purchase verification is not configured on the server yet. No paid access was granted."},503)
+                try:
+                    from google.oauth2 import service_account
+                    from googleapiclient.discovery import build
+                    scopes=["https://www.googleapis.com/auth/androidpublisher"]
+                    creds=service_account.Credentials.from_service_account_info(json.loads(raw_creds),scopes=scopes) if raw_creds else service_account.Credentials.from_service_account_file(creds_path,scopes=scopes)
+                    publisher=build("androidpublisher","v3",credentials=creds,cache_discovery=False)
+                    verified=publisher.purchases().subscriptionsv2().get(packageName=package_name,token=purchase_token).execute()
+                except Exception as e:
+                    return self.sendj({"error":"Google Play could not verify this purchase. No paid access was granted. Check the Android Publisher API service-account access."},503)
+                state=str(verified.get("subscriptionState", ""))
+                lines=verified.get("lineItems") or []
+                line=next((x for x in lines if x.get("productId") in ("skillvaya_local","skillvaya_priority","skillvaya_business_plus","skillvaya_business_spotlight")),None)
+                if not line: return self.sendj({"error":"The verified purchase is not a Skillvaya subscription product."},409)
+                plan_by_product={"skillvaya_local":"local","skillvaya_priority":"priority","skillvaya_business_plus":"plus","skillvaya_business_spotlight":"spotlight"}
+                plan=plan_by_product[line["productId"]]
+                expiry=str(line.get("expiryTime", ""))
+                try: expiry_dt=datetime.datetime.fromisoformat(expiry.replace("Z","+00:00"))
+                except Exception: expiry_dt=None
+                now_dt=datetime.datetime.now(datetime.timezone.utc)
+                if state not in ("SUBSCRIPTION_STATE_ACTIVE","SUBSCRIPTION_STATE_IN_GRACE_PERIOD","SUBSCRIPTION_STATE_CANCELED") or not expiry_dt or expiry_dt<=now_dt:
+                    return self.sendj({"error":"This Google Play subscription is not currently entitled to paid access."},409)
+                offer=line.get("offerDetails") or {}
+                base_plan=str(offer.get("basePlanId", "monthly"))
+                billing="yearly" if base_plan=="annual" else "monthly"
+                amount=int(PLANS[plan]["monthly"]*(11 if billing=="yearly" else 1))
+                order_id=str(verified.get("latestOrderId", d.get("order_id", "")))[:160]
+                auto_renew=bool((line.get("autoRenewingPlan") or {}).get("autoRenewEnabled",False))
+                with conn() as c:
+                    c.execute("CREATE TABLE IF NOT EXISTS google_play_subscriptions (purchase_token TEXT PRIMARY KEY,user_id BIGINT NOT NULL,business_id BIGINT,product_id TEXT NOT NULL,base_plan_id TEXT NOT NULL,order_id TEXT,state TEXT NOT NULL,expiry_time TEXT NOT NULL,auto_renew_enabled BOOLEAN NOT NULL,updated_at TEXT NOT NULL)")
+                    existing=c.execute("SELECT user_id,business_id FROM google_play_subscriptions WHERE purchase_token=?",(purchase_token,)).fetchone()
+                    if existing and int(existing["user_id"])!=int(u["id"]): return self.sendj({"error":"This Google Play purchase is already linked to a different Skillvaya account."},409)
+                    external_ids=verified.get("externalAccountIdentifiers") or {}
+                    external_id=str(external_ids.get("obfuscatedExternalAccountId", ""))
+                    expected_external=base64.urlsafe_b64encode(hashlib.sha256(str(u["id"]).encode()).digest()).decode().rstrip("=")[:64]
+                    if external_id and not hmac.compare_digest(external_id,expected_external): return self.sendj({"error":"The Google Play purchase account does not match this Skillvaya account."},409)
+                    if not existing and not external_id: return self.sendj({"error":"This purchase is not linked to the signed-in Skillvaya account. Please start checkout again from this app."},409)
+                    biz=c.execute("SELECT id FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1",(u["id"],)).fetchone()
+                    business_id=int(biz["id"]) if biz else (int(existing["business_id"]) if existing and existing["business_id"] else None)
+                    reference="GP-"+hashlib.sha256(purchase_token.encode()).hexdigest()[:20].upper()
+                    payment=c.execute("SELECT * FROM payments WHERE reference=?",(reference,)).fetchone()
+                    if not payment:
+                        cur=c.execute("INSERT INTO payments(user_id,business_id,plan,billing,amount,reference,created_at,payment_gateway) VALUES(?,?,?,?,?,?,?,'google_play') RETURNING id",(u["id"],business_id,plan,billing,amount,reference,now()))
+                        payment=c.execute("SELECT * FROM payments WHERE id=?",(cur.fetchone()["id"],)).fetchone()
+                    if payment["status"]!="verified": activate_payment(c,payment,order_id or reference)
+                    if business_id:
+                        c.execute("UPDATE businesses SET plan=?,billing=?,payment_status='verified',status='active',subscription_expires_at=? WHERE id=? AND user_id=?",(plan,billing,expiry_dt.isoformat(),business_id,u["id"]))
+                        c.execute("INSERT INTO subscriptions(business_id,user_id,plan,billing,status,started_at,expires_at,cancelled_at) VALUES(?,?,?,?,?,?,?,NULL) ON CONFLICT(business_id) DO UPDATE SET user_id=excluded.user_id,plan=excluded.plan,billing=excluded.billing,status='active',expires_at=excluded.expires_at,cancelled_at=NULL",(business_id,u["id"],plan,billing,"active",now(),expiry_dt.isoformat()))
+                    c.execute("INSERT INTO google_play_subscriptions(purchase_token,user_id,business_id,product_id,base_plan_id,order_id,state,expiry_time,auto_renew_enabled,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(purchase_token) DO UPDATE SET business_id=excluded.business_id,product_id=excluded.product_id,base_plan_id=excluded.base_plan_id,order_id=excluded.order_id,state=excluded.state,expiry_time=excluded.expiry_time,auto_renew_enabled=excluded.auto_renew_enabled,updated_at=excluded.updated_at",(purchase_token,u["id"],business_id,line["productId"],base_plan,order_id,state,expiry_dt.isoformat(),auto_renew,now()))
+                return self.sendj({"ok":True,"status":"verified","plan":plan,"billing":billing,"expires_at":expiry_dt.isoformat(),"auto_renew_enabled":auto_renew,"profile_required":business_id is None,"message":"Google Play subscription verified. Your Skillvaya access has been updated."})
             if path=="/api/paypal/create-order":
                 u=self.require("provider"); plan=d.get("plan"); billing=d.get("billing")
                 if plan not in PLANS or billing not in ("monthly","yearly"): return self.sendj({"error":"Choose a valid plan and billing term."},400)
