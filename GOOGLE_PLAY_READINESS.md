@@ -13,7 +13,8 @@
 - Gradle rejects hosted URLs that are not HTTPS.
 - Manifest cleartext traffic is enabled only for local/offline mode; hosted builds use `usesCleartextTraffic=false`.
 - `prepare-play-bundle.ps1` requires an explicit HTTPS staging URL, refuses the production host, checks essential public routes, and requires explicit confirmation that staging uses a separate non-production database before building.
-- No commit, push, Render deployment, production database migration, live payment change, Play Console submission, or public APK replacement was performed.
+- The billing implementation was committed and pushed to the staging branch as `2b1fb2db427a816e99f616f4dfa6b69e4dbd09db`. A staging-only expected-database environment guard was configured. The billing commit has not yet been observed in a successful Render deployment.
+- No production deployment, production database migration, live payment change, Play Console submission, or public APK replacement was performed.
 
 ## Public endpoint checks on 28 October 2026
 GET requests returned HTTP 200 for:

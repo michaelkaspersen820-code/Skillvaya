@@ -37,7 +37,7 @@ https://skillvaya.onrender.com/account-deletion
 Live GET checks on 28 October 2026 returned HTTP 200 for this URL. Before submission, verify the full authenticated deletion-request and fulfilment workflow; a successful page response alone does not prove that the request is processed correctly.
 
 ## Store graphics
-Google Play requires a 512 × 512 PNG app icon (max 1 MB), a 1024 × 500 feature graphic, and at least two screenshots meeting current screenshot size/aspect requirements. The copied icon and feature graphic are drafts. Screenshots have intentionally not been copied from the older 1.2.9 build; capture and review them from the final tested 1.3.2 candidate before upload.
+Google Play requires a 512 × 512 PNG app icon (max 1 MB), a 1024 × 500 feature graphic, and at least two screenshots meeting current screenshot size/aspect requirements. The copied icon and feature graphic are drafts. Screenshots have intentionally not been copied from the older 1.2.9 build; capture and review them from the final tested 1.3.3 candidate before upload.
 
 Official guidance: https://support.google.com/googleplay/android-developer/answer/9866151
 
