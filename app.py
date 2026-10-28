@@ -1890,7 +1890,8 @@ let providerDetailReturnView='customer',categoryReturnView='customer';
 // Preserve the Contacts card's original Account location so it cannot leak across screens.
 let messagesCardHomeParent=null,messagesCardHomeNext=null;
 function restoreMessagesCardHome(){const card=document.getElementById('messagesCard');if(!card||!messagesCardHomeParent)return;card.classList.remove('messages-workspace-card');if(messagesCardHomeNext&&messagesCardHomeNext.parentNode===messagesCardHomeParent)messagesCardHomeParent.insertBefore(card,messagesCardHomeNext);else messagesCardHomeParent.appendChild(card);card.classList.add('hidden');card.style.removeProperty('display');card.style.removeProperty('visibility');messagesCardHomeParent=null;messagesCardHomeNext=null;}
-let cats=[],chosen='All categories',directorySearchActive=false,token=localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token')||sessionStorage.getItem('skillvaya_token')||sessionStorage.getItem('sv_token')||'',me=null,allBusinesses=[],favoriteIds=[];
+const DEFAULT_CATEGORIES=["Builders & construction","Plumbers","Electricians","Painters & decorators","Mechanics & automotive","Cleaning & housekeeping","Gardening & landscaping","Roofing & waterproofing","Carpenters & furniture","Welders & fabricators","Appliance repairs","IT & computer support","Graphic designers","Artists & photographers","Marketing & advertising","Web & software developers","Lawyers & legal services","Private doctors & clinics","Dentists & specialists","Nurses & home care","Accountants & tax","Financial & insurance services","Real estate & property","Tutors & education","Beauty & hair","Catering & chefs","Transport & removals","Security services","Events & entertainment","Tailors & fashion","Arts & crafts","Pet care & veterinary","Funeral services","Engineering & consulting","Other professional services","Doctors","Nurses","Mechanics","Gardeners","General practitioners (GPs)","Medical specialists","Dentists","Dental hygienists","Physiotherapists","Psychologists & counsellors","Optometrists","Pharmacists","Veterinarians","Home carers","Elderly care","Childcare & babysitters","Midwives","Auto electricians","Tyre fitters","Panel beaters & spray painters","Car washers & detailing","Motorcycle mechanics","Truck & diesel mechanics","Landscapers","Pool maintenance","Pest control","Tree services","Bricklayers","Plasterers","Tilers","Flooring installers","Glaziers & window fitters","Locksmiths","Solar installers","Air-conditioning & refrigeration","CCTV & alarm installers","Handymen","Quantity surveyors","Architects","Domestic workers","Laundry & ironing","Carpet & upholstery cleaning","Office cleaning","Waste removal","Computer repair","Mobile phone repair","Network technicians","Cybersecurity services","UX/UI designers","Video editors","Videographers","Translators & interpreters","Writers & editors","Consultants","Human resources & recruitment","Bookkeepers","Auditors","Mortgage brokers","Financial advisers","Insurance brokers","Estate agents","Property managers","Teachers","Exam tutors","Music teachers","Driving instructors","Training & coaching","Barbers","Hairdressers","Nail technicians","Make-up artists","Beauty therapists","Massage therapists","Personal trainers","Nutritionists","Chefs & private cooks","Bakers","Food vendors","Event planners","DJs & sound technicians","Musicians","MCs & entertainers","Florists","Wedding services","Fashion designers","Sewing & alterations","Upholstery","Delivery drivers","Moving & removals","Taxi & shuttle services","Tour guides","Courier services","Security guards","Private investigators","Fire safety services","Funeral directors","Cremation services","Civil engineers","Electrical engineers","Mechanical engineers","Environmental consultants","Surveyors","Interior designers","Signage & printing","Craftspeople","Handmade crafts & gifts","Pottery & ceramics","Jewellery makers","Textile arts & weaving","Knitting & crochet","Woodcraft & carving","Leathercraft","Candle & soap makers","Artisan makers","Art & craft workshops","Pet groomers","Dog walkers","Animal trainers"];
+let cats=DEFAULT_CATEGORIES.slice(),chosen='All categories',directorySearchActive=false,token=localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token')||sessionStorage.getItem('skillvaya_token')||sessionStorage.getItem('sv_token')||'',me=null,allBusinesses=[],favoriteIds=[];
 const planInfo=[
  ['local','Local',105,'Get listed and manage customer enquiries.',['Business profile and category listing','Customer requests and quotations','Private messages, photo/video sharing and video calls']],
  ['priority','Priority',210,'Improve discovery and quote turnaround.',['Everything in Local','Higher category placement and priority badge','Reusable quotation templates']],
@@ -1969,19 +1970,21 @@ async function init(){
   sessionInfo().then(user=>applyLaunchGate(user)).catch(e=>{console.warn('Session check failed:',e.message);applyLaunchGate(null)});
   loadBusinesses();
   loadPlatformRating();
-  try{
-    const d=await api('/api/categories');
-    cats=Array.isArray(d.categories)?d.categories:[];
+  const renderCategoryOptions=()=>{
     const categorySelect=document.getElementById('categories');
-    if(categorySelect){categorySelect.innerHTML='<option value="All categories">All categories</option>'+cats.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('');categorySelect.value=chosen;}
+    if(categorySelect){categorySelect.innerHTML='<option value="All categories">All categories</option>'+cats.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('');categorySelect.value=cats.includes(chosen)?chosen:'All categories';}
     const businessCategory=document.getElementById('bizCat');
-    if(businessCategory)businessCategory.innerHTML=cats.map(c=>'<option>'+esc(c)+'</option>').join('');
+    if(businessCategory){const previous=businessCategory.value;businessCategory.innerHTML=cats.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('');if(cats.includes(previous))businessCategory.value=previous;}
     renderDesignCategoryTiles();
-  }catch(e){
-    console.warn('Categories unavailable:',e.message);
-    const categorySelect=document.getElementById('categories');
-    if(categorySelect){categorySelect.innerHTML='<option value="All categories">All categories</option>';categorySelect.value='All categories';}
+  };
+  cats=DEFAULT_CATEGORIES.slice();renderCategoryOptions();
+  let d=null,lastError=null;
+  for(let attempt=0;attempt<3;attempt++){
+    try{d=await api('/api/categories');if(!d||!Array.isArray(d.categories)||!d.categories.length)throw Error('The category list was empty');break;}
+    catch(e){lastError=e;if(attempt<2)await new Promise(resolve=>setTimeout(resolve,350*(attempt+1)));}
   }
+  if(d&&Array.isArray(d.categories)&&d.categories.length){cats=d.categories;renderCategoryOptions();}
+  else console.warn('Using built-in service categories after API retries:',lastError&&lastError.message);
   if(me&&me.role==='admin'&&!document.getElementById('ownerEditionBar')){
     document.body.insertAdjacentHTML('afterbegin','<div id="ownerEditionBar" style="position:sticky;top:0;z-index:999;background:#0b766e;color:white;padding:10px 14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><strong>SKILLVAYA OWNER EDITION — ALL FEATURES UNLOCKED FREE</strong><a href="/owner-app" style="color:white;font-weight:700">← Back to Owner / Controller</a></div>');
   }
