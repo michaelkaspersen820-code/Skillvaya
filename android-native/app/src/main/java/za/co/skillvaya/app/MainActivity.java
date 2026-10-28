@@ -50,6 +50,10 @@ public class MainActivity extends Activity {
     private long lastVoiceStartAt = 0L;
     private static final int NATIVE_VOICE_PERMISSION_REQUEST = 7343;
     private NativeVoiceBridge nativeVoiceBridge;
+    private PlayBillingBridge playBillingBridge;
+    public void runBillingJavascript(String script) {
+        if (webView != null) runOnUiThread(() -> webView.evaluateJavascript(script, null));
+    }
     public final class NativeVoiceBridge {
         @JavascriptInterface public void start() { runOnUiThread(() -> startNativeVoice()); }
         @JavascriptInterface public void stop() { runOnUiThread(() -> stopNativeVoice(true)); }
@@ -244,6 +248,10 @@ public class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true); settings.setUserAgentString(settings.getUserAgentString() + " SkillvayaNative");
         nativeVoiceBridge = new NativeVoiceBridge();
         webView.addJavascriptInterface(nativeVoiceBridge, "SkillvayaVoice");
+        if (BuildConfig.PUBLIC_URL != null && BuildConfig.PUBLIC_URL.trim().startsWith("https://")) {
+            playBillingBridge = new PlayBillingBridge(this, BuildConfig.PUBLIC_URL.trim());
+            webView.addJavascriptInterface(playBillingBridge, "SkillvayaBilling");
+        }
         settings.setDatabaseEnabled(true); settings.setSupportZoom(false);
         // Always fetch the current hosted app instead of retaining stale WebView assets.
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
@@ -495,6 +503,11 @@ public class MainActivity extends Activity {
         try(InputStream in=getAssets().open(name);FileOutputStream fos=new FileOutputStream(out)){
             byte[] buffer=new byte[8192];int n;while((n=in.read(buffer))>0)fos.write(buffer,0,n);
         }
+    }
+    @Override protected void onDestroy() {
+        if (playBillingBridge != null) playBillingBridge.shutdown();
+        stopNativeVoice(false);
+        super.onDestroy();
     }
     @Override public void onBackPressed(){if(webView!=null&&webView.canGoBack())webView.goBack();else super.onBackPressed();}
 }

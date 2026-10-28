@@ -1,6 +1,6 @@
 import os, sys, tempfile, threading, urllib.request, urllib.error, json, sqlite3
 from pathlib import Path
-root=Path(r"C:\Users\user\Documents\Codex\Skillvaya-Play-Prep-20261028")
+root=Path(__file__).resolve().parent
 os.environ.pop("DATABASE_URL",None)
 os.environ.pop("PORT",None)
 os.environ["SKILLVAYA_HOST"]="127.0.0.1"
@@ -39,6 +39,7 @@ try:
         assert user and request and request["status"]=="pending"
         user_id=int(user["id"])
         c.execute("INSERT INTO payments(user_id,business_id,plan,billing,amount,reference,status,created_at) VALUES(?,NULL,'local','monthly',105,'deletion-test-ref','verified',?)",(user_id,app.now()))
+        c.execute("INSERT INTO password_reset_tokens(user_id,token_hash,created_at,expires_at,used_at) VALUES(?,?,?,?, '')",(user_id,"deletion-reset-token-hash",app.now(),app.now()))
     status,body=req("/api/admin/account-deletion-requests")
     queued=json.loads(body)
     assert status==200 and any(int(x["id"])==int(first["request_id"]) for x in queued["items"])
@@ -52,6 +53,7 @@ try:
         payment=c.execute("SELECT user_id,business_id,pf_payment_id,paypal_order_id,paypal_capture_id FROM payments WHERE reference='deletion-test-ref'").fetchone()
         assert payment and int(payment["user_id"])==0 and payment["business_id"] is None
         assert not c.execute("SELECT token FROM auth_sessions WHERE user_id=?",(user_id,)).fetchone()
+        assert not c.execute("SELECT id FROM password_reset_tokens WHERE user_id=?",(user_id,)).fetchone()
     status,body=req("/api/admin/account-deletion-requests/"+str(first["request_id"])+"/complete","POST",{})
     assert status==409, (status,body)
 
@@ -68,6 +70,8 @@ try:
         message_id=int(c.execute("SELECT id FROM messages WHERE business_id=?",(business_id,)).fetchone()["id"])
         c.execute("INSERT INTO message_attachments(message_id,business_id,customer_id,sender_id,filename,mime_type,size_bytes,data_base64,created_at) VALUES(?,?,?,?,?,?,?,?,?)",(message_id,business_id,provider_id,provider_id,"temp.txt","text/plain",4,"dGVzdA==",app.now()))
         c.execute("INSERT INTO payments(user_id,business_id,plan,billing,amount,reference,status,created_at) VALUES(?,?,'local','monthly',105,'provider-deletion-test-ref','verified',?)",(provider_id,business_id,app.now()))
+        c.execute("CREATE TABLE IF NOT EXISTS google_play_subscriptions (purchase_token TEXT PRIMARY KEY,user_id BIGINT NOT NULL,business_id BIGINT,product_id TEXT NOT NULL,base_plan_id TEXT NOT NULL,order_id TEXT,state TEXT NOT NULL,expiry_time TEXT NOT NULL,auto_renew_enabled BOOLEAN NOT NULL,updated_at TEXT NOT NULL)")
+        c.execute("INSERT INTO google_play_subscriptions(purchase_token,user_id,business_id,product_id,base_plan_id,order_id,state,expiry_time,auto_renew_enabled,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",("test-purchase-token",provider_id,business_id,"skillvaya_local","monthly","test-order","SUBSCRIPTION_STATE_ACTIVE",app.now(),True,app.now()))
     status,body=req("/api/account/delete-request","POST",{"reason":"Provider deletion regression test"},provider_token)
     provider_request=json.loads(body)
     assert status==202, (status,body)
@@ -81,11 +85,13 @@ try:
         assert not c.execute("SELECT id FROM provider_campaigns WHERE business_id=?",(business_id,)).fetchone()
         pp=c.execute("SELECT user_id,business_id FROM payments WHERE reference='provider-deletion-test-ref'").fetchone()
         assert pp and int(pp["user_id"])==0 and pp["business_id"] is None
+        assert not c.execute("SELECT purchase_token FROM google_play_subscriptions WHERE purchase_token='test-purchase-token'").fetchone()
     print("PASS: public deletion information GET and HEAD return 200")
     print("PASS: signed-in deletion request is recorded and duplicates are idempotent")
     print("PASS: owner-only queue lists pending requests")
     print("PASS: completion deletes account, sessions and associated app data transactionally")
     print("PASS: completion clears email/reason from the audit request and minimizes payment identifiers")
+    print("PASS: account deletion removes password-reset tokens and Google Play purchase tokens")
     print("PASS: repeated completion is rejected without repeating deletion")
 finally:
     server.shutdown(); server.server_close()
