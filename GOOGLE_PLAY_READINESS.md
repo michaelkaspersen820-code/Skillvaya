@@ -13,7 +13,7 @@
 - Gradle rejects hosted URLs that are not HTTPS.
 - Manifest cleartext traffic is enabled only for local/offline mode; hosted builds use `usesCleartextTraffic=false`.
 - `prepare-play-bundle.ps1` requires an explicit HTTPS staging URL, refuses the production host, checks essential public routes, and requires explicit confirmation that staging uses a separate non-production database before building.
-- The base billing commit `2b1fb2d` is pushed. The local merge commit includes production commit `e8efbad` (password recovery and owner deletion queue) plus subscription replacement, no-Pub/Sub lifecycle polling and deletion-token cleanup; it is not pushed yet.
+- The candidate branch now includes production commit `e8efbad` (password recovery and owner deletion queue) plus prepaid subscription replacement, no-Pub/Sub lifecycle polling and deletion-token cleanup. Candidate commit `800bbf5` is pushed to `feature/account-deletion-staging-20261028`; the production branch remains unchanged.
 - No production deployment, production database migration, live payment change, Play Console submission, or public APK replacement was performed.
 
 ## Public endpoint checks on 28 October 2026
@@ -46,4 +46,4 @@ The selected model is prepaid monthly and annual subscriptions with no automatic
 - Subscription setup: https://support.google.com/googleplay/android-developer/answer/140504
 
 ## Release decision
-The current source baseline is 1.3.3 / code 34; local regression tests and Android Java compilation pass. The latest staging deploy failed safely because `DATABASE_URL` is missing, so the database guard prevented the new code from starting. Render currently reports no open port and the staging URL timed out; staging is unavailable until the database is connected. Production was not changed.
+The current source baseline is 1.3.3 / code 34; local regression tests and Android Java compilation pass. A production-targeted signed APK and AAB have been built, and their signing certificate matches the existing downloaded production APK. The latest staging deploy failed safely because `DATABASE_URL` is missing, so the database guard prevented the new code from starting. Render currently reports no open port and the staging URL timed out; staging is unavailable until the database is connected. Production was not changed.

@@ -3,7 +3,7 @@
 ## Isolated candidate
 - Folder: `C:\Users\user\Documents\Codex\Skillvaya-Play-Prep-Latest-20261028`
 - Branch: `feature/account-deletion-staging-20261028`
-- Base billing commit previously pushed: `2b1fb2d` — Play Billing implementation and release guards. The local merge commit includes production commit `e8efbad` plus billing/data-deletion hardening; it is committed locally but not pushed yet.
+- Base billing commit previously pushed: `2b1fb2d` — Play Billing implementation and release guards. Candidate commit `800bbf5` includes production commit `e8efbad` plus billing/data-deletion hardening and is pushed to `feature/account-deletion-staging-20261028`; production remains unchanged.
 - Package: `za.co.skillvaya.app`
 - Candidate source: **1.3.3 / versionCode 34**
 - Target and compile SDK: **36**
@@ -45,4 +45,4 @@
 7. Finish evidence-based Data Safety answers, account-deletion workflow test, store listing assets, physical-device regression and Play Console warnings/crash/ANR review.
 
 ## Important
-The current source has passed local regression and Android compile checks, but **Play Console products, Google API credentials, staging database connection, signed internal-test bundle and real purchase tests are not complete**. Pub/Sub is optional for this polling design. Do not submit this candidate to production until these gates pass.
+The current source has passed local regression and Android compile checks; a signed 1.3.3 / code 34 APK and AAB now exist and match the existing APK signing certificate. However, **Play Console products, Google API credentials, staging database connection, isolated internal-test setup and real purchase tests are not complete**. Pub/Sub is optional for this polling design. Do not submit this candidate to production until these gates pass.
