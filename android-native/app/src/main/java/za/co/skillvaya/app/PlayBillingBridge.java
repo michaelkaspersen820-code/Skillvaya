@@ -165,11 +165,9 @@ public final class PlayBillingBridge implements PurchasesUpdatedListener {
                 emit("window.svPlayBillingError", "Your current subscription cannot be replaced safely in-app. Manage it in Google Play before choosing another plan.");
                 return;
             }
-            int replacementMode = newRank > oldRank
-                ? BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.ReplacementMode.CHARGE_PRORATED_PRICE
-                : (newRank < oldRank
-                    ? BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.ReplacementMode.DEFERRED
-                    : BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.ReplacementMode.WITHOUT_PRORATION);
+            // Skillvaya uses prepaid, non-auto-renewing base plans. Google Play requires
+            // CHARGE_FULL_PRICE when replacing a prepaid plan; proration/deferred modes fail.
+            int replacementMode = BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.ReplacementMode.CHARGE_FULL_PRICE;
             detailBuilder.setSubscriptionProductReplacementParams(BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.newBuilder()
                 .setOldProductId(oldProductId).setReplacementMode(replacementMode).build());
             flowBuilder.setSubscriptionUpdateParams(BillingFlowParams.SubscriptionUpdateParams.newBuilder()

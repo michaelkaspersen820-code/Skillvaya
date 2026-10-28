@@ -39,9 +39,9 @@
 ## Still required before release
 1. Connect the staging Render service to `skillvaya_deletion_staging_db`. The expected-database guard is configured, but `DATABASE_URL` is missing, so the latest staging deployment failed safely. Render currently reports no open port and the staging URL timed out; staging is unavailable until the database is connected.
 2. Confirm the staging service starts against that separate database before any account deletion or payment test.
-3. Sign in to Play Console, check whether the four product IDs already exist, then create/activate the recurring monthly and annual base plans.
+3. Sign in to Play Console, check whether the four product IDs already exist, then create/activate the prepaid monthly and annual base plans (no auto-renewal).
 4. Enable Android Publisher API, create a service account, grant minimum Play Console permissions and store the JSON key only in staging secrets. No paid API key or Pub/Sub setup is required for the current polling design.
-5. Upload a signed AAB to internal testing and run actual license-tester purchases: success, pending, restore, tier replacement, cancellation, renewal, grace period, expiry, refund/revocation, wrong-account token, duplicate token and second-device access.
+5. Upload a signed AAB to internal testing and run actual license-tester purchases: success, pending, restore, prepaid tier replacement, separate manual extension purchase, expiry, refund/revocation, wrong-account token, duplicate token and second-device access.
 7. Finish evidence-based Data Safety answers, account-deletion workflow test, store listing assets, physical-device regression and Play Console warnings/crash/ANR review.
 
 ## Important

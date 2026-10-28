@@ -31,7 +31,7 @@ The live customer-app HTML contains the account-deletion request text; the publi
 
 ## Play release blockers
 Play Console products, API credentials and isolated staging verification are still required; Pub/Sub is not a release prerequisite for the polling design.
-2. **Play Console product setup is pending.** The selected model is recurring auto-renewing subscriptions with cancellation through Google Play. Product IDs, base plans and prices are documented in `PLAY_BILLING_SETUP.md`; existing IDs must be checked before creation; product IDs must be checked in Console before creation.
+The selected model is prepaid monthly and annual subscriptions with no automatic renewal; users must approve a new purchase to extend access.
 3. **Data safety is not final.** `DATA_SAFETY_WORKSHEET.md` is an evidence checklist, not a completed Play Console declaration.
 4. **Deletion workflow needs staging verification.** The public URLs respond, but test request/queue/completion/email using a confirmed isolated database and physical device.
 5. **Store assets are drafts.** The copied 512x512 icon and 1024x500 feature graphic need final review; screenshots must be captured from the tested 1.3.3 candidate, not copied from the older version.

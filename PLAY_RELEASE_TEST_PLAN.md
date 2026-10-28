@@ -18,11 +18,11 @@
 
 ## Not yet verified — release blockers
 - [ ] Verify the staging startup guard reports the expected isolated database before any purchase/deletion tests.
-- [ ] Create/confirm recurring auto-renewing Google Play subscription products and monthly/annual base plans.
+Create/confirm Google Play subscription products with prepaid monthly and annual base plans. Verify automatic renewal is disabled because prepaid plans are required.
 - [ ] Configure Google Android Publisher API service-account credentials on staging. Pub/Sub/RTDN is optional; no-Pub/Sub lifecycle polling is implemented.
 - [ ] Connect the staging service to `skillvaya_deletion_staging_db`; the latest deployment failed safely because `DATABASE_URL` is missing; Render reports no open port and the staging URL timed out.
 - [ ] Test successful, pending, invalid, duplicate and wrong-user purchases with Play license testers in isolated staging.
-- [ ] Verify renewals, cancellation, expiry, refund/revocation, restore, tier replacement and cross-device handling.
+Verify manual extension purchases, prepaid expiry, refund/revocation, restore, CHARGE_FULL_PRICE tier replacement and cross-device handling. Confirm no auto-renewal occurs.
 - [ ] Verify deletion request capture, owner queue, completion and email acknowledgement in isolated staging.
 - [ ] Review data inventory and complete evidence-based Data safety answers.
 - [ ] Review privacy policy and account-deletion page content/fulfilment process.
@@ -33,7 +33,7 @@
 - [ ] Upload to internal testing, review Play Console warnings and crash/ANR reports, complete any account-specific closed testing, and only then request production access.
 
 ## Billing model
-Use Google Play Billing for eligible digital provider plans in the Play app. Keep PayPal on the website. Use recurring auto-renewing monthly and annual subscriptions, with cancellation through Google Play. Do not grant entitlements from a client-only success callback.
+Use Google Play Billing for eligible digital provider plans in the Play app. Keep PayPal on the website. Use prepaid monthly and annual plans with no automatic renewal; each extension requires a new user-approved purchase. Do not grant entitlements from a client-only success callback.
 
 ## Safety
 Do not run destructive deletion tests or payment tests against live production data. Do not replace the existing APK, deploy to production, change live PayPal settings, or submit a release until the candidate has passed the checks above and the user explicitly approves the release.

@@ -64,9 +64,12 @@ class GooglePlayBillingGuards(unittest.TestCase):
         self.assertIn("queryPurchasesAsync(existingParams", JAVA)
         self.assertIn("setOldPurchaseToken(existingPurchase.getPurchaseToken())", JAVA)
         self.assertIn("setSubscriptionProductReplacementParams", JAVA)
-        self.assertIn("ReplacementMode.CHARGE_PRORATED_PRICE", JAVA)
-        self.assertIn("ReplacementMode.DEFERRED", JAVA)
+        self.assertIn("ReplacementMode.CHARGE_FULL_PRICE", JAVA)
+        self.assertNotIn("ReplacementMode.CHARGE_PRORATED_PRICE", JAVA)
+        self.assertNotIn("ReplacementMode.DEFERRED", JAVA)
         self.assertIn("active.size() > 1", JAVA)
+        self.assertIn("prepaidPlan", APP)
+        self.assertIn("Google Play products must use prepaid base plans", APP)
 
     def test_server_rejects_unknown_base_plan_and_retires_replaced_token(self):
         route = APP[APP.index('if path=="/api/google-play/verify":'):APP.index('if path=="/api/paypal/create-order":')]
@@ -83,6 +86,13 @@ class GooglePlayBillingGuards(unittest.TestCase):
         self.assertIn("status='expired'", APP)
         self.assertIn("refresh_google_play_subscription_for_user(int(play_user[\"user_id\"]))", APP)
         self.assertIn("CREATE TABLE IF NOT EXISTS google_play_subscriptions", APP)
+
+    def test_plan_is_prepaid_and_never_auto_renews(self):
+        self.assertIn("will not renew automatically", APP)
+        self.assertIn("prepaid monthly or annual periods and do not renew automatically", APP)
+        self.assertIn("prepaidPlan", APP)
+        self.assertIn("Google Play products must use prepaid base plans", APP)
+        self.assertIn("ReplacementMode.CHARGE_FULL_PRICE", JAVA)
 
     def test_recurring_subscription_lifecycle_endpoint_is_authenticated(self):
         self.assertIn('if path == "/api/google-play/rtdn":', APP)
