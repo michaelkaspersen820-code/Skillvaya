@@ -1944,8 +1944,15 @@ async function openProviderOnboarding(){
   }
   if(me.role==='provider'){
     // Existing providers go straight to their own listing editor if eligible;
-    // refreshProviderGate retains the payment-verification requirement otherwise.
+    // when checkout is still required, always render the full subscription tiers.
     await refreshProviderGate();
+    drawPlans();
+    const planRoot=document.getElementById('plans');
+    const planCard=document.getElementById('providerPlansCard');
+    if(planRoot&&planCard&&!planRoot.querySelector('[data-plan]')){
+      planCard.classList.remove('hidden');
+      drawPlans();
+    }
     window.scrollTo({top:0,behavior:'auto'});
     return;
   }
