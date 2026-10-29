@@ -4033,7 +4033,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         JOIN users cu ON cu.id=vc.customer_id JOIN users caller ON caller.id=vc.caller_id
                         JOIN users callee ON callee.id=vc.callee_id """
                     if u["role"]=="provider":
-                        rows=c.execute(base_query+"WHERE b.user_id=? AND vc.status IN ('ringing','accepted') ORDER BY vc.created_at DESC LIMIT 30",(u["id"],)).fetchall()
+                        # Include calls where this provider is a direct caller/callee as well
+                        # as calls on their own listing. Provider accounts can message other
+                        # providers as customer-side participants in the existing chat model.
+                        rows=c.execute(base_query+"WHERE (b.user_id=? OR vc.caller_id=? OR vc.callee_id=?) AND vc.status IN ('ringing','accepted') ORDER BY vc.created_at DESC LIMIT 30",(u["id"],u["id"],u["id"])).fetchall()
                     elif u["role"]=="customer":
                         rows=c.execute(base_query+"WHERE vc.customer_id=? AND vc.status IN ('ringing','accepted') ORDER BY vc.created_at DESC LIMIT 30",(u["id"],)).fetchall()
                     else:
@@ -4565,15 +4568,25 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     except Exception: return self.sendj({"error":"A valid camera/microphone call offer is required."},400)
                     with conn() as c:
                         biz=c.execute("SELECT id,user_id,name,status FROM businesses WHERE id=?",(bid,)).fetchone()
-                        customer=c.execute("SELECT id,role FROM users WHERE id=?",(customer_id,)).fetchone()
                         if not biz or biz["status"] not in ("active","approved","published"): return self.sendj({"error":"The provider listing is not available."},404)
-                        if not customer or customer["role"]!="customer": return self.sendj({"error":"The customer conversation was not found."},404)
+                        # `customer_id` is the legacy name for the customer-side chat participant.
+                        # Existing chat routes also let provider accounts contact another provider,
+                        # where that participant is a provider-role user rather than a customer-role user.
+                        if u["role"]=="customer": customer_id=int(u["id"])
+                        elif u["role"]=="provider" and int(biz["user_id"] or 0)!=int(u["id"]): customer_id=int(u["id"])
+                        customer=c.execute("SELECT id,role FROM users WHERE id=?",(customer_id,)).fetchone()
+                        if not customer or customer["role"] not in ("customer","provider","admin"): return self.sendj({"error":"The conversation participant was not found."},404)
                         if u["role"]=="customer":
                             if int(u["id"])!=customer_id or int(biz["user_id"] or 0)==int(u["id"]): return self.sendj({"error":"You cannot call this chat."},403)
                             callee_id=int(biz["user_id"])
                         elif u["role"]=="provider":
-                            if int(biz["user_id"] or 0)!=int(u["id"]): return self.sendj({"error":"You can call only from your own provider chat."},403)
-                            callee_id=customer_id
+                            if int(biz["user_id"] or 0)==int(u["id"]):
+                                if customer_id==int(u["id"]): return self.sendj({"error":"You cannot call your own listing."},403)
+                                callee_id=customer_id
+                            else:
+                                # This provider is the customer-side participant in another provider's chat.
+                                customer_id=int(u["id"])
+                                callee_id=int(biz["user_id"] or 0)
                         else:
                             callee_id=customer_id if customer_id!=int(u["id"]) else int(biz["user_id"] or 0)
                             if callee_id<=0: return self.sendj({"error":"Choose a valid call recipient."},400)
