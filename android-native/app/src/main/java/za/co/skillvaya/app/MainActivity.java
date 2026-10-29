@@ -86,8 +86,8 @@ public class MainActivity extends Activity {
                     intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false);
                     // Ask compatible Android speech services for punctuation and text formatting.
                     if (android.os.Build.VERSION.SDK_INT >= 33) intent.putExtra("android.speech.extra.ENABLE_FORMATTING", "quality");
-                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 180000L);
-                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 180000L);
+                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 10000L);
+                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L);
                     nativeSpeechRecognizer.startListening(intent);
                 }
             } catch (Exception e) {
@@ -120,7 +120,8 @@ public class MainActivity extends Activity {
                     if (!nativeVoiceActive) return;
                     if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
                             || error == SpeechRecognizer.ERROR_NETWORK || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT
-                            || error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                            || error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY
+                            || error == SpeechRecognizer.ERROR_CLIENT) {
                         // Recognition sessions naturally terminate between phrases on many Android services.
                         // Keep the same user-initiated dictation session alive and preserve accumulated text.
                         scheduleNativeVoiceRestart();
@@ -152,8 +153,8 @@ public class MainActivity extends Activity {
             intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false);
                     // Ask compatible Android speech services for punctuation and text formatting.
                     if (android.os.Build.VERSION.SDK_INT >= 33) intent.putExtra("android.speech.extra.ENABLE_FORMATTING", "quality");
-            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 180000L);
-            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 180000L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 10000L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L);
             nativeSpeechRecognizer.startListening(intent);
         } catch (Exception e) {
             nativeVoiceActive = false;

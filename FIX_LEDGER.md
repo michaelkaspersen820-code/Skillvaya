@@ -52,3 +52,4 @@ Validation note: source syntax, diff whitespace, release version metadata, signi
 - `SV58-CHAT-MIC-04` - use a stable HTML microphone entity in empty and populated conversations and remove the duplicate title attribute.
 
 - `SV58-CHAT-ENTRY-05` - the initial Contact-provider path now includes a flexible message region above the composer, so the first-message text box also stays at the bottom of the conversation viewport.
+- `SV59-VOICE-01` - Android-native dictation now allows longer natural pauses (10-second complete silence / 5-second possible-complete silence) and retries recoverable Android client errors while the user-initiated voice session remains active. Scoped to `MainActivity.java`; no conversation markup, CSS, message API, account/session logic, or WorkFinder navigation changed. Release: 7.1.5.6 / versionCode 59.
