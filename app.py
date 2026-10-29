@@ -2049,7 +2049,7 @@ async function openMyTeamAssignments(){
 async function updateMyTeamAssignment(id,status){try{await api('/api/team/my-assignments',{method:'POST',body:JSON.stringify({assignment_id:Number(id),status})});await openMyTeamAssignments();}catch(e){alert(e.message);}}
 
 function updateSkillvayaProviderTab(){const nav=document.getElementById('nav-provider');if(nav){nav.classList.remove('hidden');nav.style.removeProperty('display');nav.style.removeProperty('visibility');}} updateSkillvayaProviderTab();
-function openProviderWorkstation(){Promise.resolve(me?me:sessionInfo()).then(user=>{if(!user){view('settings');profileAuthMode('signin');return;}if(user.role==='customer'){view('customer');return;}view('services');});} let svWorkspacePlan='local',svWorkspaceRank=0,svWorkspaceBusiness=null,svWorkspaceTemplates=[];
+function openProviderWorkstation(){if(me){if(me.role==='customer'){view('customer');return;}view('services');return;}view('services');sessionInfo().then(user=>{if(user&&user.role==='customer')view('customer');else if(user&&(user.role==='provider'||user.role==='admin'))view('services');}).catch(()=>{});} let svWorkspacePlan='local',svWorkspaceRank=0,svWorkspaceBusiness=null,svWorkspaceTemplates=[];
 const svWorkspaceRanks={local:0,priority:1,plus:2,spotlight:3};
 function svProviderTierName(plan){return ({local:'Local',priority:'Priority',plus:'Business Plus',spotlight:'Business Spotlight'})[plan]||'Local';}
 function svWorkstationCard(icon,title,description,button,onclick,locked){
@@ -2062,6 +2062,8 @@ async function loadProviderWorkstation(){
  if(!me||!(me.role==='provider'||me.role==='admin')){root.innerHTML='<div class="sv-workstation"><div class="sv-workstation-hero"><h1>Provider-only workstation</h1><p>Sign in with a service-provider account to open the business tools. Customers can continue browsing and chatting for free.</p><button type="button" class="sv-tool-outline" onclick="view(\'settings\')">Open Account</button></div></div>';return;}
  svWorkspacePlan=me.role==='admin'?(window.svSubscriptionTestMode?window.svSubscriptionTestTier:'spotlight'):'local';svWorkspaceRank=me.role==='admin'?(svWorkspaceRanks[svWorkspacePlan]??3):0;svWorkspaceBusiness=null;
  if(me.role==='provider'){
+  // Paint usable core tools immediately; plan verification upgrades the workstation asynchronously.
+  cards.innerHTML='<div class="sv-workstation-banner">Checking your provider plan? your workspace is ready below.</div>'+[svWorkstationCard('?','Requests & Quotations','Review customer requests and send quotations.','Open requests',"openProviderTool('requests')",false),svWorkstationCard('?','Messages & Video Calls','Open your existing private chats.','Open messages',"showMessagesScreen(true)",false),svWorkstationCard('?','Profile & Portfolio','Edit your business details and portfolio.','Manage profile',"view('provider')",false)].join('');
   try{const d=await api('/api/provider/profile');svWorkspaceBusiness=d.business||null;if(svWorkspaceBusiness){svWorkspacePlan=String(svWorkspaceBusiness.plan||'local').toLowerCase();svWorkspaceRank=svWorkspaceRanks[svWorkspacePlan]??0;}}
   catch(e){cards.innerHTML='<div class="sv-workstation-banner">Could not verify your provider plan: '+esc(e.message)+'. Retry after your connection returns.</div>';return;}
  }
@@ -2355,7 +2357,7 @@ function toggleServicesCategories(){
   const card=document.getElementById('servicesCategoriesCard');if(card){card.classList.add('hidden');card.style.display='none';}
 }
 
-function view(v){if(v==='provider'&&window.svSubscriptionTestMode){openSubscriptionTestProfile();return;}if(v==='settings'&&window.svSubscriptionTestMode){window.svSubscriptionTestMode=false;document.body.classList.remove('subscription-test-screen-mode');document.querySelectorAll('[data-sv-subtest-toolbar]').forEach(x=>x.remove());}if(v==='services'&&(!me||(me.role!=='provider'&&me.role!=='admin'))){openProviderWorkstation();return;}
+function view(v){if(v==='provider'&&window.svSubscriptionTestMode){openSubscriptionTestProfile();return;}if(v==='settings'&&window.svSubscriptionTestMode){window.svSubscriptionTestMode=false;document.body.classList.remove('subscription-test-screen-mode');document.querySelectorAll('[data-sv-subtest-toolbar]').forEach(x=>x.remove());}if(v==='services'&&me&&me.role!=='provider'&&me.role!=='admin'){openProviderWorkstation();return;}
  // Release stale viewport locks before changing destinations; keep normal document scrolling enabled.
  if(v!=='messages'){if(typeof accountSubspaceCurrent!=='undefined'&&accountSubspaceCurrent)closeAccountSubspace();document.body.classList.remove('messages-conversation-open','account-subspace-open');document.body.style.removeProperty('overflow');}
  // Restore Contacts to its Account location whenever the user navigates elsewhere.
