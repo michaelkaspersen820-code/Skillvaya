@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'com.chaquo.python'
+    id 'com.google.gms.google-services'
 }
 android {
     namespace 'za.co.skillvaya.app'
@@ -56,6 +57,8 @@ configurations.configureEach {
 dependencies {
     implementation "androidx.core:core:1.15.0"
     implementation "com.android.billingclient:billing:9.1.0"
+    implementation platform("com.google.firebase:firebase-bom:35.1.0")
+    implementation "com.google.firebase:firebase-messaging"
 }
 chaquopy {
     defaultConfig {

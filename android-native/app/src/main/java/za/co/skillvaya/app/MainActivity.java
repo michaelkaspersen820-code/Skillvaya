@@ -56,6 +56,7 @@ public class MainActivity extends Activity {
     private boolean nativeVoiceActive = false;
     private long lastVoiceStartAt = 0L;
     private static final int NATIVE_VOICE_PERMISSION_REQUEST = 7343;
+    private static final int PUSH_NOTIFICATION_PERMISSION_REQUEST = 7344;
     private NativeVoiceBridge nativeVoiceBridge;
     private CallRingerBridge callRingerBridge;
     private PlayBillingBridge playBillingBridge;
@@ -240,6 +241,14 @@ public class MainActivity extends Activity {
             }
         }
     };
+    private final Runnable pushTokenRegistrationRetry = new Runnable() {
+        @Override public void run() {
+            if (BuildConfig.PUBLIC_URL != null && !BuildConfig.PUBLIC_URL.trim().isEmpty() && !isFinishing()) {
+                PushTokenRegistrar.register(MainActivity.this, BuildConfig.PUBLIC_URL);
+                loadingHandler.postDelayed(this, 20000);
+            }
+        }
+    };
     private ValueCallback<Uri[]> filePathCallback;
     private Uri cameraOutputUri;
     private PermissionRequest pendingWebPermission;
@@ -266,6 +275,9 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, PUSH_NOTIFICATION_PERMISSION_REQUEST);
+        }
         getWindow().setStatusBarColor(Color.rgb(7,20,38));
         getWindow().setNavigationBarColor(Color.rgb(7,20,38));
         FrameLayout root = new FrameLayout(this);
@@ -302,6 +314,7 @@ public class MainActivity extends Activity {
         root.addView(loadingPanel, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root); webView.setVisibility(WebView.GONE);
         loadingHandler.post(loadingAnimation);
+        loadingHandler.postDelayed(pushTokenRegistrationRetry, 5000);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true); settings.setUserAgentString(settings.getUserAgentString() + " SkillvayaNative");
         nativeVoiceBridge = new NativeVoiceBridge();
@@ -462,6 +475,7 @@ public class MainActivity extends Activity {
                         view.evaluateJavascript("(function(){var p=location.pathname||'';var b=document.body;var owner=p.indexOf('/owner-app')===0;var customer=p.indexOf('/customer-app')===0;var t=(document.title||'').toLowerCase();if(owner)return !!(b&&b.children.length>0&&(document.getElementById('loginScreen')||document.getElementById('appShell')));return customer&&!!b&&t.indexOf('skillvaya')>=0&&t.indexOf('render')<0&&b.innerText.trim().length>20;})()", value -> {
                             if ("true".equals(value)) {
                                 hostedAppReady = true;
+                                PushTokenRegistrar.register(MainActivity.this, BuildConfig.PUBLIC_URL);
                                 loadingHandler.removeCallbacks(retryHostedPage);
                                 loadingHandler.removeCallbacks(loadingAnimation);
                                 status.setText("Ready");
@@ -565,6 +579,7 @@ public class MainActivity extends Activity {
         }
     }
     @Override protected void onDestroy() {
+        loadingHandler.removeCallbacks(pushTokenRegistrationRetry);
         if (playBillingBridge != null) playBillingBridge.shutdown();
       if (callRingerBridge != null) callRingerBridge.shutdown();
         stopNativeVoice(false);

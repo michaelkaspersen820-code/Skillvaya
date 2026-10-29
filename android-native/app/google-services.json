@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "20602715455",
+    "project_id": "skillvaya-1516b",
+    "storage_bucket": "skillvaya-1516b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:20602715455:android:1f5a392d0d2d0d5474a78a",
+        "android_client_info": {
+          "package_name": "za.co.skillvaya.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDFDlj0ruuKR8IIztHRO_tjCjzr7aSyIRI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

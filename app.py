@@ -56,6 +56,48 @@ else:
         c.row_factory = sqlite3.Row
         return c
 
+def fcm_send_to_user(user_id, title, body, data=None):
+    """Best-effort FCM delivery. Push failures must never break chat or call APIs."""
+    raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+    if not raw:
+        return
+    try:
+        import firebase_admin
+        from firebase_admin import credentials, messaging
+        try:
+            firebase_admin.get_app("skillvaya_fcm")
+        except ValueError:
+            info = json.loads(raw)
+            firebase_admin.initialize_app(credentials.Certificate(info), name="skillvaya_fcm")
+        app = firebase_admin.get_app("skillvaya_fcm")
+        with conn() as c:
+            rows = c.execute("SELECT token FROM push_device_tokens WHERE user_id=? AND enabled=1", (int(user_id),)).fetchall()
+        for row in rows:
+            token = str(row["token"] or "").strip()
+            if not token:
+                continue
+            payload = {str(k): str(v)[:500] for k, v in (data or {}).items() if v is not None}
+            payload["title"] = str(title)[:100]
+            payload["body"] = str(body)[:220]
+            try:
+                # Data-only high-priority messages let the Android service apply the dedicated
+                # ringtone channel for calls instead of Android's generic FCM notification channel.
+                messaging.send(messaging.Message(
+                    token=token,
+                    data=payload,
+                    android=messaging.AndroidConfig(priority="high", ttl=300000),
+                ), app=app)
+            except messaging.UnregisteredError:
+                with conn() as c:
+                    c.execute("UPDATE push_device_tokens SET enabled=0,updated_at=? WHERE token=?", (now(), token))
+    except Exception as exc:
+        # Deliberately swallow errors: notifications are supplemental to existing polling.
+        print("FCM delivery unavailable:", type(exc).__name__)
+
+def ensure_push_token_table():
+    with conn() as c:
+        c.execute("CREATE TABLE IF NOT EXISTS push_device_tokens (token TEXT PRIMARY KEY, user_id BIGINT NOT NULL, platform TEXT NOT NULL DEFAULT 'android', enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)")
+
 def execute_script(c, script):
     if not DATABASE_URL:
         script = script.replace("BIGSERIAL PRIMARY KEY", "INTEGER PRIMARY KEY")
@@ -4326,6 +4368,25 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return self.sendj({"error":"PayFast is paused. PayPal is the only supported checkout provider."},410)
             d=self.body()
 
+            if path == "/api/push/register":
+                u = self.require()
+                token = str(d.get("token", "")).strip()
+                if len(token) < 40 or len(token) > 4096:
+                    return self.sendj({"error":"Invalid device token."},400)
+                ensure_push_token_table()
+                stamp = now()
+                with conn() as c:
+                    c.execute("INSERT INTO push_device_tokens(token,user_id,platform,enabled,created_at,updated_at) VALUES(?,?,?,1,?,?) ON CONFLICT(token) DO UPDATE SET user_id=excluded.user_id,platform=excluded.platform,enabled=1,updated_at=excluded.updated_at",
+                              (token,int(u["id"]),str(d.get("platform","android"))[:20],stamp,stamp))
+                return self.sendj({"ok":True})
+            if path == "/api/push/unregister":
+                u = self.require()
+                token = str(d.get("token", "")).strip()
+                if token:
+                    ensure_push_token_table()
+                    with conn() as c:
+                        c.execute("UPDATE push_device_tokens SET enabled=0,updated_at=? WHERE token=? AND user_id=?", (now(),token,int(u["id"])))
+                return self.sendj({"ok":True})
             if path == "/api/google-play/rtdn":
                 expected_audience=os.environ.get("GOOGLE_PLAY_RTDN_AUDIENCE","").strip()
                 expected_email=os.environ.get("GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL","").strip()
@@ -4624,6 +4685,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         c.execute("INSERT INTO video_calls(id,business_id,customer_id,caller_id,callee_id,status,offer_sdp,answer_sdp,created_at,updated_at,ended_at) VALUES(?,?,?,?,?,'ringing',?,'',?,?, '')",(call_id,bid,customer_id,u["id"],callee_id,offer_obj and json.dumps(offer_obj),stamp,stamp))
                         # Save a call-invitation event in the existing chat so both sides have a durable record.
                         c.execute("INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)",(bid,customer_id,u["id"],"Video call invitation",stamp))
+                    try:
+                        fcm_send_to_user(callee_id, "Skillvaya calling", (u.get("name") or "Your contact") + " is calling you",
+                                         {"type":"incoming_call","call_id":call_id,"business_id":bid,"customer_id":customer_id})
+                    except Exception:
+                        pass
                     return self.sendj({"ok":True,"call_id":call_id,"status":"ringing"},201)
                 try: call_id=str(d.get("call_id","")).strip()
                 except Exception: call_id=""
@@ -5203,6 +5269,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     c.execute("INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)",(bid,customer_id,u["id"],body,now()))
                     if u["role"]=="customer":
                         c.execute("INSERT INTO enquiries(business_id,customer_id,message,created_at) VALUES(?,?,?,?)",(bid,customer_id,body,now()))
+                    recipient_id = int(biz["user_id"]) if int(biz["user_id"] or 0) != int(u["id"]) else int(customer_id)
+                try:
+                    fcm_send_to_user(recipient_id, "Skillvaya message", (u.get("name") or "Your contact") + ": " + body,
+                                     {"type":"message","business_id":bid,"customer_id":customer_id})
+                except Exception:
+                    pass
                 return self.sendj({"ok":True},201)
             if path=="/api/complaints":
                 u=self.require("customer"); bid=int(d.get("business_id",0)); reason=d.get("reason","").strip()
