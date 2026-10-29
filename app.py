@@ -1602,7 +1602,11 @@ body.provider-workstation-mode #servicesTabScreen:not(.hidden),
 body.provider-workstation-mode #svWorkstationToolScreen:not(.hidden){display:block!important;visibility:visible!important}
 body.provider-workstation-mode .bottom-tabbar{display:grid!important;visibility:visible!important}
 
-.sv-workstation{max-width:1160px;margin:0 auto;padding:clamp(14px,3vw,28px) clamp(12px,2vw,20px) 110px;color:#10233f}
+.sv-workstation{max-width:1160px;margin:0 auto;padding:0 clamp(12px,2vw,20px);color:#10233f;box-sizing:border-box}
+#servicesTabScreen:not(.hidden){height:calc(100dvh - 76px);overflow:hidden;overscroll-behavior:none}
+#servicesTabScreen:not(.hidden) .sv-workstation{height:100%;display:flex;flex-direction:column;overflow:hidden}
+#servicesTabScreen:not(.hidden) .sv-workstation-hero{position:relative!important;top:auto!important;z-index:2!important;flex:0 0 auto;isolation:isolate;background:linear-gradient(135deg,#071426,#102b49)!important;border-radius:0 0 16px 16px!important;box-shadow:0 8px 22px #102f6020!important}
+#servicesTabScreen:not(.hidden) .sv-workstation-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding-bottom:110px}
 .sv-workstation-hero{padding:clamp(20px,3.4vw,34px);border-radius:22px;background:linear-gradient(135deg,#071426,#102b49);color:#fff;box-shadow:0 18px 44px rgba(16,35,63,.14)}
 .sv-workstation-hero h1{font-size:clamp(27px,4vw,38px);letter-spacing:-.8px;margin:10px 0}
 .sv-workstation-hero p{color:#d4e4f5;max-width:700px;line-height:1.6}
@@ -1803,7 +1807,7 @@ body.provider-detail-mode,body.messages-conversation-open,body.subscription-test
 .category-screen-head,.message-conversation-topbar,.sv-subtest-topbar{position:sticky!important;top:var(--sv-screen-header-top,76px)!important;z-index:900!important;background:linear-gradient(112deg,#102f60,#174f86)!important;color:#fff!important;border-radius:0 0 13px 13px!important;padding:11px 13px!important;box-shadow:0 7px 20px #102f6024!important}
 .category-screen-head h2,.message-conversation-topbar h1,.message-conversation-topbar h2{color:#fff!important}
 .category-screen-head .muted{color:#e1edff!important}.category-screen-head .category-back{background:#fff!important;color:#174578!important}
-.destination-hero,.sv-workstation-hero,.sv-subtest-profile-hero{position:sticky!important;top:var(--sv-screen-header-top,76px)!important;z-index:850!important;border-radius:0 0 16px 16px!important;box-shadow:0 8px 22px #102f6020!important}body.provider-workstation-mode #servicesTabScreen:not(.hidden) .sv-workstation > .sv-workstation-hero{position:sticky!important;top:0!important;z-index:12001!important;isolation:isolate!important;background:linear-gradient(135deg,#071426,#102b49)!important;}
+.destination-hero,.sv-workstation-hero,.sv-subtest-profile-hero{position:sticky!important;top:var(--sv-screen-header-top,76px)!important;z-index:850!important;border-radius:0 0 16px 16px!important;box-shadow:0 8px 22px #102f6020!important}
 #providerDetailScreen>.ghost{position:sticky!important;top:var(--sv-screen-header-top,76px)!important;z-index:900!important}
 #plans{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important;align-items:stretch!important}
 #plans>.muted{grid-column:1/-1!important;margin:0 0 2px!important;line-height:1.55!important}
@@ -1858,9 +1862,9 @@ body.messages-conversation-open #messagesList .message-compose .sv-voice-button{
 <section id="servicesTabScreen" class="hidden app-destination">
  <div class="sv-workstation">
   <header class="sv-workstation-hero"><span class="sv-workstation-eyebrow">SERVICE PROVIDER WORKSPACE</span><h1>Your Service Workstation</h1><p>Manage customer requests, quotations, your profile and the tools included with your verified provider plan. Customers keep free access to Home and Contacts.</p><span id="svWorkstationPlan" class="sv-workstation-plan">Checking provider plan…</span></header>
-  <div id="svWorkstationStatus" class="sv-workstation-banner" aria-live="polite">Loading verified plan entitlements…</div>
+  <div class="sv-workstation-scroll"><div id="svWorkstationStatus" class="sv-workstation-banner" aria-live="polite">Loading verified plan entitlements…</div>
   <div id="svWorkstationTools" class="sv-workstation-tools"><div class="sv-workstation-banner">Loading your tools…</div></div>
-  <div id="svWorkstationActivity" class="sv-workstation-activity"><h3>Workspace guide</h3><p class="sv-tool-muted">Tools open as separate screens. Your existing customer chats stay in Contacts.</p></div>
+  <div id="svWorkstationActivity" class="sv-workstation-activity"><h3>Workspace guide</h3><p class="sv-tool-muted">Tools open as separate screens. Your existing customer chats stay in Contacts.</p></div></div>
  </div>
 </section>
 <section id="svWorkstationToolScreen" class="hidden app-destination"><div id="svWorkstationToolContent" class="sv-workstation-tool-screen"></div></section>
