@@ -3888,7 +3888,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 with conn() as c:
                     a=c.execute("SELECT a.*,b.user_id AS provider_owner_id FROM message_attachments a JOIN businesses b ON b.id=a.business_id WHERE a.id=?",(attachment_id,)).fetchone()
                 if not a: return self.sendj({"error":"Attachment not found."},404)
-                allowed=(u["role"]=="admin" or (u["role"]=="customer" and int(u["id"])==int(a["customer_id"])) or (u["role"]=="provider" and int(u["id"])==int(a["provider_owner_id"])))
+                allowed=(u["role"]=="admin" or (u["role"] in ("customer","provider") and int(u["id"])==int(a["customer_id"])) or (u["role"]=="provider" and int(u["id"])==int(a["provider_owner_id"])))
                 if not allowed: return self.sendj({"error":"You cannot access this conversation attachment."},403)
                 try: payload=base64.b64decode(a["data_base64"],validate=True)
                 except Exception: return self.sendj({"error":"Attachment data could not be read."},500)
@@ -4921,7 +4921,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     cur=c.execute("INSERT INTO job_requests(customer_id,business_id,title,description,area,preferred_date,budget_cents,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'requested',?,?) RETURNING id",(u["id"],bid,title,description,area,preferred_date,budget_cents,stamp,stamp))
                     job_id=cur.fetchone()["id"]
                     c.execute("INSERT INTO enquiries(business_id,customer_id,message,status,created_at) VALUES(?,?,?,'new',?)",(bid,u["id"],title+" — "+description,stamp))
-                    c.execute("INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)",(bid,u["id"],title+" — "+description,u["id"],stamp))
+                    c.execute("INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)",(bid,u["id"],u["id"],title+" — "+description,stamp))
                 notify("job_request","New Skillvaya job request", "Job #"+str(job_id)+" for "+biz["name"]+"; requester "+u["email"]+".")
                 return self.sendj({"ok":True,"job_id":job_id,"status":"requested","message":"Job request sent to "+biz["name"]+"."},201)
             if path.startswith("/api/jobs/"):
@@ -5008,7 +5008,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 except (ValueError,TypeError): return self.sendj({"error":"Invalid conversation."},400)
                 with conn() as c:
                     if u["role"]=="provider":
-                        allowed=c.execute("SELECT 1 FROM businesses WHERE id=? AND user_id=?",(bid,u["id"])).fetchone()
+                        allowed=(customer_id==int(u["id"])) or c.execute("SELECT 1 FROM businesses WHERE id=? AND user_id=?",(bid,u["id"])).fetchone()
                     else:
                         allowed=(customer_id==int(u["id"]) and u["role"] in ("customer","admin")) or (u["role"]=="admin" and c.execute("SELECT 1 FROM businesses WHERE id=? AND user_id=?",(bid,u["id"])).fetchone())
                     if not allowed:return self.sendj({"error":"Conversation not found."},404)
