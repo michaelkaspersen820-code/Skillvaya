@@ -39,3 +39,5 @@ Validation note: source syntax, diff whitespace, release version metadata, signi
 - `SV58-WF-COMPOSER-02` ? constrained all five WorkFinder composer columns to fit within narrow mobile widths without horizontal overflow.
 
 - `SV58-AUTH-FAST-01` ? successful signup/login reuses the user object returned by the authentication endpoint instead of immediately making a redundant `/api/me` request; background profile and message refreshes remain intact.
+
+- `SV58-SESSION-MIGRATE-01` ? when an existing saved session validates, migrate its token from session storage to durable local storage so users who had unchecked Remember Me can stay signed in across future app closes/updates.
