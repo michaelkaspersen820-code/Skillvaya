@@ -7,6 +7,10 @@ import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.RecognitionListener;
 import android.os.SystemClock;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
+import android.os.Vibrator;
+import android.os.VibrationEffect;
 import android.webkit.JavascriptInterface;
 import java.util.ArrayList;
 import java.util.Locale;
@@ -50,9 +54,48 @@ public class MainActivity extends Activity {
     private long lastVoiceStartAt = 0L;
     private static final int NATIVE_VOICE_PERMISSION_REQUEST = 7343;
     private NativeVoiceBridge nativeVoiceBridge;
+    private CallRingerBridge callRingerBridge;
     private PlayBillingBridge playBillingBridge;
     public void runBillingJavascript(String script) {
         if (webView != null) runOnUiThread(() -> webView.evaluateJavascript(script, null));
+    }
+    public final class CallRingerBridge {
+        private ToneGenerator toneGenerator;
+        private Vibrator vibrator;
+        private boolean ringing = false;
+        private final Handler ringHandler = new Handler(Looper.getMainLooper());
+        private final Runnable ringCycle = new Runnable() {
+            @Override public void run() {
+                if (!ringing) return;
+                try { if (toneGenerator != null) toneGenerator.startTone(ToneGenerator.TONE_SUP_RINGTONE, 1500); } catch (Exception ignored) {}
+                try {
+                    if (vibrator != null && vibrator.hasVibrator()) {
+                        if (android.os.Build.VERSION.SDK_INT >= 26) vibrator.vibrate(VibrationEffect.createWaveform(new long[]{0, 350, 180, 350, 950}, -1));
+                        else vibrator.vibrate(new long[]{0, 350, 180, 350, 950}, -1);
+                    }
+                } catch (Exception ignored) {}
+                ringHandler.postDelayed(this, 2300);
+            }
+        };
+        @JavascriptInterface public void start(String callerName) { runOnUiThread(this::startRinging); }
+        @JavascriptInterface public void stop() { runOnUiThread(this::stopRinging); }
+        private void startRinging() {
+            if (ringing) return;
+            ringing = true;
+            try { toneGenerator = new ToneGenerator(AudioManager.STREAM_RING, 85); } catch (Exception ignored) { toneGenerator = null; }
+            try { vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE); } catch (Exception ignored) { vibrator = null; }
+            ringHandler.removeCallbacks(ringCycle);
+            ringCycle.run();
+        }
+        private void stopRinging() {
+            ringing = false;
+            ringHandler.removeCallbacks(ringCycle);
+            try { if (toneGenerator != null) { toneGenerator.stopTone(); toneGenerator.release(); } } catch (Exception ignored) {}
+            toneGenerator = null;
+            try { if (vibrator != null) vibrator.cancel(); } catch (Exception ignored) {}
+            vibrator = null;
+        }
+        public void shutdown() { runOnUiThread(this::stopRinging); }
     }
     public final class NativeVoiceBridge {
         @JavascriptInterface public void start() { runOnUiThread(() -> startNativeVoice()); }
@@ -257,6 +300,8 @@ public class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true); settings.setUserAgentString(settings.getUserAgentString() + " SkillvayaNative");
         nativeVoiceBridge = new NativeVoiceBridge();
         webView.addJavascriptInterface(nativeVoiceBridge, "SkillvayaVoice");
+        callRingerBridge = new CallRingerBridge();
+        webView.addJavascriptInterface(callRingerBridge, "SkillvayaCallRinger");
         if (BuildConfig.PUBLIC_URL != null && BuildConfig.PUBLIC_URL.trim().startsWith("https://")) {
             playBillingBridge = new PlayBillingBridge(this, BuildConfig.PUBLIC_URL.trim());
             webView.addJavascriptInterface(playBillingBridge, "SkillvayaBilling");
@@ -515,6 +560,7 @@ public class MainActivity extends Activity {
     }
     @Override protected void onDestroy() {
         if (playBillingBridge != null) playBillingBridge.shutdown();
+      if (callRingerBridge != null) callRingerBridge.shutdown();
         stopNativeVoice(false);
         super.onDestroy();
     }
