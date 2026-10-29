@@ -2686,7 +2686,7 @@ async function startSkillvayaVideoCall(businessId,customerId){
  businessId=Number(businessId);customerId=Number(customerId);
  if(!Number.isFinite(businessId)||businessId<=0){alert('This conversation has no valid provider listing. Return to conversations and reopen it.');return;}
  if(!me){view('settings');profileAuthMode('signin');alert('Sign in before starting a video call.');return;}
- if(me.role==='customer'){customerId=Number(me.id);}else if(me.role==='provider'){try{const md=await api('/api/messages');const match=(md.items||[]).filter(m=>Number(m.business_id)===businessId&&Number(m.business_owner_id)===Number(me.id)&&Number(m.customer_id)>0).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')))[0];if(match)customerId=Number(match.customer_id);}catch(_){}}
+ if(me.role==='customer'){customerId=Number(me.id);}else if(me.role==='provider'){/* Keep the customer ID passed by the exact conversation's Video Call button. Never replace it with the most recent customer for this provider listing. */}
  if(!Number.isFinite(customerId)||customerId<=0){alert('Could not identify the customer in this conversation. Reopen the conversation and try again.');return;}
  if(svActiveVideoCall){alert('A video call is already open. End that call before starting another.');return;}
  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof RTCPeerConnection==='undefined'){alert('This browser or WebView does not support camera video calls. Update your browser/app and try again.');return;}
