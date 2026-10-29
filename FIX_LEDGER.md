@@ -24,3 +24,7 @@ Scope restriction: only reported regressions are targeted. No pricing, payments,
 - `SV56-NATIVE-VOICE-01` ? Android `MainActivity.java`: retry recoverable Android speech-service interruptions within the same user-started dictation session, preserving the existing text callbacks and explicit stop action.
 
 Validation note: source syntax, diff whitespace, release version metadata, signing, and device install must be checked before calling the v56 refresh complete. Microphone capture still requires an on-device spoken-phrase test; static/build checks alone do not prove transcription quality.
+
+- `SV57-AUTH-RESTORE-01` ? main app (web and Android embedded copies): wait for the existing `/api/me` session check before dismissing the startup splash/deciding whether to show first-launch sign-in. Existing persisted credentials are used; this does not create or sign out accounts.
+- `SV57-WF-SESSION-01` ? WorkFinder (web and Android embedded copies): read the same token from localStorage or sessionStorage, cache restored identity in both, and preserve credentials on transient/network/data-loading errors. Only an explicit WorkFinder sign-out or an authorization response (401/403) clears saved credentials.
+- `SV57-ACCOUNT-HEADER-01` ? main app (web and Android embedded copies): keep the Account identity heading pinned at the top of the Account scroll viewport; this style is scoped to Account mode.
