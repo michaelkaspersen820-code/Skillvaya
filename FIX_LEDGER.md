@@ -45,3 +45,10 @@ Validation note: source syntax, diff whitespace, release version metadata, signi
 - `SV58-CHAT-VIEWPORT-01` ? main SkillVaya conversation is constrained to the area between the app header and fixed bottom navigation; message bubbles scroll within that area and the composer stays at the bottom.
 - `SV58-CHAT-EMPTY-02` ? opening an existing contact with no messages no longer redirects a customer/admin back to the provider/home screen; the empty conversation remains open so the user can compose the first message.
 - `SV58-CHAT-MIC-03` ? the empty-conversation voice control shows the microphone icon and accessible voice-typing label rather than the word ?Speak?.
+
+- `SV58-CHAT-FOOTER-02` - empty conversations now include the same flexible message area as populated conversations, keeping the composer at the bottom; the broken microphone label is replaced with a microphone glyph; scoped CSS constrains the voice control to a consistent 44-48 px button.
+
+- `SV58-CHAT-CACHE-04` - preserve whether the message-list request actually succeeded in the conversation cache; a valid cached empty thread is reused instead of issuing the slow full-inbox request again, while failed message fetches are retried.
+- `SV58-CHAT-MIC-04` - use a stable HTML microphone entity in empty and populated conversations and remove the duplicate title attribute.
+
+- `SV58-CHAT-ENTRY-05` - the initial Contact-provider path now includes a flexible message region above the composer, so the first-message text box also stays at the bottom of the conversation viewport.
