@@ -2569,7 +2569,7 @@ let accountSubspaceReturnY=0,accountSubspaceCurrent='',accountSubspaceOriginalSt
  const personal=wrapRange(ph,sh,'svAccountProfileSection');
  const actionRow=Array.from(profile.children).find(n=>n.querySelector&&n.querySelector('button[onclick*="logout()"]'));
  const security=document.createElement('div');security.id='svAccountSecuritySection';security.className='card sv-account-detail-card';profile.insertBefore(security,actionRow||null);
- let n=sh;while(n&&n!==actionRow){const next=n.nextSibling;security.appendChild(n);n=next;}if(actionRow)actionRow.classList.add('hidden');
+ let n=sh;while(n&&n!==actionRow){const next=n.nextSibling;if(n!==security)security.appendChild(n);n=next;}if(actionRow)actionRow.classList.add('hidden');
  profile.classList.add('sv-account-sections-separated');
  const dashboard=settings.querySelector('.account-dashboard-links');
  if(dashboard){
@@ -2639,8 +2639,9 @@ function viewMessages(){showMessagesScreen();}
 
 let svActiveVideoCall=null,svIncomingVideoCall=null,svIncomingCallPoll=null,svVideoCallPollingStarted=false,svProcessedIncomingCalls=new Set();
 function svEnsureCallOverlays(){
- if(!document.getElementById('svVideoCallModal')){
-  const modal=document.createElement('div');modal.id='svVideoCallModal';modal.className='sv-call-overlay hidden';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-label','Skillvaya video call');
+ let modal=document.getElementById('svVideoCallModal');
+ if(!modal){
+  modal=document.createElement('div');modal.id='svVideoCallModal';modal.className='sv-call-overlay hidden';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-label','Skillvaya video call');
   modal.innerHTML='<div class="sv-call-panel"><header class="sv-call-header"><div><h2 id="svCallTitle">Skillvaya video call</h2><p id="svCallState" class="sv-call-state">Preparing your camera and microphone…</p></div><button type="button" class="sv-tool-outline" onclick="closeSkillvayaVideoCall(true)">Close</button></header><div class="sv-call-videos"><div class="sv-call-remote-wrap"><video id="svCallRemoteVideo" autoplay playsinline></video><span class="sv-call-video-label">Other participant</span></div><div class="sv-call-local-wrap"><video id="svCallLocalVideo" autoplay playsinline muted></video><span class="sv-call-video-label">You</span></div></div><div class="sv-call-actions"><button type="button" onclick="toggleSkillvayaCallMic()">Mute / unmute</button><button type="button" onclick="toggleSkillvayaCallCamera()">Camera on / off</button><button type="button" class="sv-call-end" onclick="closeSkillvayaVideoCall(true)">End call</button></div><p class="sv-call-note">The call uses your device camera and microphone. Skillvaya exchanges connection signals; media travels peer-to-peer when the network allows it. Some networks may require TURN relay configuration.</p></div>';
   document.body.appendChild(modal);
  }
