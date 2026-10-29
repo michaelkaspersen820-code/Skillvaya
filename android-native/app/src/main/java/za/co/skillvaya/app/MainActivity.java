@@ -84,6 +84,8 @@ public class MainActivity extends Activity {
                     intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
                     intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
                     intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false);
+                    // Ask compatible Android speech services for punctuation and text formatting.
+                    if (android.os.Build.VERSION.SDK_INT >= 33) intent.putExtra("android.speech.extra.ENABLE_FORMATTING", "quality");
                     intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 180000L);
                     intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 180000L);
                     nativeSpeechRecognizer.startListening(intent);
@@ -144,6 +146,8 @@ public class MainActivity extends Activity {
             intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
             intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false);
+                    // Ask compatible Android speech services for punctuation and text formatting.
+                    if (android.os.Build.VERSION.SDK_INT >= 33) intent.putExtra("android.speech.extra.ENABLE_FORMATTING", "quality");
             intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 180000L);
             intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 180000L);
             nativeSpeechRecognizer.startListening(intent);
