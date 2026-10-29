@@ -57,10 +57,11 @@ else:
         return c
 
 def fcm_send_to_user(user_id, title, body, data=None):
-    """Best-effort FCM delivery. Push failures must never break chat or call APIs."""
+    """Send a visible high-priority Android call notification; never block call signalling."""
     raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
     if not raw:
-        return
+        print("FCM unavailable: FIREBASE_SERVICE_ACCOUNT_JSON is not configured")
+        return 0
     try:
         import firebase_admin
         from firebase_admin import credentials, messaging
@@ -71,28 +72,71 @@ def fcm_send_to_user(user_id, title, body, data=None):
             firebase_admin.initialize_app(credentials.Certificate(info), name="skillvaya_fcm")
         app = firebase_admin.get_app("skillvaya_fcm")
         with conn() as c:
-            rows = c.execute("SELECT token FROM push_device_tokens WHERE user_id=? AND enabled=1", (int(user_id),)).fetchall()
-        for row in rows:
-            token = str(row["token"] or "").strip()
-            if not token:
-                continue
-            payload = {str(k): str(v)[:500] for k, v in (data or {}).items() if v is not None}
-            payload["title"] = str(title)[:100]
-            payload["body"] = str(body)[:220]
-            try:
-                # Data-only high-priority messages let the Android service apply the dedicated
-                # ringtone channel for calls instead of Android's generic FCM notification channel.
-                messaging.send(messaging.Message(
+            rows = c.execute(
+                "SELECT token FROM push_device_tokens WHERE user_id=? AND enabled=1",
+                (int(user_id),)
+            ).fetchall()
+    except Exception as exc:
+        print("FCM initialization/token lookup failed:", type(exc).__name__)
+        return 0
+
+    is_call = (data or {}).get("type") == "incoming_call"
+    if not rows:
+        print("FCM no active device tokens for user", int(user_id), "type", "call" if is_call else "message")
+        return 0
+
+    sent = 0
+    for row in rows:
+        token = str(row["token"] or "").strip()
+        if not token:
+            continue
+        payload = {str(k): str(v)[:500] for k, v in (data or {}).items() if v is not None}
+        payload["title"] = str(title)[:100]
+        payload["body"] = str(body)[:220]
+        try:
+            if is_call:
+                # Combined notification + data is intentional: when Skillvaya is backgrounded,
+                # Android itself places the call alert in the system tray even if the app
+                # process is sleeping. The dedicated native channel supplies the ringtone.
+                message = messaging.Message(
+                    token=token,
+                    notification=messaging.Notification(title=str(title)[:100], body=str(body)[:220]),
+                    data=payload,
+                    android=messaging.AndroidConfig(
+                        priority="high",
+                        ttl=30,
+                        notification=messaging.AndroidNotification(
+                            channel_id="skillvaya_incoming_calls_v2",
+                            priority="max",
+                            default_sound=True,
+                            default_vibrate_timings=True,
+                            visibility="public",
+                        ),
+                    ),
+                )
+            else:
+                # Preserve the existing chat-push behavior.
+                message = messaging.Message(
                     token=token,
                     data=payload,
                     android=messaging.AndroidConfig(priority="high", ttl=300000),
-                ), app=app)
-            except messaging.UnregisteredError:
-                with conn() as c:
-                    c.execute("UPDATE push_device_tokens SET enabled=0,updated_at=? WHERE token=?", (now(), token))
-    except Exception as exc:
-        # Deliberately swallow errors: notifications are supplemental to existing polling.
-        print("FCM delivery unavailable:", type(exc).__name__)
+                )
+            message_id = messaging.send(message, app=app)
+            sent += 1
+            print("FCM accepted", "call" if is_call else "message", "push for user", int(user_id), "message_id", message_id)
+        except messaging.UnregisteredError:
+            with conn() as c:
+                c.execute(
+                    "UPDATE push_device_tokens SET enabled=0,updated_at=? WHERE token=?",
+                    (now(), token)
+                )
+            print("FCM removed unregistered device token for user", int(user_id))
+        except Exception as exc:
+            # Never log credentials or tokens. Keep enough detail to diagnose Firebase rejects.
+            print("FCM send failed", "call" if is_call else "message", "user", int(user_id), type(exc).__name__)
+    if sent == 0:
+        print("FCM delivered no messages for user", int(user_id), "type", "call" if is_call else "message")
+    return sent
 
 def ensure_push_token_table():
     with conn() as c:
@@ -2796,7 +2840,7 @@ async function startSkillvayaVideoCall(businessId,customerId){
     svShowCallModal('Skillvaya video call','Requesting camera and microphone permission…');
     // Start capture directly in the user's tap handler. Keep it asynchronous so the call
     // invitation can be sent immediately even if Android takes time to grant/open media.
-    mediaPromise=navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true}).then(stream=>({stream}),error=>({error}));
+    mediaPromise=navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}},audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}).then(stream=>({stream}),error=>({error}));
     call={callId:'',businessId:Number(businessId),customerId:Number(customerId),isCaller:true,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
     await svCreatePeer(call);
     const offer=await call.pc.createOffer();await call.pc.setLocalDescription(offer);
@@ -2824,7 +2868,7 @@ async function acceptSkillvayaVideoCall(){
   try{
     svShowCallModal('Skillvaya video call','Requesting camera and microphone permission…');
     // Begin media capture on the Accept tap; don't wait for message-screen refresh/network work.
-    mediaPromise=navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true}).then(stream=>({stream}),error=>({error}));
+    mediaPromise=navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}},audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}).then(stream=>({stream}),error=>({error}));
     view('messages');showMessagesScreen(false);const conversationPromise=openMessageConversation(Number(incoming.business_id),Number(incoming.customer_id)).catch(e=>console.warn('Call contact view refresh was delayed:',e&&e.message||e));
     call={callId:String(incoming.id),businessId:Number(incoming.business_id),customerId:Number(incoming.customer_id),isCaller:false,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
     await svCreatePeer(call);
@@ -4685,11 +4729,18 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         c.execute("INSERT INTO video_calls(id,business_id,customer_id,caller_id,callee_id,status,offer_sdp,answer_sdp,created_at,updated_at,ended_at) VALUES(?,?,?,?,?,'ringing',?,'',?,?, '')",(call_id,bid,customer_id,u["id"],callee_id,offer_obj and json.dumps(offer_obj),stamp,stamp))
                         # Save a call-invitation event in the existing chat so both sides have a durable record.
                         c.execute("INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)",(bid,customer_id,u["id"],"Video call invitation",stamp))
+                    # The call row is already committed. Dispatch push outside the request path so
+                    # Firebase network latency cannot delay the caller's immediate "ringing" response.
                     try:
-                        fcm_send_to_user(callee_id, "Skillvaya calling", (u.get("name") or "Your contact") + " is calling you",
-                                         {"type":"incoming_call","call_id":call_id,"business_id":bid,"customer_id":customer_id})
-                    except Exception:
-                        pass
+                        threading.Thread(
+                            target=fcm_send_to_user,
+                            args=(callee_id, "Skillvaya calling", (u.get("name") or "Your contact") + " is calling you",
+                                  {"type":"incoming_call","call_id":call_id,"business_id":bid,"customer_id":customer_id}),
+                            name="SkillvayaIncomingCallPush",
+                            daemon=True,
+                        ).start()
+                    except Exception as exc:
+                        print("FCM call-push scheduling failed:", type(exc).__name__)
                     return self.sendj({"ok":True,"call_id":call_id,"status":"ringing"},201)
                 try: call_id=str(d.get("call_id","")).strip()
                 except Exception: call_id=""

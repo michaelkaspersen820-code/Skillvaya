@@ -275,6 +275,8 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Create the call-ringtone notification channel before any background FCM arrives.
+        SkillvayaMessagingService.ensureChannels(this);
         if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, PUSH_NOTIFICATION_PERMISSION_REQUEST);
         }
@@ -578,6 +580,14 @@ public class MainActivity extends Activity {
             byte[] buffer=new byte[8192];int n;while((n=in.read(buffer))>0)fos.write(buffer,0,n);
         }
     }
+    @Override protected void onResume() {
+        super.onResume();
+        // Refresh the device-token association whenever the user returns to Skillvaya.
+        if (BuildConfig.PUBLIC_URL != null && BuildConfig.PUBLIC_URL.startsWith("https://")) {
+            PushTokenRegistrar.register(this, BuildConfig.PUBLIC_URL);
+        }
+    }
+
     @Override protected void onDestroy() {
         loadingHandler.removeCallbacks(pushTokenRegistrationRetry);
         if (playBillingBridge != null) playBillingBridge.shutdown();
