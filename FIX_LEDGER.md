@@ -13,3 +13,5 @@ Scope restriction: only reported regressions are targeted. No pricing, payments,
 
 - `SV56-SERVICE-01` — both app entry points: the public bottom-tab handler redirected guests and customers into `openProviderWorkstation()` when they selected Services. Remove that misroute so the Services tab can render the public provider directory; provider work tools remain available through their dedicated entry point.
 - `SV56-RATING-02` — both app entry points: replace the literal question-mark character in the platform-rating button template with the Unicode star (`★`).
+
+- `SV56-SERVICE-03` — live browser verification showed the Services tab displayed the provider-only workstation to a signed-out visitor after the first redirect fix. Final route guard now sends guests/customers to the public directory and preserves the workstation for provider/admin roles.
