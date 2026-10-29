@@ -10,3 +10,6 @@ Purpose: preserve the intent of production fixes across restores. Do not revert 
 - `SV56-WF-HDR-01` — both WorkFinder files: pin the WorkFinder header to the viewport and reserve content space so it does not cover the first card.
 
 Scope restriction: only reported regressions are targeted. No pricing, payments, database schema, owner controls, or unrelated redesigns intended.
+
+- `SV56-SERVICE-01` — both app entry points: the public bottom-tab handler redirected guests and customers into `openProviderWorkstation()` when they selected Services. Remove that misroute so the Services tab can render the public provider directory; provider work tools remain available through their dedicated entry point.
+- `SV56-RATING-02` — both app entry points: replace the literal question-mark character in the platform-rating button template with the Unicode star (`★`).

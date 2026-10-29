@@ -2394,7 +2394,7 @@ function toggleServicesCategories(){
   const card=document.getElementById('servicesCategoriesCard');if(card){card.classList.add('hidden');card.style.display='none';}
 }
 
-function view(v){if(v==='provider'&&window.svSubscriptionTestMode){openSubscriptionTestProfile();return;}if(v==='settings'&&window.svSubscriptionTestMode){window.svSubscriptionTestMode=false;document.body.classList.remove('subscription-test-screen-mode');document.querySelectorAll('[data-sv-subtest-toolbar]').forEach(x=>x.remove());}if(v==='services'&&(!me||(me.role!=='provider'&&me.role!=='admin'))){openProviderWorkstation();return;}
+function view(v){if(v==='provider'&&window.svSubscriptionTestMode){openSubscriptionTestProfile();return;}if(v==='settings'&&window.svSubscriptionTestMode){window.svSubscriptionTestMode=false;document.body.classList.remove('subscription-test-screen-mode');document.querySelectorAll('[data-sv-subtest-toolbar]').forEach(x=>x.remove());}
  // Release stale viewport locks before changing destinations; keep normal document scrolling enabled.
  if(v!=='messages'){if(typeof accountSubspaceCurrent!=='undefined'&&accountSubspaceCurrent)closeAccountSubspace();document.body.classList.remove('messages-conversation-open','account-subspace-open');document.body.style.removeProperty('overflow');}
  // Restore Contacts to its Account location whenever the user navigates elsewhere.
