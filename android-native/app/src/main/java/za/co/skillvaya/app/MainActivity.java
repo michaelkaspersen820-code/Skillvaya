@@ -95,7 +95,7 @@ public class MainActivity extends Activity {
                 voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(false)");
                 voiceJs("window.svNativeVoiceError && window.svNativeVoiceError('Android could not continue listening. Check the speech service and try again.')");
             }
-        }, 350);
+        }, 200);
     }
     private void startNativeVoice() {
         if (nativeVoiceActive) return;
