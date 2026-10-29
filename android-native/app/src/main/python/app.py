@@ -1603,7 +1603,8 @@ body.provider-workstation-mode #svWorkstationToolScreen:not(.hidden){display:blo
 body.provider-workstation-mode .bottom-tabbar{display:grid!important;visibility:visible!important}
 
 .sv-workstation{max-width:1160px;margin:0 auto;padding:0 clamp(12px,2vw,20px);color:#10233f;box-sizing:border-box}
-#servicesTabScreen:not(.hidden){height:calc(100dvh - 76px);overflow:hidden;overscroll-behavior:none}
+body.provider-workstation-mode main.wrap{padding:0!important}
+#servicesTabScreen:not(.hidden){height:calc(100dvh - 76px);margin:0!important;padding:0!important;overflow:hidden;overscroll-behavior:none}
 #servicesTabScreen:not(.hidden) .sv-workstation{height:100%;display:flex;flex-direction:column;overflow:hidden}
 #servicesTabScreen:not(.hidden) .sv-workstation-hero{position:relative!important;top:auto!important;z-index:2!important;flex:0 0 auto;isolation:isolate;background:linear-gradient(135deg,#071426,#102b49)!important;border-radius:0 0 16px 16px!important;box-shadow:0 8px 22px #102f6020!important}
 #servicesTabScreen:not(.hidden) .sv-workstation-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding-bottom:110px}
