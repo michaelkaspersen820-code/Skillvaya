@@ -118,7 +118,11 @@ public class MainActivity extends Activity {
                 @Override public void onEndOfSpeech() {}
                 @Override public void onError(int error) {
                     if (!nativeVoiceActive) return;
-                    if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                    if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                            || error == SpeechRecognizer.ERROR_NETWORK || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT
+                            || error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                        // Recognition sessions naturally terminate between phrases on many Android services.
+                        // Keep the same user-initiated dictation session alive and preserve accumulated text.
                         scheduleNativeVoiceRestart();
                         return;
                     }

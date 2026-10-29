@@ -17,3 +17,10 @@ Scope restriction: only reported regressions are targeted. No pricing, payments,
 - `SV56-SERVICE-03` — live browser verification showed the Services tab displayed the provider-only workstation to a signed-out visitor after the first redirect fix. Final route guard now sends guests/customers to the public directory and preserves the workstation for provider/admin roles.
 
 - `SV56-WF-NAV-02` — both WorkFinder files: the bottom tabs were explicitly hidden on page 15 (conversation composer). Keep all five tabs visible in conversations too, and reduce the chat viewport height to reserve space above the fixed tab bar so the composer remains visible.
+
+- `SV56-WF-PROFILE-01` ? both WorkFinder files: remove the hard-coded `YK` fallback from the profile-photo circle. Keep the photo preview/click target and upload flow unchanged; an empty profile photo now shows a clean empty circle rather than fabricated initials.
+- `SV56-ACCOUNT-SCROLL-01` ? both app entry points: constrain Account mode to the device viewport and make `main.wrap` the scroll container, reserving space for the fixed bottom navigation so account content cannot scroll underneath the tabs.
+- `SV56-WF-VOICE-01` ? both WorkFinder files: display interim speech recognition results in the composer while listening, while preserving the existing final-result de-duplication and send path.
+- `SV56-NATIVE-VOICE-01` ? Android `MainActivity.java`: retry recoverable Android speech-service interruptions within the same user-started dictation session, preserving the existing text callbacks and explicit stop action.
+
+Validation note: source syntax, diff whitespace, release version metadata, signing, and device install must be checked before calling the v56 refresh complete. Microphone capture still requires an on-device spoken-phrase test; static/build checks alone do not prove transcription quality.

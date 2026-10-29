@@ -1555,6 +1555,10 @@ body.messages-screen-mode.messages-conversation-open #messagesScreen .message-co
 body.messages-screen-mode.messages-conversation-open #messagesScreen .message-compose textarea{min-height:46px!important;margin:0!important;background:#e8f1ff!important;color:#102b52!important}
 body.messages-screen-mode.messages-conversation-open #messagesScreen .message-compose button{min-height:46px!important;margin:0!important;background:#2f72d6!important;color:#fff!important}
 body.messages-conversation-open .message-conversation-screen>*{box-sizing:border-box}
+/* SV56-ACCOUNT-SCROLL-01: account content scrolls inside the viewport and reserves the fixed bottom navigation. */
+body.account-screen-mode{height:100dvh!important;max-height:100dvh!important;overflow:hidden!important;overscroll-behavior:none!important}
+body.account-screen-mode main.wrap{height:100dvh!important;max-height:100dvh!important;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important;padding-top:78px!important;padding-bottom:calc(112px + env(safe-area-inset-bottom))!important;box-sizing:border-box!important}
+body.account-screen-mode .bottom-tabbar{position:fixed!important;left:0!important;right:0!important;bottom:0!important;z-index:2147483600!important}
 /* Scroll recovery guard: normal pages scroll normally; dedicated chat and account overlays own their own scroll area. */
 html,body{overscroll-behavior-y:auto}body:not(.messages-conversation-open):not(.account-subspace-open):not(.provider-detail-mode){overflow-y:auto!important}body:not(.messages-conversation-open) #messagesScreen{overscroll-behavior:contain}
 /* Keep real content scrollable while removing stacked bottom padding that created a blank tail. */
