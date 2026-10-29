@@ -1920,7 +1920,13 @@ async function openProviderOnboarding(){
   const overlay=document.getElementById('accountSubspace');
   if(overlay)overlay.classList.add('hidden');
   document.body.classList.remove('account-subspace-open','account-screen-mode','messages-screen-mode','category-screen-mode');
-  if(!me)await sessionInfo();
+  if(!me){
+    view('provider');
+    const loadingHeading=document.getElementById('providerStudioHeading');if(loadingHeading)loadingHeading.classList.remove('hidden');
+    const loadingNotice=document.getElementById('providerProfileNotice');if(loadingNotice){loadingNotice.classList.remove('hidden');loadingNotice.textContent='Loading your Provider Studio?';}
+    const loadingPlans=document.getElementById('providerPlansCard');if(loadingPlans)loadingPlans.classList.add('hidden');
+    await sessionInfo();
+  }
   if(!me){
     view('settings');
     profileAuthMode('signin');
