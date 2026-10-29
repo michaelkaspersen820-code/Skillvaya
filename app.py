@@ -1271,7 +1271,7 @@ body.messages-conversation-open .message-compose{display:flex!important;align-it
 body.messages-conversation-open .message-compose textarea{display:block!important;flex:1 1 0!important;width:0!important;min-width:0!important;box-sizing:border-box!important;}
 body.messages-conversation-open .message-compose .sv-voice-controls{display:flex!important;flex:0 0 48px!important;width:48px!important;min-width:48px!important;margin:0!important;gap:0!important;align-self:flex-end!important;}
 body.messages-conversation-open .message-compose .sv-voice-button{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 48px!important;width:48px!important;min-width:48px!important;max-width:48px!important;padding:0!important;font-size:23px!important;white-space:nowrap!important;overflow:hidden!important;}
-body.messages-conversation-open .message-compose .sv-voice-status:empty{display:none!important}body.messages-conversation-open .sv-voice-status:not(:empty){display:block!important;position:fixed!important;left:10px!important;right:10px!important;bottom:calc(72px + env(safe-area-inset-bottom))!important;z-index:9999!important;width:auto!important;min-width:0!important;max-width:none!important;box-sizing:border-box!important;padding:9px 12px!important;border:1px solid #c8d9ee!important;border-radius:10px!important;background:#fff!important;color:#102f60!important;box-shadow:0 4px 18px rgba(0,0,0,.18)!important;font-size:12px!important;line-height:1.4!important;white-space:normal!important}
+body.messages-conversation-open .message-compose .sv-voice-status:empty{display:none!important}body.messages-conversation-open .sv-voice-status{display:none!important}
 @media(max-width:390px){body.messages-conversation-open .message-compose{gap:6px!important;padding-left:8px!important;padding-right:8px!important}body.messages-conversation-open .message-compose .sv-voice-controls,body.messages-conversation-open .message-compose .sv-voice-button{flex-basis:44px!important;width:44px!important;min-width:44px!important;max-width:44px!important}}
 .sv-voice-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:7px 0}.sv-voice-button{min-height:38px;touch-action:manipulation}.sv-voice-button.is-listening{background:#fff0f0!important;border-color:#d53f4f!important;color:#a51f2b!important}.sv-voice-status{font-size:12px;color:#52627a}.sv-voice-status:empty{display:none}
 #messagesList{display:grid;gap:10px}.message-thread-item,.message-inbox-item,.conversation-row{border:1px solid var(--sv-line);border-radius:16px;background:#fff;padding:14px;box-shadow:0 4px 16px rgba(19,42,78,.04)}
@@ -1646,21 +1646,21 @@ body.provider-workstation-mode .bottom-tabbar{display:grid!important;visibility:
 .sv-chat-attachment video{width:100%;max-height:340px;border-radius:10px;background:#071426}
 .sv-chat-attachment img{display:block;max-width:100%;max-height:320px;object-fit:contain;border-radius:10px;background:#eaf2fb}
 .sv-chat-attachment a{font-size:12px;font-weight:700;color:#23558e;overflow-wrap:anywhere}
-.sv-call-overlay{position:fixed;inset:0;z-index:15000;background:rgba(5,16,32,.88);display:flex;align-items:center;justify-content:center;padding:12px}
+.sv-call-overlay{position:fixed;inset:0;z-index:15000;background:#020814;display:flex;align-items:stretch;justify-content:stretch;padding:0!important;overflow:hidden}
 .sv-call-overlay.hidden{display:none!important}
-.sv-call-panel{width:min(920px,100%);max-height:96dvh;overflow:auto;background:#fff;border-radius:22px;box-shadow:0 30px 90px rgba(0,0,0,.35);color:#10233f;padding:clamp(14px,3vw,24px)}
-.sv-call-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.sv-call-panel{position:relative;display:flex;flex-direction:column;width:100%;height:100%;height:100dvh;max-height:100dvh;overflow:hidden;background:#020814;border-radius:0;box-shadow:none;color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 12px calc(env(safe-area-inset-bottom) + 12px)}
+.sv-call-header{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 8px;flex-shrink:0}.sv-call-header h2{color:#fff}.sv-call-state{color:#d6e5fa}
 .sv-call-header h2{margin:0;font-size:22px;color:#10233f}
 .sv-call-state{font-size:13px;color:#4e6682;margin:4px 0 0}
-.sv-call-videos{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.34fr);gap:10px}
-.sv-call-remote-wrap,.sv-call-local-wrap{position:relative;overflow:hidden;min-height:155px;border-radius:16px;background:#071426}
-.sv-call-videos video{display:block;width:100%;height:100%;min-height:155px;max-height:58vh;object-fit:cover}
-.sv-call-local-wrap video{max-height:30vh}
+.sv-call-videos{position:relative;display:block;flex:1;min-height:0;border-radius:16px;overflow:hidden;background:#071426}
+.sv-call-remote-wrap{position:absolute;inset:0;overflow:hidden;min-height:0;border-radius:0;background:#071426}.sv-call-local-wrap{position:absolute;right:12px;top:12px;width:clamp(92px,28vw,150px);height:clamp(130px,24vh,210px);min-height:0;border:2px solid rgba(255,255,255,.75);border-radius:14px;overflow:hidden;background:#182943;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+.sv-call-videos video{display:block;width:100%;height:100%;min-height:0;max-height:none;object-fit:cover}
+.sv-call-local-wrap video{max-height:none}
 .sv-call-video-label{position:absolute;left:10px;bottom:10px;border-radius:7px;padding:4px 7px;background:rgba(7,20,38,.8);color:#fff;font-size:11px}
-.sv-call-actions{display:flex;justify-content:center;align-items:center;gap:9px;flex-wrap:wrap;padding-top:16px}
+.sv-call-actions{position:relative;z-index:2;display:flex;justify-content:center;align-items:center;gap:9px;flex-wrap:wrap;padding:12px 0 4px;flex-shrink:0}
 .sv-call-actions button{border:0;border-radius:12px;padding:12px 16px;font-weight:800;background:#e8f2ff;color:#10233f;cursor:pointer}
 .sv-call-actions .sv-call-end{background:#bd2d3c;color:#fff}
-.sv-call-note{font-size:12px;line-height:1.5;color:#5b7088;margin:12px 0 0;text-align:center}
+.sv-call-note{display:none!important}
 .sv-incoming-panel{position:fixed;z-index:16000;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top));max-width:460px;margin:auto;border:1px solid #c7ddf7;border-radius:18px;padding:16px;background:#fff;box-shadow:0 18px 50px rgba(7,20,38,.28);color:#10233f}
 .sv-incoming-panel[hidden]{display:none}
 .sv-incoming-actions{display:flex;gap:8px;margin-top:12px}
@@ -2683,8 +2683,12 @@ async function svSyncVideoCall(call){
  }finally{call.syncing=false;}
 }
 async function startSkillvayaVideoCall(businessId,customerId){
- if(svActiveVideoCall){alert('A video call is already open. End that call before starting another.');return;}
+ businessId=Number(businessId);customerId=Number(customerId);
+ if(!Number.isFinite(businessId)||businessId<=0){alert('This conversation has no valid provider listing. Return to conversations and reopen it.');return;}
  if(!me){view('settings');profileAuthMode('signin');alert('Sign in before starting a video call.');return;}
+ if(me.role==='customer'){customerId=Number(me.id);}else if(me.role==='provider'){try{const md=await api('/api/messages');const match=(md.items||[]).filter(m=>Number(m.business_id)===businessId&&Number(m.business_owner_id)===Number(me.id)&&Number(m.customer_id)>0).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')))[0];if(match)customerId=Number(match.customer_id);}catch(_){}}
+ if(!Number.isFinite(customerId)||customerId<=0){alert('Could not identify the customer in this conversation. Reopen the conversation and try again.');return;}
+ if(svActiveVideoCall){alert('A video call is already open. End that call before starting another.');return;}
  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof RTCPeerConnection==='undefined'){alert('This browser or WebView does not support camera video calls. Update your browser/app and try again.');return;}
  try{
   svShowCallModal('Skillvaya video call','Requesting camera and microphone permission…');
@@ -2749,7 +2753,7 @@ function ensureSkillvayaChatMediaToolbar(root,businessId,customerId){
  const toolbar=document.createElement('div');toolbar.className='sv-chat-media-toolbar';
  const upload=document.createElement('button');upload.type='button';upload.className='sv-media-upload';upload.textContent='＋ Send photo / video';upload.setAttribute('aria-label','Send photo or video to this chat');upload.addEventListener('click',()=>screen.querySelector('#svChatMediaInput')?.click());
  const input=document.createElement('input');input.id='svChatMediaInput';input.type='file';input.accept='image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,video/3gpp';input.hidden=true;input.addEventListener('change',e=>sendSkillvayaChatAttachment(e,businessId,customerId));
- const status=document.createElement('div');status.id='svChatMediaStatus';status.className='sv-chat-media-status';status.setAttribute('aria-live','polite');status.textContent='Video calls and photo/video sharing are available in every chat.';
+ const status=document.createElement('div');status.id='svChatMediaStatus';status.className='sv-chat-media-status';status.setAttribute('aria-live','polite');status.textContent='';
  if(header){header.appendChild(call);}
  else if(back){
   let topbar=screen.querySelector('.message-conversation-topbar');
@@ -2790,7 +2794,7 @@ function svStartMessageLiveUpdates(){svEnsureNotificationBell();if(svMessageLive
 let svVoiceManualStop=false,svNativeVoiceForm=null,svNativeVoiceButton=null,svNativeVoiceStartText='',svNativeVoiceLastFinal='',svNativeVoiceAccumulated='',svNativeVoiceInterim='',svNativeVoiceFinals=new Set();
 window.svNativeVoiceReady=function(){if(svNativeVoiceButton){svNativeVoiceButton.classList.add('is-listening');svNativeVoiceButton.setAttribute('aria-pressed','true');svNativeVoiceButton.innerHTML='🎙️';svNativeVoiceButton.setAttribute('aria-label','Stop voice typing');svNativeVoiceButton.title='Stop voice typing';}const st=svNativeVoiceForm&&svNativeVoiceForm.querySelector('.sv-voice-status');if(st)st.textContent='Listening… tap the microphone once to stop.';};
 window.svNativeVoiceResult=function(text,isFinal){const form=svNativeVoiceForm,field=form&&form.elements.message;if(!field||!text)return;let clean=String(text).replace(/\\s+/g,' ').trim();if(!clean)return;const status=form.querySelector('.sv-voice-status');if(!isFinal){svNativeVoiceInterim=clean;field.value=(svNativeVoiceStartText?svNativeVoiceStartText+' ':'')+svNativeVoiceAccumulated+(svNativeVoiceAccumulated&&svNativeVoiceInterim?' ':'')+svNativeVoiceInterim;field.dispatchEvent(new Event('input',{bubbles:true}));if(status)status.textContent='Listening…';return;}svNativeVoiceInterim='';const norm=clean.toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu,' ').trim();if(!norm||svNativeVoiceFinals.has(norm))return;svNativeVoiceFinals.add(norm);svNativeVoiceLastFinal=norm;const words=clean.split(/\\s+/),prior=svNativeVoiceAccumulated.split(/\\s+/);let overlap=0;for(let k=Math.min(prior.length,words.length);k>0;k--){const a=prior.slice(-k).join(' ').toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu,' ').trim(),b=words.slice(0,k).join(' ').toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu,' ').trim();if(a&&a===b){overlap=k;break;}}const add=words.slice(overlap).join(' ');if(add)svNativeVoiceAccumulated+=(svNativeVoiceAccumulated?' ':'')+add;field.value=(svNativeVoiceStartText?svNativeVoiceStartText+' ':'')+svNativeVoiceAccumulated;field.dispatchEvent(new Event('input',{bubbles:true}));if(status)status.textContent='Listening… recognised words are being kept. Tap the microphone to stop.';};
-window.svNativeVoiceEnded=function(manual){const b=svNativeVoiceButton,form=svNativeVoiceForm;if(b){b.classList.remove('is-listening');b.setAttribute('aria-pressed','false');b.innerHTML='🎙️';b.setAttribute('aria-label','Start voice typing');b.title='Start voice typing';}const st=form&&form.querySelector('.sv-voice-status');if(st&&manual)st.textContent='Stopped. Review your message, then press Send.';else if(st&&!manual)st.textContent='Speech service ended listening. Tap the microphone to start again.';if(manual){svNativeVoiceForm=null;svNativeVoiceButton=null;}};
+window.svNativeVoiceEnded=function(manual){const b=svNativeVoiceButton,form=svNativeVoiceForm;if(b){b.classList.remove('is-listening');b.setAttribute('aria-pressed','false');b.innerHTML='🎙️';b.setAttribute('aria-label','Start voice typing');b.title='Start voice typing';}const st=form&&form.querySelector('.sv-voice-status');if(st&&manual)st.textContent='';else if(st&&!manual)st.textContent='Speech service ended listening. Tap the microphone to start again.';if(manual){svNativeVoiceForm=null;svNativeVoiceButton=null;}};
 window.svNativeVoiceError=function(message){const st=svNativeVoiceForm&&svNativeVoiceForm.querySelector('.sv-voice-status');if(st)st.textContent=message||'Voice recognition stopped.';};
 function svToggleVoiceInput(button){const form=button&&button.closest('form'),field=form&&form.elements.message,status=form&&form.querySelector('.sv-voice-status');if(!field)return;
 if(window.SkillvayaVoice){if(svNativeVoiceForm===form){svVoiceManualStop=true;try{window.SkillvayaVoice.stop();}catch(_){}return;}if(svNativeVoiceForm){try{window.SkillvayaVoice.stop();}catch(_){}}
@@ -2803,7 +2807,7 @@ try{recognition=new SpeechAPI();recognition.lang=navigator.language||'en-ZA';rec
 recognition.onstart=()=>{button.classList.add('is-listening');button.setAttribute('aria-pressed','true');button.innerHTML='🎙️';button.setAttribute('aria-label','Stop voice typing');button.title='Stop voice typing';if(status)status.textContent='Listening… tap the microphone once to stop.';};
 recognition.onresult=event=>{let interim='';for(let i=event.resultIndex;i<event.results.length;i++){const t=event.results[i][0].transcript;if(event.results[i].isFinal)finalText+=t.trim()+' ';else interim+=t;}field.value=(startingText?startingText+' ':'')+(finalText+interim).trim();field.dispatchEvent(new Event('input',{bubbles:true}));};
 recognition.onerror=event=>{if(event.error!=='aborted'&&status)status.textContent='Voice service ended ('+event.error+'). Tap the microphone to try again.';};
-recognition.onend=()=>{if(svVoiceRecognition===recognition)svVoiceRecognition=null;if(svVoiceTarget===form)svVoiceTarget=null;button.classList.remove('is-listening');button.setAttribute('aria-pressed','false');button.innerHTML='🎙️';button.setAttribute('aria-label','Start voice typing');button.title='Start voice typing';if(status)status.textContent=svVoiceManualStop?'Stopped. Review your message, then press Send.':'Speech service ended listening. Tap the microphone to start again.';};
+recognition.onend=()=>{if(svVoiceRecognition===recognition)svVoiceRecognition=null;if(svVoiceTarget===form)svVoiceTarget=null;button.classList.remove('is-listening');button.setAttribute('aria-pressed','false');button.innerHTML='🎙️';button.setAttribute('aria-label','Start voice typing');button.title='Start voice typing';if(status)status.textContent=svVoiceManualStop?'':'Speech service ended listening. Tap the microphone to start again.';};
 recognition.start();}catch(e){svVoiceRecognition=null;svVoiceTarget=null;if(status)status.textContent='Could not start voice input. Check microphone permission and retry.';}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')svPollMessageNotifications();});
 function filterMessageThreads(query){const q=String(query||'').trim().toLowerCase();document.querySelectorAll('#messagesList .conversation-list-item').forEach(row=>{row.classList.toggle('hidden',!!q&&!row.textContent.toLowerCase().includes(q))});}
