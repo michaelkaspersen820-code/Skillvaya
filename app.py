@@ -2571,7 +2571,7 @@ let accountSubspaceReturnY=0,accountSubspaceCurrent='',accountSubspaceOriginalSt
  const personal=wrapRange(ph,sh,'svAccountProfileSection');
  const actionRow=Array.from(profile.children).find(n=>n.querySelector&&n.querySelector('button[onclick*="logout()"]'));
  const security=document.createElement('div');security.id='svAccountSecuritySection';security.className='card sv-account-detail-card';profile.insertBefore(security,actionRow||null);
- let n=sh;while(n&&n!==actionRow){const next=n.nextSibling;security.appendChild(n);n=next;}if(actionRow)actionRow.classList.add('hidden');
+ try{let n=sh;while(n&&n!==actionRow){const next=n.nextSibling;security.appendChild(n);n=next;}}catch(layoutError){console.warn('Account security layout adjustment skipped safely:',layoutError);}if(actionRow)actionRow.classList.add('hidden');
  profile.classList.add('sv-account-sections-separated');
  const dashboard=settings.querySelector('.account-dashboard-links');
  if(dashboard){
