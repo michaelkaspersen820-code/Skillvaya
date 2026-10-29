@@ -1,5 +1,6 @@
 package za.co.skillvaya.app;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.Context;
 import android.content.ActivityNotFoundException;
@@ -57,6 +58,28 @@ public class MainActivity extends Activity {
     private long lastVoiceStartAt = 0L;
     private static final int NATIVE_VOICE_PERMISSION_REQUEST = 7343;
     private static final int PUSH_NOTIFICATION_PERMISSION_REQUEST = 7344;
+    private boolean notificationPermissionRequestedFromCall = false;
+    public final class NotificationPermissionBridge {
+        @JavascriptInterface public void ensureForCall() {
+            runOnUiThread(() -> {
+                if (android.os.Build.VERSION.SDK_INT < 33 ||
+                    checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return;
+                notificationPermissionRequestedFromCall = true;
+                if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                    new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Enable call notifications")
+                        .setMessage("Allow SkillVaya notifications so you can see incoming calls when the app is in the background.")
+                        .setPositiveButton("Enable notifications", (dialog, which) ->
+                            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, PUSH_NOTIFICATION_PERMISSION_REQUEST))
+                        .setNegativeButton("Not now", null)
+                        .show();
+                } else {
+                    requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, PUSH_NOTIFICATION_PERMISSION_REQUEST);
+                }
+            });
+        }
+    }
+    private NotificationPermissionBridge notificationPermissionBridge;
     private NativeVoiceBridge nativeVoiceBridge;
     private CallRingerBridge callRingerBridge;
     private PlayBillingBridge playBillingBridge;
@@ -321,6 +344,8 @@ public class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true); settings.setUserAgentString(settings.getUserAgentString() + " SkillvayaNative");
         nativeVoiceBridge = new NativeVoiceBridge();
         webView.addJavascriptInterface(nativeVoiceBridge, "SkillvayaVoice");
+        notificationPermissionBridge = new NotificationPermissionBridge();
+        webView.addJavascriptInterface(notificationPermissionBridge, "SkillvayaNotifications");
         callRingerBridge = new CallRingerBridge();
         webView.addJavascriptInterface(callRingerBridge, "SkillvayaCallRinger");
         if (BuildConfig.PUBLIC_URL != null && BuildConfig.PUBLIC_URL.trim().startsWith("https://")) {
@@ -524,6 +549,27 @@ public class MainActivity extends Activity {
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PUSH_NOTIFICATION_PERMISSION_REQUEST) {
+            boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (!granted && notificationPermissionRequestedFromCall) {
+                new AlertDialog.Builder(this)
+                    .setTitle("Incoming calls need notifications")
+                    .setMessage("SkillVaya cannot reliably alert you to incoming calls while it is in the background until notifications are enabled. You can turn them on in Android settings.")
+                    .setPositiveButton("Open settings", (dialog, which) -> {
+                        try {
+                            Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                            intent.putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+                            startActivity(intent);
+                        } catch (Exception ignored) {
+                            try { startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))); } catch (Exception ignoredAgain) {}
+                        }
+                    })
+                    .setNegativeButton("Later", null)
+                    .show();
+            }
+            notificationPermissionRequestedFromCall = false;
+            return;
+        }
         if (requestCode == NATIVE_VOICE_PERMISSION_REQUEST) {
             boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
             if (granted) startNativeVoice();

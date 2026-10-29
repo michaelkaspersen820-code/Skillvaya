@@ -2831,6 +2831,8 @@ async function svSyncVideoCall(call){
  }finally{call.syncing=false;}
 }
 async function startSkillvayaVideoCall(businessId,customerId){
+  // Ask in context when a user starts a call, so they can enable future incoming-call alerts in the background.
+  try { if (window.SkillvayaNotifications && typeof window.SkillvayaNotifications.ensureForCall === 'function') window.SkillvayaNotifications.ensureForCall(); } catch (e) { console.warn('Notification permission prompt unavailable', e); }
   if(me&&me.role==='customer')customerId=Number(me.id);businessId=Number(businessId);customerId=Number(customerId);if(!businessId||!customerId){alert('Open the existing contact conversation before starting a video call.');return;}
   if(svActiveVideoCall){alert('A video call is already open. End that call before starting another.');return;}
   if(!me){view('settings');profileAuthMode('signin');alert('Sign in before starting a video call.');return;}
