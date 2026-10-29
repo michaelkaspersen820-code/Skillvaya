@@ -17,8 +17,8 @@ android {
         applicationId 'za.co.skillvaya.app'
         minSdk 24
         targetSdk 36
-        versionCode 54
-        versionName '7.1.5.1'
+        versionCode 55
+        versionName '7.1.5.2'
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
     signingConfigs {
@@ -63,3 +63,4 @@ chaquopy {
         buildPython("C:/Users/user/AppData/Local/Programs/Python/Python311/python.exe")
     }
 }
+
