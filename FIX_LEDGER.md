@@ -28,3 +28,9 @@ Validation note: source syntax, diff whitespace, release version metadata, signi
 - `SV57-AUTH-RESTORE-01` ? main app (web and Android embedded copies): wait for the existing `/api/me` session check before dismissing the startup splash/deciding whether to show first-launch sign-in. Existing persisted credentials are used; this does not create or sign out accounts.
 - `SV57-WF-SESSION-01` ? WorkFinder (web and Android embedded copies): read the same token from localStorage or sessionStorage, cache restored identity in both, and preserve credentials on transient/network/data-loading errors. Only an explicit WorkFinder sign-out or an authorization response (401/403) clears saved credentials.
 - `SV57-ACCOUNT-HEADER-01` ? main app (web and Android embedded copies): keep the Account identity heading pinned at the top of the Account scroll viewport; this style is scoped to Account mode.
+
+- `SV58-RATING-01` ? main app rating selection updates immediately and uses the aggregate returned by the save response instead of waiting for an extra ratings request.
+- `SV58-ACCOUNT-HEADER-02` ? Account header sticky offset is set below the fixed 78px main header so it remains visible during Account scrolling.
+- `SV58-SESSION-PERSIST-02` ? successful login persists the session across app closes/updates regardless of the optional remember-me checkbox; explicit sign-out remains the way to clear it.
+- `SV58-CONVERSATION-01` ? main conversation shell renders immediately; empty provider-side conversations can send the first message rather than only showing a waiting notice.
+- `SV58-WF-COMPOSER-01` ? WorkFinder composer uses fixed compact grid columns to prevent the Speak/microphone/send controls from overlapping or being pushed off-screen.
