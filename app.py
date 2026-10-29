@@ -2749,24 +2749,28 @@ async function startSkillvayaVideoCall(businessId,customerId){
   if(svActiveVideoCall){alert('A video call is already open. End that call before starting another.');return;}
   if(!me){view('settings');profileAuthMode('signin');alert('Sign in before starting a video call.');return;}
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof RTCPeerConnection==='undefined'){alert('This browser or WebView does not support camera video calls. Update your browser/app and try again.');return;}
-  let call=null;
+  let call=null,mediaPromise=null;
   try{
-    svShowCallModal('Skillvaya video call','Preparing your call…');
+    svShowCallModal('Skillvaya video call','Requesting camera and microphone permission…');
+    // Start capture directly in the user's tap handler. Keep it asynchronous so the call
+    // invitation can be sent immediately even if Android takes time to grant/open media.
+    mediaPromise=navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true}).then(stream=>({stream}),error=>({error}));
     call={callId:'',businessId:Number(businessId),customerId:Number(customerId),isCaller:true,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
     await svCreatePeer(call);
     const offer=await call.pc.createOffer();await call.pc.setLocalDescription(offer);
     const created=await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'start',business_id:call.businessId,customer_id:call.customerId,offer_sdp:JSON.stringify(call.pc.localDescription)})});
     call.callId=created.call_id;svActiveVideoCall=call;svStartCallPolling(call);svSetCallState('Calling… waiting for the other participant to answer.');
-    // Signal the recipient first. Camera startup/permission can now proceed without delaying the ring.
+    // Do not let media startup block the recipient's incoming-call alert.
     svSendPendingCandidates(call).catch(err=>svSetCallState('Call started; network setup is retrying: '+err.message));
     svSetCallState('Calling… waiting for the other participant to answer. Starting camera and microphone…');
-    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true});
-    if(svActiveVideoCall!==call){stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});return;}
-    await svAttachCallMedia(call,stream);
+    const mediaResult=await mediaPromise;if(mediaResult.error)throw mediaResult.error;
+    if(svActiveVideoCall!==call){mediaResult.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});return;}
+    await svAttachCallMedia(call,mediaResult.stream);
     if(svActiveVideoCall===call)svSetCallState('Calling… waiting for the other participant to answer.');
   }catch(e){
     if(call&&svActiveVideoCall===call)await closeSkillvayaVideoCall(true);
     else{if(call&&call.pc)try{call.pc.close()}catch(_){}if(call&&call.localStream)call.localStream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');}
+    if(mediaPromise)mediaPromise.then(result=>{if(result&&result.stream)result.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}})}).catch(()=>{});
     alert('Could not start the video call: '+(e.message||'Camera/microphone permission was not granted.'));
   }
 }
@@ -2774,10 +2778,12 @@ async function acceptSkillvayaVideoCall(){
   const incoming=svIncomingVideoCall;if(!incoming)return;svStopIncomingCallAlert();const panel=document.getElementById('svIncomingVideoCall');if(panel)panel.hidden=true;svIncomingVideoCall=null;
   if(svActiveVideoCall){alert('End your current call before accepting another.');return;}
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof RTCPeerConnection==='undefined'){alert('This browser or WebView cannot access a camera for video calls.');return;}
-  let call=null;
+  let call=null,mediaPromise=null;
   try{
-    view('messages');showMessagesScreen(false);await openMessageConversation(Number(incoming.business_id),Number(incoming.customer_id));
-    svShowCallModal('Skillvaya video call','Connecting the call…');
+    svShowCallModal('Skillvaya video call','Requesting camera and microphone permission…');
+    // Begin media capture on the Accept tap; don't wait for message-screen refresh/network work.
+    mediaPromise=navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true}).then(stream=>({stream}),error=>({error}));
+    view('messages');showMessagesScreen(false);const conversationPromise=openMessageConversation(Number(incoming.business_id),Number(incoming.customer_id));
     call={callId:String(incoming.id),businessId:Number(incoming.business_id),customerId:Number(incoming.customer_id),isCaller:false,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
     await svCreatePeer(call);
     const got=await api('/api/video-calls/'+encodeURIComponent(call.callId)+'?after=0');const remote=got.call;if(remote.status!=='ringing')throw Error('This call is no longer available.');
@@ -2787,13 +2793,15 @@ async function acceptSkillvayaVideoCall(){
     svActiveVideoCall=call;call.lastSignalId=(remote.signals||[]).reduce((n,x)=>Math.max(n,Number(x.id)||0),0);
     for(const event of (remote.signals||[])){if(Number(event.sender_id)===Number(me.id)||event.kind!=='candidate')continue;try{await call.pc.addIceCandidate(new RTCIceCandidate(JSON.parse(event.payload)))}catch(_){}}
     svSendPendingCandidates(call).catch(err=>svSetCallState('Call accepted; network setup is retrying: '+err.message));svStartCallPolling(call);svSetCallState('Call accepted. Starting camera and microphone…');
-    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true});
-    if(svActiveVideoCall!==call){stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});return;}
-    await svAttachCallMedia(call,stream);
+    const mediaResult=await mediaPromise;if(mediaResult.error)throw mediaResult.error;
+    if(svActiveVideoCall!==call){mediaResult.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});return;}
+    await svAttachCallMedia(call,mediaResult.stream);
     if(svActiveVideoCall===call)svSetCallState('Call accepted; connecting…');
+    await conversationPromise;
   }catch(e){
     if(call&&svActiveVideoCall===call)await closeSkillvayaVideoCall(true);
     else{if(call&&call.pc)try{call.pc.close()}catch(_){}if(call&&call.localStream)call.localStream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');}
+    if(mediaPromise)mediaPromise.then(result=>{if(result&&result.stream)result.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}})}).catch(()=>{});
     alert('Could not accept the call: '+(e.message||'Please check camera/microphone permissions.'));
     try{await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'reject',call_id:String(incoming.id)})})}catch(_){}
   }
