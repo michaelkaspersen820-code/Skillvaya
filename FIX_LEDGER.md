@@ -34,3 +34,6 @@ Validation note: source syntax, diff whitespace, release version metadata, signi
 - `SV58-SESSION-PERSIST-02` ? successful login persists the session across app closes/updates regardless of the optional remember-me checkbox; explicit sign-out remains the way to clear it.
 - `SV58-CONVERSATION-01` ? main conversation shell renders immediately; empty provider-side conversations can send the first message rather than only showing a waiting notice.
 - `SV58-WF-COMPOSER-01` ? WorkFinder composer uses fixed compact grid columns to prevent the Speak/microphone/send controls from overlapping or being pushed off-screen.
+
+- `SV58-ACCOUNT-HEADER-03` ? corrected the Account header using viewport-fixed positioning (rather than sticky positioning inside the nested scroll container) and reserved layout space below it.
+- `SV58-WF-COMPOSER-02` ? constrained all five WorkFinder composer columns to fit within narrow mobile widths without horizontal overflow.
