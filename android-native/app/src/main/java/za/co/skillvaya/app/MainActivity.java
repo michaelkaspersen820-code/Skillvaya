@@ -9,6 +9,9 @@ import android.speech.RecognitionListener;
 import android.os.SystemClock;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
+import android.media.Ringtone;
+import android.media.RingtoneManager;
+import android.provider.Settings;
 import android.os.Vibrator;
 import android.os.VibrationEffect;
 import android.webkit.JavascriptInterface;
@@ -61,13 +64,14 @@ public class MainActivity extends Activity {
     }
     public final class CallRingerBridge {
         private ToneGenerator toneGenerator;
+        private Ringtone ringingTone;
         private Vibrator vibrator;
         private boolean ringing = false;
         private final Handler ringHandler = new Handler(Looper.getMainLooper());
         private final Runnable ringCycle = new Runnable() {
             @Override public void run() {
                 if (!ringing) return;
-                try { if (toneGenerator != null) toneGenerator.startTone(ToneGenerator.TONE_SUP_RINGTONE, 1500); } catch (Exception ignored) {}
+                try { if (ringingTone != null) { if (!ringingTone.isPlaying()) ringingTone.play(); } else if (toneGenerator != null) toneGenerator.startTone(ToneGenerator.TONE_SUP_RINGTONE, 1700); } catch (Exception ignored) {}
                 try {
                     if (vibrator != null && vibrator.hasVibrator()) {
                         if (android.os.Build.VERSION.SDK_INT >= 26) vibrator.vibrate(VibrationEffect.createWaveform(new long[]{0, 350, 180, 350, 950}, -1));
@@ -82,7 +86,7 @@ public class MainActivity extends Activity {
         private void startRinging() {
             if (ringing) return;
             ringing = true;
-            try { toneGenerator = new ToneGenerator(AudioManager.STREAM_RING, 85); } catch (Exception ignored) { toneGenerator = null; }
+            try { if (android.os.Build.VERSION.SDK_INT >= 28) { ringingTone = RingtoneManager.getRingtone(MainActivity.this, Settings.System.DEFAULT_RINGTONE_URI); if (ringingTone != null) { ringingTone.setStreamType(AudioManager.STREAM_RING); ringingTone.setVolume(1.0f); ringingTone.setLooping(true); } } if (ringingTone == null) toneGenerator = new ToneGenerator(AudioManager.STREAM_RING, 100); } catch (Exception ignored) { try { toneGenerator = new ToneGenerator(AudioManager.STREAM_RING, 100); } catch (Exception ignoredAgain) { toneGenerator = null; } }
             try { vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE); } catch (Exception ignored) { vibrator = null; }
             ringHandler.removeCallbacks(ringCycle);
             ringCycle.run();
@@ -90,8 +94,10 @@ public class MainActivity extends Activity {
         private void stopRinging() {
             ringing = false;
             ringHandler.removeCallbacks(ringCycle);
+            try { if (ringingTone != null) ringingTone.stop(); } catch (Exception ignored) {}
             try { if (toneGenerator != null) { toneGenerator.stopTone(); toneGenerator.release(); } } catch (Exception ignored) {}
             toneGenerator = null;
+            ringingTone = null;
             try { if (vibrator != null) vibrator.cancel(); } catch (Exception ignored) {}
             vibrator = null;
         }

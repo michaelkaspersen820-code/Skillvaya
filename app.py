@@ -2685,7 +2685,7 @@ function showMessagesScreen(loadThreads=true){
 function openSkillvayaStudioContact(){const b=(allBusinesses||[]).find(x=>String(x.name||'').toLowerCase().includes('skillvaya digital')&&String(x.category||'').toLowerCase().includes('software'));if(b){openProvider(b.id);return;}view('services');const search=document.getElementById('search');if(search){search.value='Skillvaya Digital & Creative Studio';if(typeof loadBusinesses==='function')loadBusinesses();}}
 function viewMessages(){showMessagesScreen();}
 
-let svActiveVideoCall=null,svIncomingVideoCall=null,svIncomingCallPoll=null,svVideoCallPollingStarted=false,svProcessedIncomingCalls=new Set();
+let svActiveVideoCall=null,svIncomingVideoCall=null,svIncomingCallPoll=null,svVideoCallPollingStarted=false,svIncomingPollBusy=false,svIncomingWakeHandlersRegistered=false,svProcessedIncomingCalls=new Set();
 function svEnsureCallOverlays(){
  let modal=document.getElementById('svVideoCallModal');
  if(!modal){
@@ -2710,7 +2710,7 @@ function svShowCallModal(title,state){svEnsureCallOverlays();const modal=documen
 function svSetLocalStream(stream){const v=document.getElementById('svCallLocalVideo');if(v){v.srcObject=stream;v.play().catch(()=>{});}}
 function svSetRemoteStream(stream){const v=document.getElementById('svCallRemoteVideo');if(v){v.srcObject=stream;v.play().catch(()=>{});}}
 async function svCreatePeer(call){
-  const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]});
+  const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}],iceCandidatePoolSize:10,bundlePolicy:'max-bundle'});
   call.pc=pc;call.remoteStream=new MediaStream();svSetRemoteStream(call.remoteStream);
   // Reserve audio/video media lines before camera permissions finish, so the recipient can be rung immediately.
   call.audioSender=pc.addTransceiver('audio',{direction:'sendrecv'}).sender;
@@ -2728,12 +2728,12 @@ async function svAttachCallMedia(call,stream){
   return true;
 }
 async function svSendPendingCandidates(call){const list=call.pendingCandidates.splice(0);for(const c of list){try{await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'candidate',call_id:call.callId,candidate:c})})}catch(e){svSetCallState('Could not send connection candidate: '+e.message)}}}
-function svStartCallPolling(call){if(call.pollTimer)clearInterval(call.pollTimer);call.pollTimer=setInterval(()=>svSyncVideoCall(call).catch(e=>svSetCallState('Call signalling interrupted: '+e.message)),1400);}
+function svStartCallPolling(call){if(call.pollTimer)clearInterval(call.pollTimer);svSyncVideoCall(call).catch(e=>svSetCallState('Call signalling interrupted: '+e.message));call.pollTimer=setInterval(()=>svSyncVideoCall(call).catch(e=>svSetCallState('Call signalling interrupted: '+e.message)),650);}
 async function svSyncVideoCall(call){
  if(!svActiveVideoCall||svActiveVideoCall.callId!==call.callId||call.syncing)return;call.syncing=true;
  try{
   const d=await api('/api/video-calls/'+encodeURIComponent(call.callId)+'?after='+call.lastSignalId);const state=d.call;
-  if(['ended','rejected','missed'].includes(state.status)){svSetCallState(state.status==='rejected'?'The call was declined.':state.status==='missed'?'No answer.':'The call has ended.');setTimeout(()=>{if(svActiveVideoCall&&svActiveVideoCall.callId===call.callId)closeSkillvayaVideoCall(false)},900);return;}
+  if(['ended','rejected','missed'].includes(state.status)){svSetCallState(state.status==='rejected'?'The call was declined.':state.status==='missed'?'No answer.':'The call has ended.');closeSkillvayaVideoCall(false);return;}
   if(call.isCaller&&state.answer_sdp&&!call.remoteDescriptionSet){await call.pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(state.answer_sdp)));call.remoteDescriptionSet=true;for(const c of call.queuedRemoteCandidates.splice(0)){try{await call.pc.addIceCandidate(new RTCIceCandidate(c))}catch(_){}}svSetCallState('Answer received; connecting…');}
   for(const event of (state.signals||[])){
    call.lastSignalId=Math.max(call.lastSignalId,Number(event.id)||0);
@@ -2783,7 +2783,7 @@ async function acceptSkillvayaVideoCall(){
     svShowCallModal('Skillvaya video call','Requesting camera and microphone permission…');
     // Begin media capture on the Accept tap; don't wait for message-screen refresh/network work.
     mediaPromise=navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true}).then(stream=>({stream}),error=>({error}));
-    view('messages');showMessagesScreen(false);const conversationPromise=openMessageConversation(Number(incoming.business_id),Number(incoming.customer_id));
+    view('messages');showMessagesScreen(false);const conversationPromise=openMessageConversation(Number(incoming.business_id),Number(incoming.customer_id)).catch(e=>console.warn('Call contact view refresh was delayed:',e&&e.message||e));
     call={callId:String(incoming.id),businessId:Number(incoming.business_id),customerId:Number(incoming.customer_id),isCaller:false,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
     await svCreatePeer(call);
     const got=await api('/api/video-calls/'+encodeURIComponent(call.callId)+'?after=0');const remote=got.call;if(remote.status!=='ringing')throw Error('This call is no longer available.');
@@ -2797,7 +2797,7 @@ async function acceptSkillvayaVideoCall(){
     if(svActiveVideoCall!==call){mediaResult.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});return;}
     await svAttachCallMedia(call,mediaResult.stream);
     if(svActiveVideoCall===call)svSetCallState('Call accepted; connecting…');
-    await conversationPromise;
+    // Contact rendering does not block the accepted media connection.
   }catch(e){
     if(call&&svActiveVideoCall===call)await closeSkillvayaVideoCall(true);
     else{if(call&&call.pc)try{call.pc.close()}catch(_){}if(call&&call.localStream)call.localStream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');}
@@ -2809,22 +2809,13 @@ async function acceptSkillvayaVideoCall(){
 async function declineSkillvayaVideoCall(){const incoming=svIncomingVideoCall;svStopIncomingCallAlert();svIncomingVideoCall=null;const p=document.getElementById('svIncomingVideoCall');if(p)p.hidden=true;if(incoming)try{await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'reject',call_id:String(incoming.id)})})}catch(e){alert('The call could not be declined on the server: '+e.message)}}
 async function closeSkillvayaVideoCall(sendEnd){
  const call=svActiveVideoCall;svActiveVideoCall=null;
- if(call){if(call.pollTimer)clearInterval(call.pollTimer);if(sendEnd&&call.callId)try{await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'end',call_id:call.callId})})}catch(_){}if(call.pc)try{call.pc.onicecandidate=null;call.pc.close()}catch(_){}for(const stream of [call.localStream,call.remoteStream])if(stream)stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});}
+ if(call){if(call.pollTimer)clearInterval(call.pollTimer);if(sendEnd&&call.callId)api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'end',call_id:call.callId})}).catch(()=>{});if(call.pc)try{call.pc.onicecandidate=null;call.pc.ontrack=null;call.pc.close()}catch(_){}for(const stream of [call.localStream,call.remoteStream])if(stream)stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});}
  const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');const rv=document.getElementById('svCallRemoteVideo'),lv=document.getElementById('svCallLocalVideo');if(rv)rv.srcObject=null;if(lv)lv.srcObject=null;
 }
 function toggleSkillvayaCallMic(){const c=svActiveVideoCall;if(!c)return;const tracks=c.localStream.getAudioTracks();const next=tracks.some(t=>t.enabled);tracks.forEach(t=>t.enabled=!next);svSetCallState(next?'Microphone muted':'Microphone enabled');}
 function toggleSkillvayaCallCamera(){const c=svActiveVideoCall;if(!c)return;const tracks=c.localStream.getVideoTracks();const next=tracks.some(t=>t.enabled);tracks.forEach(t=>t.enabled=!next);svSetCallState(next?'Camera turned off':'Camera enabled');}
-async function pollSkillvayaIncomingCalls(){
-  if(!me||svActiveVideoCall)return;
-  try{
-   const d=await api('/api/video-calls');
-   if(svIncomingVideoCall){const stillRinging=(d.items||[]).some(x=>String(x.id)===String(svIncomingVideoCall.id)&&x.status==='ringing');if(!stillRinging){svIncomingVideoCall=null;const p=document.getElementById('svIncomingVideoCall');if(p)p.hidden=true;svStopIncomingCallAlert();}return;}
-   const incoming=(d.items||[]).find(x=>Number(x.callee_id)===Number(me.id)&&Number(x.caller_id)!==Number(me.id)&&x.status==='ringing'&&!svProcessedIncomingCalls.has(String(x.id)));
-   if(!incoming)return;
-   svIncomingVideoCall=incoming;svEnsureCallOverlays();const p=document.getElementById('svIncomingVideoCall');const title=document.getElementById('svIncomingTitle'),detail=document.getElementById('svIncomingDetail');if(title)title.textContent=(incoming.caller_name||'Your contact')+' is calling';if(detail)detail.textContent=(incoming.business_name||'Skillvaya chat')+' · incoming video call';if(p)p.hidden=false;svStartIncomingCallAlert(incoming);
-  }catch(e){/* Messaging remains usable if call polling is temporarily unavailable. */}
-}
-function startSkillvayaVideoCallPolling(){if(svVideoCallPollingStarted)return;svVideoCallPollingStarted=true;svEnsureCallOverlays();pollSkillvayaIncomingCalls();svIncomingCallPoll=setInterval(pollSkillvayaIncomingCalls,3500);}
+async function pollSkillvayaIncomingCalls(){if(!me||svActiveVideoCall||svIncomingPollBusy)return;svIncomingPollBusy=true;try{const d=await api('/api/video-calls');if(svIncomingVideoCall){const stillRinging=(d.items||[]).some(x=>String(x.id)===String(svIncomingVideoCall.id)&&x.status==='ringing');if(!stillRinging){svIncomingVideoCall=null;const p=document.getElementById('svIncomingVideoCall');if(p)p.hidden=true;svStopIncomingCallAlert();}return;}const incoming=(d.items||[]).find(x=>Number(x.callee_id)===Number(me.id)&&Number(x.caller_id)!==Number(me.id)&&x.status==='ringing'&&!svProcessedIncomingCalls.has(String(x.id)));if(!incoming)return;svIncomingVideoCall=incoming;svEnsureCallOverlays();const p=document.getElementById('svIncomingVideoCall');const title=document.getElementById('svIncomingTitle'),detail=document.getElementById('svIncomingDetail');if(title)title.textContent=(incoming.caller_name||'Your contact')+' is calling';if(detail)detail.textContent=(incoming.business_name||'Skillvaya chat')+' — incoming video call';if(p)p.hidden=false;svStartIncomingCallAlert(incoming);}catch(e){/* Messaging remains usable if call polling is temporarily unavailable. */}finally{svIncomingPollBusy=false;}}
+function startSkillvayaVideoCallPolling(){if(svVideoCallPollingStarted)return;svVideoCallPollingStarted=true;svEnsureCallOverlays();pollSkillvayaIncomingCalls();svIncomingCallPoll=setInterval(pollSkillvayaIncomingCalls,900);if(!svIncomingWakeHandlersRegistered){svIncomingWakeHandlersRegistered=true;document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pollSkillvayaIncomingCalls()});window.addEventListener('focus',()=>pollSkillvayaIncomingCalls());}}
 function renderSkillvayaChatMessage(m){
  const own=Number(m.sender_id)===Number(me&&me.id);
  const atts=(m.attachments||[]).map(a=>{

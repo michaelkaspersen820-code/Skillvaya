@@ -17,8 +17,8 @@ android {
         applicationId 'za.co.skillvaya.app'
         minSdk 24
         targetSdk 36
-        versionCode 62
-        versionName '7.1.5.9'
+        versionCode 63
+        versionName '7.1.6.0'
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
     signingConfigs {
