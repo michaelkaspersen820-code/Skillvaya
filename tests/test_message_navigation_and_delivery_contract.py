@@ -67,10 +67,16 @@ class MessageNavigationAndDeliveryContract(unittest.TestCase):
                 self.assertEqual(source.count('id="svNotificationBell"'), 1)
                 self.assertIn('<header class="top"><div class="wrap nav">', source)
                 self.assertIn('id="svNotificationBell" class="sv-notification-bell"', source)
-                self.assertIn('.sv-notification-bell{position:relative;', source)
+                self.assertIn('.sv-notification-bell{-webkit-appearance:none;', source)
+                self.assertIn('.sv-notification-bell:focus,.sv-notification-bell:focus-visible,.sv-notification-bell:active{background:#fff!important;', source)
                 self.assertIn("const b=document.getElementById('svNotificationBell');if(!b)return null;", source)
                 self.assertNotIn("document.body.appendChild(b)", source)
                 self.assertIn("api('/api/notifications')", source)
+                handler_start = source.index('function svEnsureNotificationBell()')
+                handler_end = source.index('function svSetNotificationCount', handler_start)
+                handler = source[handler_start:handler_end]
+                self.assertLess(handler.index('showMessagesScreen(true)'), handler.index("api('/api/notifications')"))
+                self.assertIn("addEventListener('click',()=>{", handler)
 
 
     def test_home_notification_bell_shows_immediately_after_session_restore(self):
