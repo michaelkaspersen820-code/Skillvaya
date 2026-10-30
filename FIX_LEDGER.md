@@ -93,3 +93,21 @@ Reproduced the call flow with two real browser sessions (customer calls provider
 - `SV74-TEST-03` - 2 more regression checks (37 contract tests total).
 
 Still not proven: answering on a real phone (no device connected via adb), a TURN relay for carrier networks (host variables `SKILLVAYA_TURN_*` not set), and push delivery to a device.
+
+## Target 75 - 2026-10-30 (7.1.7.2 / versionCode 75) - one header standard on every screen
+
+Owner request: every screen header must look the same, text must stay inside it, the Services heading was far too big, and headers must stay on screen (including WorkFinder). Version 74 is already on Google Play, so this is the next version.
+
+Real-browser audit at 390x844 (and 360x740) of every customer-app, provider, account, messages, terms and WorkFinder screen found: headers from 62 px to 284 px tall (Services workstation hero 284 px, Contact 190, Account 143, Provider tools 132), titles from 19 px to 38 px, a hard-coded 76 px sticky offset that left a gap of scrolling content above the header on screens without the masthead and overlapped the masthead (94 px) on Home, a sticky Account/Contact hero covering a third of the phone, and WorkFinder page titles that scrolled away.
+
+- `SV75-HDR-01` - one header standard (`SV75-HEADERS-01` block at the end of the customer-app CSS, both `app.py` copies): every screen header is a full-width navy bar, 62 px (min) to 84 px (max), 20 px bold title (18 px on 360 px phones), one-line 12 px subtitle, text clipped with an ellipsis so it can never leave the bar, eyebrow/plan chips hidden, arrow-only back buttons. Covers Services workstation, Contact, Provider studio, Provider tools, Account, Messages, category list, account sub-pages (My Jobs & Quotes etc.), Team assignments, Terms, and the provider-detail back bar. Specificity is raised with `:not(#z):not(#z)` so the older id-based `!important` rules cannot win.
+- `SV75-HDR-02` - sticky offset is now real: `svSyncHeaderOffset()` sets `--sv-screen-header-top` to the bottom edge of the masthead when it is visible and 0 when it is hidden (MutationObserver on body class and masthead, resize, orientation). Removes the gap above headers on Contact/Terms/Provider studio and the overlap on Home. Account stays pinned (fixed) and the page below now starts 76 px down instead of 178 px. Account sub-pages: bar now at the very top and the cards start under it (they were pinned at 145-180 px for the old tall block).
+- `SV75-HDR-03` - Home masthead is 63 px on phones (was 94): tagline hidden, `.nav` min-height 62 px.
+- `SV75-WF-HDR-01` - WorkFinder pages get the same bar: first heading (+ subtitle) of every page is wrapped by a small observer into a sticky `.wf-pagehead` under the app bar; row headers (Messages + New button) and the chat header use the same bar; "Back" first-buttons become a back bar. Added `overflow-x:clip` fallback because `overflow-x:hidden` on both `html` and `body` silently disabled `position:sticky` (page titles scrolled away on every scrolling page).
+- `SV75-WF-CHAT-01` - pre-existing bug found by the audit: the WorkFinder chat header sat at y=12 behind the 60 px app bar, so Back, the partner name and the Block button added in round 3 were hidden. The chat page now starts under the app bar.
+- `SV75-HDR-04` - Terms page, Privacy/Policies page, Account-deletion page and Owner dashboard title bar are compact and sticky (`.top` 20-22 px title).
+- `SV75-TEST-04` - `tests/test_header_standard_contract.py` (13 checks; 50 contract tests in total).
+
+Measured after the change (Playwright, phone widths): every header 62 px (back bar 56 px) with a 20 px / 800 title; no horizontal scroll on any screen; bars lock at top 0 (or just under the masthead) after scrolling.
+
+Not covered: owner dashboard is a desktop layout (sticky title bar added, not re-designed for phones); the WorkFinder "apply" page needs a job in the database to render, so it was not measured.
