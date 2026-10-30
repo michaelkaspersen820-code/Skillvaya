@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,7 +50,9 @@ class MessageNavigationAndDeliveryContract(unittest.TestCase):
                 end = source.index("\nfunction svReadFileAsDataUrl", start)
                 function = source[start:end]
                 self.assertIn("href='tel:'+normalizedPhone", function)
-                self.assertIn("startSkillvayaVideoCall(businessId,customerId)", function)
+                self.assertIn("startSkillvayaVideoCall(businessId,customerId,", function)
+                self.assertIn("'voice'", function)
+                self.assertIn("'video'", function)
                 self.assertIn("phoneDigits.length>=7", function)
 
     def test_authenticated_conversation_data_contains_contact_phone_fields(self):

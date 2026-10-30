@@ -1733,13 +1733,13 @@ body.provider-workstation-mode main.wrap{padding:0!important}
 /* Additive in-chat media and WebRTC call UI; isolated from the existing layout. */
 /* Place the video-call action in the existing message header, aligned top-right. */
 .message-conversation-header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.message-conversation-header .sv-chat-call-button,.message-conversation-topbar .sv-chat-call-button{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;min-height:42px;padding:9px 13px;border:1px solid #c5dbf5;border-radius:11px;background:#10233f;color:#fff;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 12px rgba(16,35,63,.13)}
-.message-conversation-header .sv-chat-call-button:hover,.message-conversation-topbar .sv-chat-call-button:hover{background:#173c68;border-color:#9fc6f2}
-.message-conversation-header .sv-chat-call-button:focus-visible,.message-conversation-topbar .sv-chat-call-button:focus-visible{outline:3px solid #9cc7f4;outline-offset:2px}
+.message-conversation-header .sv-chat-call-button,.message-conversation-topbar .sv-chat-call-button,.message-conversation-header .sv-chat-voice-call-button,.message-conversation-topbar .sv-chat-voice-call-button{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;min-height:42px;padding:9px 13px;border:1px solid #c5dbf5;border-radius:11px;background:#10233f;color:#fff;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 12px rgba(16,35,63,.13)}
+.message-conversation-header .sv-chat-call-button:hover,.message-conversation-topbar .sv-chat-call-button:hover,.message-conversation-header .sv-chat-voice-call-button:hover,.message-conversation-topbar .sv-chat-voice-call-button:hover{background:#173c68;border-color:#9fc6f2}
+.message-conversation-header .sv-chat-call-button:focus-visible,.message-conversation-topbar .sv-chat-call-button:focus-visible,.message-conversation-header .sv-chat-voice-call-button:focus-visible,.message-conversation-topbar .sv-chat-voice-call-button:focus-visible{outline:3px solid #9cc7f4;outline-offset:2px}
 .message-conversation-header .sv-chat-phone-call-button,.message-conversation-topbar .sv-chat-phone-call-button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;min-height:42px;padding:9px 13px;border:1px solid #bfd8f6;border-radius:11px;background:#e8f2ff;color:#173d68;font-size:13px;font-weight:800;text-decoration:none;cursor:pointer}
 .message-conversation-header .sv-chat-phone-call-button:hover,.message-conversation-topbar .sv-chat-phone-call-button:hover{background:#d9eaff;border-color:#9fc6ee}
 .message-conversation-header .sv-chat-phone-call-button:focus-visible,.message-conversation-topbar .sv-chat-phone-call-button:focus-visible{outline:3px solid #9cc7f4;outline-offset:2px}
-@media(max-width:420px){.message-conversation-header .sv-chat-call-button,.message-conversation-topbar .sv-chat-call-button,.message-conversation-header .sv-chat-phone-call-button,.message-conversation-topbar .sv-chat-phone-call-button{padding:8px 9px;min-height:38px;font-size:12px}}
+@media(max-width:420px){.message-conversation-header .sv-chat-call-button,.message-conversation-topbar .sv-chat-call-button,.message-conversation-header .sv-chat-voice-call-button,.message-conversation-topbar .sv-chat-voice-call-button,.message-conversation-header .sv-chat-phone-call-button,.message-conversation-topbar .sv-chat-phone-call-button{padding:8px 9px;min-height:38px;font-size:12px}}
 .message-conversation-topbar{display:flex;align-items:center;gap:10px;width:100%;margin:0 0 8px;min-width:0}
 .message-conversation-topbar .message-back-button{flex:0 1 auto;min-width:0}
 
@@ -1754,6 +1754,7 @@ body.provider-workstation-mode main.wrap{padding:0!important}
 .sv-chat-attachment a{font-size:12px;font-weight:700;color:#23558e;overflow-wrap:anywhere}
 .sv-call-overlay{position:fixed;inset:0;z-index:15000;background:rgba(5,16,32,.88);display:flex;align-items:center;justify-content:center;padding:12px}
 .sv-call-overlay.hidden{display:none!important}
+.sv-call-voice-only:not(.hidden) .sv-call-videos{display:none!important}.sv-call-audio-only{display:none}.sv-call-voice-only:not(.hidden) .sv-call-audio-only{display:flex;flex:1 1 auto;min-height:0;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#fff;text-align:center}.sv-call-audio-avatar{display:grid;place-items:center;width:112px;height:112px;border-radius:50%;background:linear-gradient(145deg,#1d5d9c,#3a8ad2);font-size:42px;box-shadow:0 0 0 12px #1c5a9633}.sv-call-audio-only strong{font-size:20px}.sv-call-audio-only span{font-size:13px;color:#c3d2e7}
 .sv-call-panel{width:min(920px,100%);max-height:96dvh;overflow:auto;background:#fff;border-radius:22px;box-shadow:0 30px 90px rgba(0,0,0,.35);color:#10233f;padding:clamp(14px,3vw,24px)}
 .sv-call-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
 .sv-call-header h2{margin:0;font-size:22px;color:#10233f}
@@ -1783,6 +1784,7 @@ body.provider-workstation-mode main.wrap{padding:0!important}
 .sv-call-overlay:not(.hidden) .sv-call-actions button{min-width:0!important;min-height:52px!important;padding:10px 5px!important;border-radius:16px!important;font-size:12px!important;line-height:1.2!important;white-space:normal!important}
 .sv-call-overlay:not(.hidden) .sv-call-actions .sv-call-end{background:#c5283d!important;color:#fff!important}
 .sv-call-overlay:not(.hidden) .sv-call-note{display:none!important}
+.sv-call-overlay.sv-call-voice-only:not(.hidden) .sv-call-videos{display:none!important}.sv-call-overlay.sv-call-voice-only:not(.hidden) .sv-call-audio-only{display:flex!important} .sv-call-overlay.sv-call-voice-only:not(.hidden) .sv-call-actions{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important}
 @media(min-width:700px){.sv-call-overlay:not(.hidden) .sv-call-panel{padding:calc(env(safe-area-inset-top) + 14px) 24px calc(env(safe-area-inset-bottom) + 18px)!important}.sv-call-overlay:not(.hidden) .sv-call-actions{max-width:620px!important;margin:0 auto!important}.sv-call-overlay:not(.hidden) .sv-call-actions button{font-size:14px!important}}
 .sv-incoming-panel{position:fixed;z-index:16000;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top));max-width:460px;margin:auto;border:1px solid #c7ddf7;border-radius:18px;padding:16px;background:#fff;box-shadow:0 18px 50px rgba(7,20,38,.28);color:#10233f}
 .sv-incoming-panel[hidden]{display:none}
@@ -1808,8 +1810,10 @@ body.messages-screen-mode.messages-conversation-open #messagesScreen .message-co
  white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;box-shadow:none!important;
 }
 body.messages-conversation-open #messagesScreen .message-conversation-topbar .sv-chat-call-button,
-body.messages-screen-mode.messages-conversation-open #messagesScreen .message-conversation-topbar .sv-chat-call-button{
- flex:0 0 auto!important;width:auto!important;min-width:0!important;min-height:44px!important;height:44px!important;margin:0!important;padding:8px 12px!important;
+body.messages-screen-mode.messages-conversation-open #messagesScreen .message-conversation-topbar .sv-chat-call-button,
+body.messages-conversation-open #messagesScreen .message-conversation-topbar .sv-chat-voice-call-button,
+body.messages-screen-mode.messages-conversation-open #messagesScreen .message-conversation-topbar .sv-chat-voice-call-button{
+ flex:0 0 auto!important;width:auto!important;min-width:0!important;min-height:44px!important;height:44px!important;margin:0!important;padding:8px 10px!important;
  border:1px solid #78a7f0!important;border-radius:10px!important;background:#10233f!important;color:#fff!important;font-size:13px!important;font-weight:800!important;
  white-space:nowrap!important;box-shadow:0 4px 12px rgba(16,35,63,.13)!important;
 }
@@ -2782,6 +2786,7 @@ function svEnsureCallOverlays(){
   modal.innerHTML='<div class="sv-call-panel"><header class="sv-call-header"><div><h2 id="svCallTitle">Skillvaya video call</h2><p id="svCallState" class="sv-call-state">Preparing your camera and microphone…</p></div><button type="button" class="sv-tool-outline" onclick="closeSkillvayaVideoCall(true)">Close</button></header><div class="sv-call-videos"><div class="sv-call-remote-wrap"><video id="svCallRemoteVideo" autoplay playsinline></video><span class="sv-call-video-label">Other participant</span></div><div class="sv-call-local-wrap"><video id="svCallLocalVideo" autoplay playsinline muted></video><span class="sv-call-video-label">You</span></div></div><div class="sv-call-actions"><button type="button" onclick="toggleSkillvayaCallMic()" aria-label="Mute or unmute call microphone">Mute / unmute</button><button type="button" class="sv-call-end" onclick="closeSkillvayaVideoCall(true)" aria-label="End call">End call</button><button type="button" onclick="toggleSkillvayaCallCamera()" aria-label="Turn call camera on or off">Camera on / off</button></div><p class="sv-call-note">The call uses your device camera and microphone. Skillvaya exchanges connection signals; media travels peer-to-peer when the network allows it. Some networks may require TURN relay configuration.</p></div>';
   document.body.appendChild(modal);
  }
+   if(!modal.querySelector('.sv-call-audio-only')){const audioOnly=document.createElement('div');audioOnly.className='sv-call-audio-only';audioOnly.innerHTML='<div class="sv-call-audio-avatar">☎</div><strong>Skillvaya voice call</strong><span>Audio only</span>';const actions=modal.querySelector('.sv-call-actions');if(actions)modal.querySelector('.sv-call-panel').insertBefore(audioOnly,actions);}
    const localPreview=modal.querySelector('.sv-call-local-wrap');
   if(localPreview&&!localPreview.dataset.dragReady){localPreview.dataset.dragReady='1';localPreview.addEventListener('pointerdown',e=>{if(e.button!==undefined&&e.button!==0)return;const r=localPreview.getBoundingClientRect();localPreview.setPointerCapture&&localPreview.setPointerCapture(e.pointerId);localPreview.dataset.dragX=String(e.clientX-r.left);localPreview.dataset.dragY=String(e.clientY-r.top);e.preventDefault();});localPreview.addEventListener('pointermove',e=>{if(!localPreview.hasPointerCapture||!localPreview.hasPointerCapture(e.pointerId))return;const area=localPreview.parentElement,ar=area.getBoundingClientRect(),r=localPreview.getBoundingClientRect(),x=e.clientX-ar.left-Number(localPreview.dataset.dragX||0),y=e.clientY-ar.top-Number(localPreview.dataset.dragY||0);localPreview.style.left=Math.max(0,Math.min(Math.max(0,ar.width-r.width),x))+'px';localPreview.style.top=Math.max(0,Math.min(Math.max(0,ar.height-r.height),y))+'px';localPreview.style.right='auto';localPreview.style.bottom='auto';});}
 if(!document.getElementById('svIncomingVideoCall')){
@@ -2795,7 +2800,7 @@ let svIncomingAlertTimer=null,svIncomingAlertAudio=null,svIncomingAlertId='';
 function svPlayIncomingCallTone(){try{const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return;if(!svIncomingAlertAudio)svIncomingAlertAudio=new AudioCtx();if(svIncomingAlertAudio.state==='suspended')svIncomingAlertAudio.resume().catch(()=>{});const ctx=svIncomingAlertAudio,osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.value=760;gain.gain.setValueAtTime(0.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.055,ctx.currentTime+0.025);gain.gain.setValueAtTime(0.055,ctx.currentTime+0.22);gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.32);osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+0.34);}catch(_){}}
 function svStopIncomingCallAlert(){if(svIncomingAlertTimer){clearInterval(svIncomingAlertTimer);svIncomingAlertTimer=null;}try{if(window.SkillvayaCallRinger&&typeof window.SkillvayaCallRinger.stop==='function')window.SkillvayaCallRinger.stop()}catch(_){}try{if(navigator.vibrate)navigator.vibrate(0)}catch(_){}const p=document.getElementById('svIncomingVideoCall');if(p)p.classList.remove('sv-call-ringing');svIncomingAlertId='';}
 function svStartIncomingCallAlert(incoming){const id=String(incoming&&incoming.id||'');if(!id||svIncomingAlertId===id)return;svStopIncomingCallAlert();svIncomingAlertId=id;const p=document.getElementById('svIncomingVideoCall');if(p)p.classList.add('sv-call-ringing');let nativeRinger=false;try{if(window.SkillvayaCallRinger&&typeof window.SkillvayaCallRinger.start==='function'){window.SkillvayaCallRinger.start(String(incoming.caller_name||'Skillvaya contact'));nativeRinger=true;}}catch(_){}if(!nativeRinger)svPlayIncomingCallTone();try{if(!nativeRinger&&navigator.vibrate)navigator.vibrate([350,180,350,850])}catch(_){}if('Notification'in window&&Notification.permission==='granted'){try{const n=new Notification('Skillvaya calling',{body:(incoming.caller_name||'Your contact')+' is calling you.',tag:'skillvaya-call-'+id,requireInteraction:true});n.onclick=()=>{try{window.focus()}catch(_){}n.close()}}catch(_){}}svIncomingAlertTimer=setInterval(()=>{if(!svIncomingAlertId)return;if(!nativeRinger&&document.visibilityState==='visible')svPlayIncomingCallTone();try{if(!nativeRinger&&navigator.vibrate)navigator.vibrate([350,180,350,850])}catch(_){}},1900);}
-function svShowCallModal(title,state){svEnsureCallOverlays();const modal=document.getElementById('svVideoCallModal');modal.classList.remove('hidden');const t=document.getElementById('svCallTitle');if(t)t.textContent=title||'Skillvaya video call';svSetCallState(state||'Connecting…');}
+function svShowCallModal(title,state,mode){svEnsureCallOverlays();const modal=document.getElementById('svVideoCallModal');modal.classList.toggle('sv-call-voice-only',mode==='voice');modal.setAttribute('aria-label',mode==='voice'?'Skillvaya voice call':'Skillvaya video call');const camera=modal.querySelector('.sv-call-actions button[aria-label="Turn call camera on or off"]');if(camera)camera.hidden=mode==='voice';modal.classList.remove('hidden');const t=document.getElementById('svCallTitle');if(t)t.textContent=title||(mode==='voice'?'Skillvaya voice call':'Skillvaya video call');svSetCallState(state||'Connecting…');}
 function svSetLocalStream(stream){const v=document.getElementById('svCallLocalVideo');if(v){v.srcObject=stream;v.play().catch(()=>{});}}
 function svSetRemoteStream(stream){const v=document.getElementById('svCallRemoteVideo');if(v){v.srcObject=stream;v.play().catch(()=>{});}}
 async function svCreatePeer(call){
@@ -2803,17 +2808,17 @@ async function svCreatePeer(call){
   call.pc=pc;call.remoteStream=new MediaStream();svSetRemoteStream(call.remoteStream);
   // Reserve audio/video media lines before camera permissions finish, so the recipient can be rung immediately.
   call.audioSender=pc.addTransceiver('audio',{direction:'sendrecv'}).sender;
-  call.videoSender=pc.addTransceiver('video',{direction:'sendrecv'}).sender;
+  call.videoSender=call.mediaMode==='video'?pc.addTransceiver('video',{direction:'sendrecv'}).sender:null;
   pc.ontrack=e=>{if(e.streams&&e.streams[0])e.streams[0].getTracks().forEach(t=>{if(!call.remoteStream.getTracks().some(x=>x.id===t.id))call.remoteStream.addTrack(t);});else if(e.track&&!call.remoteStream.getTracks().some(x=>x.id===e.track.id))call.remoteStream.addTrack(e.track);};
   pc.onicecandidate=e=>{if(!e.candidate)return;const c=e.candidate.toJSON?e.candidate.toJSON():{candidate:e.candidate.candidate,sdpMid:e.candidate.sdpMid,sdpMLineIndex:e.candidate.sdpMLineIndex,usernameFragment:e.candidate.usernameFragment};if(!call.callId){call.pendingCandidates.push(c);return;}api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'candidate',call_id:call.callId,candidate:c})}).catch(err=>svSetCallState('Network candidate could not be sent: '+err.message));};
-  pc.onconnectionstatechange=()=>{if(!svActiveVideoCall||svActiveVideoCall.callId!==call.callId)return;const state=pc.connectionState;if(state==='connected')svSetCallState('Connected — camera and microphone are live');else if(state==='connecting')svSetCallState('Connecting to the other participant…');else if(state==='disconnected')svSetCallState('Connection interrupted; attempting to reconnect…');else if(state==='failed')svSetCallState('Could not connect directly. This network may require TURN relay configuration.');};
+  pc.onconnectionstatechange=()=>{if(!svActiveVideoCall||svActiveVideoCall.callId!==call.callId)return;const state=pc.connectionState;if(state==='connected')svSetCallState(call.mediaMode==='voice'?'Voice call connected — microphone is live':'Connected — camera and microphone are live');else if(state==='connecting')svSetCallState('Connecting to the other participant…');else if(state==='disconnected')svSetCallState('Connection interrupted; attempting to reconnect…');else if(state==='failed')svSetCallState('Could not connect directly. This network may require TURN relay configuration.');};
   return pc;
 }
 async function svAttachCallMedia(call,stream){
   if(svActiveVideoCall!==call){stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});return false;}
   call.localStream=stream;svSetLocalStream(stream);
   const audio=stream.getAudioTracks()[0]||null,video=stream.getVideoTracks()[0]||null;
-  await Promise.all([call.audioSender.replaceTrack(audio),call.videoSender.replaceTrack(video)]);
+  const replacements=[call.audioSender.replaceTrack(audio)];if(call.videoSender)replacements.push(call.videoSender.replaceTrack(video));await Promise.all(replacements);
   return true;
 }
 async function svSendPendingCandidates(call){const list=call.pendingCandidates.splice(0);for(const c of list){try{await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'candidate',call_id:call.callId,candidate:c})})}catch(e){svSetCallState('Could not send connection candidate: '+e.message)}}}
@@ -2833,27 +2838,25 @@ async function svSyncVideoCall(call){
   }
  }finally{call.syncing=false;}
 }
-async function startSkillvayaVideoCall(businessId,customerId){
-  // Ask in context when a user starts a call, so they can enable future incoming-call alerts in the background.
+async function startSkillvayaVideoCall(businessId,customerId,mode='video'){
+  // Preserve the existing background incoming-call notification permission flow.
   try { if (window.SkillvayaNotifications && typeof window.SkillvayaNotifications.ensureForCall === 'function') window.SkillvayaNotifications.ensureForCall(); } catch (e) { console.warn('Notification permission prompt unavailable', e); }
-  if(me&&me.role==='customer')customerId=Number(me.id);businessId=Number(businessId);customerId=Number(customerId);if(!businessId||!customerId){alert('Open the existing contact conversation before starting a video call.');return;}
-  if(svActiveVideoCall){alert('A video call is already open. End that call before starting another.');return;}
-  if(!me){view('settings');profileAuthMode('signin');alert('Sign in before starting a video call.');return;}
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof RTCPeerConnection==='undefined'){alert('This browser or WebView does not support camera video calls. Update your browser/app and try again.');return;}
+  mode=mode==='voice'?'voice':'video';
+  if(me&&me.role==='customer')customerId=Number(me.id);businessId=Number(businessId);customerId=Number(customerId);if(!businessId||!customerId){alert('Open the existing contact conversation before starting a call.');return;}
+  if(svActiveVideoCall){alert('A call is already open. End that call before starting another.');return;}
+  if(!me){view('settings');profileAuthMode('signin');alert('Sign in before starting a call.');return;}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof RTCPeerConnection==='undefined'){alert('This browser or WebView does not support Skillvaya calls. Update your browser/app and try again.');return;}
   let call=null,mediaPromise=null;
+  const constraints=mode==='voice'?{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false}:{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}}};
   try{
-    svShowCallModal('Skillvaya video call','Requesting camera and microphone permission…');
-    // Start capture directly in the user's tap handler. Keep it asynchronous so the call
-    // invitation can be sent immediately even if Android takes time to grant/open media.
-    mediaPromise=navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}},audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}).then(stream=>({stream}),error=>({error}));
-    call={callId:'',businessId:Number(businessId),customerId:Number(customerId),isCaller:true,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
+    svShowCallModal(mode==='voice'?'Skillvaya voice call':'Skillvaya video call','Requesting microphone permission…',mode);
+    mediaPromise=navigator.mediaDevices.getUserMedia(constraints).then(stream=>({stream}),error=>({error}));
+    call={callId:'',businessId:Number(businessId),customerId:Number(customerId),mediaMode:mode,isCaller:true,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
     await svCreatePeer(call);
     const offer=await call.pc.createOffer();await call.pc.setLocalDescription(offer);
     const created=await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'start',business_id:call.businessId,customer_id:call.customerId,offer_sdp:JSON.stringify(call.pc.localDescription)})});
     call.callId=created.call_id;svActiveVideoCall=call;svStartCallPolling(call);svSetCallState('Calling… waiting for the other participant to answer.');
-    // Do not let media startup block the recipient's incoming-call alert.
     svSendPendingCandidates(call).catch(err=>svSetCallState('Call started; network setup is retrying: '+err.message));
-    svSetCallState('Calling… waiting for the other participant to answer. Starting camera and microphone…');
     const mediaResult=await mediaPromise;if(mediaResult.error)throw mediaResult.error;
     if(svActiveVideoCall!==call){mediaResult.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});return;}
     await svAttachCallMedia(call,mediaResult.stream);
@@ -2862,38 +2865,40 @@ async function startSkillvayaVideoCall(businessId,customerId){
     if(call&&svActiveVideoCall===call)await closeSkillvayaVideoCall(true);
     else{if(call&&call.pc)try{call.pc.close()}catch(_){}if(call&&call.localStream)call.localStream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');}
     if(mediaPromise)mediaPromise.then(result=>{if(result&&result.stream)result.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}})}).catch(()=>{});
-    alert('Could not start the video call: '+(e.message||'Camera/microphone permission was not granted.'));
+    alert('Could not start the call: '+(e.message||'Microphone/camera permission was not granted.'));
   }
 }
 async function acceptSkillvayaVideoCall(){
   const incoming=svIncomingVideoCall;if(!incoming)return;svStopIncomingCallAlert();const panel=document.getElementById('svIncomingVideoCall');if(panel)panel.hidden=true;svIncomingVideoCall=null;
   if(svActiveVideoCall){alert('End your current call before accepting another.');return;}
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof RTCPeerConnection==='undefined'){alert('This browser or WebView cannot access a camera for video calls.');return;}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof RTCPeerConnection==='undefined'){alert('This browser or WebView cannot access the microphone for Skillvaya calls.');return;}
+  const mode=incoming.media_type==='voice'?'voice':'video';
   let call=null,mediaPromise=null;
+  const constraints=mode==='voice'?{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false}:{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}}};
   try{
-    svShowCallModal('Skillvaya video call','Requesting camera and microphone permission…');
-    // Begin media capture on the Accept tap; don't wait for message-screen refresh/network work.
-    mediaPromise=navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}},audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}).then(stream=>({stream}),error=>({error}));
-    view('messages');showMessagesScreen(false);const conversationPromise=openMessageConversation(Number(incoming.business_id),Number(incoming.customer_id)).catch(e=>console.warn('Call contact view refresh was delayed:',e&&e.message||e));
-    call={callId:String(incoming.id),businessId:Number(incoming.business_id),customerId:Number(incoming.customer_id),isCaller:false,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
+    svShowCallModal(mode==='voice'?'Skillvaya voice call':'Skillvaya video call','Preparing microphone and connection…',mode);
+    mediaPromise=navigator.mediaDevices.getUserMedia(constraints).then(stream=>({stream}),error=>({error}));
+    view('messages');showMessagesScreen(false);openMessageConversation(Number(incoming.business_id),Number(incoming.customer_id)).catch(e=>console.warn('Call contact view refresh was delayed:',e&&e.message||e));
+    call={callId:String(incoming.id),businessId:Number(incoming.business_id),customerId:Number(incoming.customer_id),mediaMode:mode,isCaller:false,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
+    svActiveVideoCall=call;
     await svCreatePeer(call);
     const got=await api('/api/video-calls/'+encodeURIComponent(call.callId)+'?after=0');const remote=got.call;if(remote.status!=='ringing')throw Error('This call is no longer available.');
     await call.pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(remote.offer_sdp)));call.remoteDescriptionSet=true;
-    const answer=await call.pc.createAnswer();await call.pc.setLocalDescription(answer);
-    await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'accept',call_id:call.callId,answer_sdp:JSON.stringify(call.pc.localDescription)})});
-    svActiveVideoCall=call;call.lastSignalId=(remote.signals||[]).reduce((n,x)=>Math.max(n,Number(x.id)||0),0);
-    for(const event of (remote.signals||[])){if(Number(event.sender_id)===Number(me.id)||event.kind!=='candidate')continue;try{await call.pc.addIceCandidate(new RTCIceCandidate(JSON.parse(event.payload)))}catch(_){}}
-    svSendPendingCandidates(call).catch(err=>svSetCallState('Call accepted; network setup is retrying: '+err.message));svStartCallPolling(call);svSetCallState('Call accepted. Starting camera and microphone…');
+    // Attach the recipient's real media tracks BEFORE creating/sending the SDP answer.
+    // This ensures the answer advertises the correct send/receive media directions.
     const mediaResult=await mediaPromise;if(mediaResult.error)throw mediaResult.error;
     if(svActiveVideoCall!==call){mediaResult.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});return;}
     await svAttachCallMedia(call,mediaResult.stream);
-    if(svActiveVideoCall===call)svSetCallState('Call accepted; connecting…');
-    // Contact rendering does not block the accepted media connection.
+    const answer=await call.pc.createAnswer();await call.pc.setLocalDescription(answer);
+    await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'accept',call_id:call.callId,answer_sdp:JSON.stringify(call.pc.localDescription)})});
+    call.lastSignalId=(remote.signals||[]).reduce((n,x)=>Math.max(n,Number(x.id)||0),0);
+    for(const event of (remote.signals||[])){if(Number(event.sender_id)===Number(me.id)||event.kind!=='candidate')continue;try{await call.pc.addIceCandidate(new RTCIceCandidate(JSON.parse(event.payload)))}catch(_){}}
+    svSendPendingCandidates(call).catch(err=>svSetCallState('Call accepted; network setup is retrying: '+err.message));svStartCallPolling(call);svSetCallState(mode==='voice'?'Voice call accepted; connecting…':'Video call accepted; connecting…');
   }catch(e){
     if(call&&svActiveVideoCall===call)await closeSkillvayaVideoCall(true);
     else{if(call&&call.pc)try{call.pc.close()}catch(_){}if(call&&call.localStream)call.localStream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');}
     if(mediaPromise)mediaPromise.then(result=>{if(result&&result.stream)result.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}})}).catch(()=>{});
-    alert('Could not accept the call: '+(e.message||'Please check camera/microphone permissions.'));
+    alert('Could not accept the call: '+(e.message||'Please check microphone/camera permissions.'));
     try{await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'reject',call_id:String(incoming.id)})})}catch(_){}
   }
 }
@@ -2901,11 +2906,11 @@ async function declineSkillvayaVideoCall(){const incoming=svIncomingVideoCall;sv
 async function closeSkillvayaVideoCall(sendEnd){
  const call=svActiveVideoCall;svActiveVideoCall=null;
  if(call){if(call.pollTimer)clearInterval(call.pollTimer);if(sendEnd&&call.callId)api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'end',call_id:call.callId})}).catch(()=>{});if(call.pc)try{call.pc.onicecandidate=null;call.pc.ontrack=null;call.pc.close()}catch(_){}for(const stream of [call.localStream,call.remoteStream])if(stream)stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});}
- const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');const rv=document.getElementById('svCallRemoteVideo'),lv=document.getElementById('svCallLocalVideo');if(rv)rv.srcObject=null;if(lv)lv.srcObject=null;
+ const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');const rv=document.getElementById('svCallRemoteVideo'),lv=document.getElementById('svCallLocalVideo');if(rv)rv.srcObject=null;if(lv)lv.srcObject=null;if(modal)modal.classList.remove('sv-call-voice-only');
 }
 function toggleSkillvayaCallMic(){const c=svActiveVideoCall;if(!c)return;const tracks=c.localStream.getAudioTracks();const next=tracks.some(t=>t.enabled);tracks.forEach(t=>t.enabled=!next);svSetCallState(next?'Microphone muted':'Microphone enabled');}
 function toggleSkillvayaCallCamera(){const c=svActiveVideoCall;if(!c)return;const tracks=c.localStream.getVideoTracks();const next=tracks.some(t=>t.enabled);tracks.forEach(t=>t.enabled=!next);svSetCallState(next?'Camera turned off':'Camera enabled');}
-async function pollSkillvayaIncomingCalls(){if(!me||svActiveVideoCall||svIncomingPollBusy)return;svIncomingPollBusy=true;try{const d=await api('/api/video-calls');if(svIncomingVideoCall){const stillRinging=(d.items||[]).some(x=>String(x.id)===String(svIncomingVideoCall.id)&&x.status==='ringing');if(!stillRinging){svIncomingVideoCall=null;const p=document.getElementById('svIncomingVideoCall');if(p)p.hidden=true;svStopIncomingCallAlert();}return;}const incoming=(d.items||[]).find(x=>Number(x.callee_id)===Number(me.id)&&Number(x.caller_id)!==Number(me.id)&&x.status==='ringing'&&!svProcessedIncomingCalls.has(String(x.id)));if(!incoming)return;svIncomingVideoCall=incoming;svEnsureCallOverlays();const p=document.getElementById('svIncomingVideoCall');const title=document.getElementById('svIncomingTitle'),detail=document.getElementById('svIncomingDetail');if(title)title.textContent=(incoming.caller_name||'Your contact')+' is calling';if(detail)detail.textContent=(incoming.business_name||'Skillvaya chat')+' — incoming video call';if(p)p.hidden=false;svStartIncomingCallAlert(incoming);}catch(e){/* Messaging remains usable if call polling is temporarily unavailable. */}finally{svIncomingPollBusy=false;}}
+async function pollSkillvayaIncomingCalls(){if(!me||svActiveVideoCall||svIncomingPollBusy)return;svIncomingPollBusy=true;try{const d=await api('/api/video-calls');if(svIncomingVideoCall){const stillRinging=(d.items||[]).some(x=>String(x.id)===String(svIncomingVideoCall.id)&&x.status==='ringing');if(!stillRinging){svIncomingVideoCall=null;const p=document.getElementById('svIncomingVideoCall');if(p)p.hidden=true;svStopIncomingCallAlert();}return;}const incoming=(d.items||[]).find(x=>Number(x.callee_id)===Number(me.id)&&Number(x.caller_id)!==Number(me.id)&&x.status==='ringing'&&!svProcessedIncomingCalls.has(String(x.id)));if(!incoming)return;svIncomingVideoCall=incoming;svEnsureCallOverlays();const p=document.getElementById('svIncomingVideoCall');const title=document.getElementById('svIncomingTitle'),detail=document.getElementById('svIncomingDetail');if(title)title.textContent=(incoming.caller_name||'Your contact')+' is calling';if(detail)detail.textContent=(incoming.business_name||'Skillvaya chat')+' — incoming '+(incoming.media_type==='voice'?'voice call':'video call');if(p)p.hidden=false;svStartIncomingCallAlert(incoming);}catch(e){/* Messaging remains usable if call polling is temporarily unavailable. */}finally{svIncomingPollBusy=false;}}
 function startSkillvayaVideoCallPolling(){if(svVideoCallPollingStarted)return;svVideoCallPollingStarted=true;svEnsureCallOverlays();pollSkillvayaIncomingCalls();svIncomingCallPoll=setInterval(pollSkillvayaIncomingCalls,900);if(!svIncomingWakeHandlersRegistered){svIncomingWakeHandlersRegistered=true;document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pollSkillvayaIncomingCalls()});window.addEventListener('focus',()=>pollSkillvayaIncomingCalls());}}
 function renderSkillvayaChatMessage(m){
  const own=Number(m.sender_id)===Number(me&&me.id);
@@ -2922,23 +2927,20 @@ function ensureSkillvayaChatMediaToolbar(root,businessId,customerId,phoneNumber)
  if(screen.querySelector('.sv-chat-media-toolbar'))return;
  const header=screen.querySelector('.message-conversation-header');
  const back=screen.querySelector('.message-back-button');
- const call=document.createElement('button');call.type='button';call.className='sv-chat-call-button';call.setAttribute('aria-label','Start video call');call.title='Start a video call with this contact';call.textContent='Video call';call.addEventListener('click',()=>startSkillvayaVideoCall(businessId,customerId));
+ const voiceCall=document.createElement('button');voiceCall.type='button';voiceCall.className='sv-chat-voice-call-button';voiceCall.setAttribute('aria-label','Start voice call');voiceCall.title='Start a voice call with this contact';voiceCall.textContent='Call';voiceCall.addEventListener('click',()=>startSkillvayaVideoCall(businessId,customerId,'voice'));
+ const videoCall=document.createElement('button');videoCall.type='button';videoCall.className='sv-chat-call-button';videoCall.setAttribute('aria-label','Start video call');videoCall.title='Start a video call with this contact';videoCall.textContent='Video call';videoCall.addEventListener('click',()=>startSkillvayaVideoCall(businessId,customerId,'video'));
  const normalizedPhone=String(phoneNumber||'').trim().replace(/[^\d+]/g,'').replace(/(?!^)\+/g,'');
  const phoneDigits=normalizedPhone.replace(/\D/g,'');
  let phoneCall=null;
- if(phoneDigits.length>=7){
-  phoneCall=document.createElement('a');phoneCall.className='sv-chat-phone-call-button';phoneCall.href='tel:'+normalizedPhone;phoneCall.textContent='Call';phoneCall.setAttribute('aria-label','Call this contact by phone');phoneCall.title='Call the contact using your phone network';
- }
+ if(phoneDigits.length>=7){phoneCall=document.createElement('a');phoneCall.className='sv-chat-phone-call-button';phoneCall.href='tel:'+normalizedPhone;phoneCall.textContent='Phone';phoneCall.setAttribute('aria-label','Call this contact using your phone network');phoneCall.title='Call using your phone network';}
  const toolbar=document.createElement('div');toolbar.className='sv-chat-media-toolbar';
  const upload=document.createElement('button');upload.type='button';upload.className='sv-media-upload';upload.textContent='\uFF0B Send photo / video';upload.setAttribute('aria-label','Send photo or video to this chat');upload.addEventListener('click',()=>screen.querySelector('#svChatMediaInput')?.click());
  const input=document.createElement('input');input.id='svChatMediaInput';input.type='file';input.accept='image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,video/3gpp';input.hidden=true;input.addEventListener('change',e=>sendSkillvayaChatAttachment(e,businessId,customerId));
- const status=document.createElement('div');status.id='svChatMediaStatus';status.className='sv-chat-media-status';status.setAttribute('aria-live','polite');status.textContent='Video calls and photo/video sharing are available in every chat.';
- if(header){if(phoneCall)header.appendChild(phoneCall);header.appendChild(call);}
- else if(back){
-  let topbar=screen.querySelector('.message-conversation-topbar');
-  if(!topbar){topbar=document.createElement('div');topbar.className='message-conversation-topbar';screen.insertBefore(topbar,back);}
-  topbar.append(back);if(phoneCall)topbar.appendChild(phoneCall);topbar.appendChild(call);
- }else{if(phoneCall)toolbar.appendChild(phoneCall);toolbar.appendChild(call);}
+ const status=document.createElement('div');status.id='svChatMediaStatus';status.className='sv-chat-media-status';status.setAttribute('aria-live','polite');status.textContent='Voice calls, video calls and photo/video sharing are available in every chat.';
+ if(header){header.appendChild(voiceCall);header.appendChild(videoCall);}
+ else if(back){let topbar=screen.querySelector('.message-conversation-topbar');if(!topbar){topbar=document.createElement('div');topbar.className='message-conversation-topbar';screen.insertBefore(topbar,back);}topbar.append(back);topbar.appendChild(voiceCall);topbar.appendChild(videoCall);}
+ else{toolbar.appendChild(voiceCall);toolbar.appendChild(videoCall);}
+ if(phoneCall)toolbar.appendChild(phoneCall);
  toolbar.append(upload,input,status);
  const bubbles=screen.querySelector('.message-bubbles');if(bubbles)screen.insertBefore(toolbar,bubbles);else screen.appendChild(toolbar);
 }
@@ -4202,7 +4204,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 stamp=now()
                 with conn() as c:
                     c.execute("UPDATE video_calls SET status='missed',updated_at=?,ended_at=? WHERE status='ringing' AND created_at<?",(stamp,stamp,cutoff))
-                    base_query="""SELECT vc.id,vc.business_id,vc.customer_id,vc.caller_id,vc.callee_id,vc.status,vc.created_at,vc.updated_at,
+                    base_query="""SELECT vc.id,vc.business_id,vc.customer_id,vc.caller_id,vc.callee_id,vc.status,CASE WHEN vc.offer_sdp LIKE '%m=video%' THEN 'video' ELSE 'voice' END AS media_type,vc.created_at,vc.updated_at,
                         b.name business_name,cu.name customer_name,caller.name caller_name,callee.name callee_name
                         FROM video_calls vc JOIN businesses b ON b.id=vc.business_id
                         JOIN users cu ON cu.id=vc.customer_id JOIN users caller ON caller.id=vc.caller_id

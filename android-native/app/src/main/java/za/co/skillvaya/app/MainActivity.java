@@ -134,13 +134,13 @@ public class MainActivity extends Activity {
     private void voiceJs(String script) {
         if (webView != null) runOnUiThread(() -> webView.evaluateJavascript(script, null));
     }
+    private void prepareNativeVoiceRecognizer() {
+        if (nativeSpeechRecognizer != null || !SpeechRecognizer.isRecognitionAvailable(this)) return;
+        try { nativeSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(this); } catch (Exception ignored) { nativeSpeechRecognizer = null; }
+    }
     private void stopNativeVoice(boolean notifyPage) {
         nativeVoiceActive = false;
-        if (nativeSpeechRecognizer != null) {
-            try { nativeSpeechRecognizer.cancel(); } catch (Exception ignored) {}
-            try { nativeSpeechRecognizer.destroy(); } catch (Exception ignored) {}
-            nativeSpeechRecognizer = null;
-        }
+        if (nativeSpeechRecognizer != null) { try { nativeSpeechRecognizer.cancel(); } catch (Exception ignored) {} }
         if (notifyPage) voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(true)");
     }
     private void scheduleNativeVoiceRestart() {
@@ -159,8 +159,8 @@ public class MainActivity extends Activity {
                     intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false);
                     // Ask compatible Android speech services for punctuation and text formatting.
                     if (android.os.Build.VERSION.SDK_INT >= 33) intent.putExtra("android.speech.extra.ENABLE_FORMATTING", "quality");
-                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 10000L);
-                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L);
+                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 30000L);
+                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 15000L);
                     nativeSpeechRecognizer.startListening(intent);
                 }
             } catch (Exception e) {
@@ -168,7 +168,7 @@ public class MainActivity extends Activity {
                 voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(false)");
                 voiceJs("window.svNativeVoiceError && window.svNativeVoiceError('Android could not continue listening. Check the speech service and try again.')");
             }
-        }, 200);
+        }, 120);
     }
     private void startNativeVoice() {
         if (nativeVoiceActive) return;
@@ -181,8 +181,9 @@ public class MainActivity extends Activity {
             return;
         }
         try {
+            prepareNativeVoiceRecognizer();
+            if (nativeSpeechRecognizer == null) throw new IllegalStateException("Speech recognition could not be prepared.");
             nativeVoiceActive = true;
-            nativeSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
             nativeSpeechRecognizer.setRecognitionListener(new RecognitionListener() {
                 @Override public void onReadyForSpeech(Bundle params) { voiceJs("window.svNativeVoiceReady && window.svNativeVoiceReady()"); }
                 @Override public void onBeginningOfSpeech() {}
@@ -226,8 +227,8 @@ public class MainActivity extends Activity {
             intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false);
                     // Ask compatible Android speech services for punctuation and text formatting.
                     if (android.os.Build.VERSION.SDK_INT >= 33) intent.putExtra("android.speech.extra.ENABLE_FORMATTING", "quality");
-            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 10000L);
-            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 30000L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 15000L);
             nativeSpeechRecognizer.startListening(intent);
         } catch (Exception e) {
             nativeVoiceActive = false;
@@ -502,6 +503,7 @@ public class MainActivity extends Activity {
                         view.evaluateJavascript("(function(){var p=location.pathname||'';var b=document.body;var owner=p.indexOf('/owner-app')===0;var customer=p.indexOf('/customer-app')===0;var t=(document.title||'').toLowerCase();if(owner)return !!(b&&b.children.length>0&&(document.getElementById('loginScreen')||document.getElementById('appShell')));return customer&&!!b&&t.indexOf('skillvaya')>=0&&t.indexOf('render')<0&&b.innerText.trim().length>20;})()", value -> {
                             if ("true".equals(value)) {
                                 hostedAppReady = true;
+                                prepareNativeVoiceRecognizer();
                                 PushTokenRegistrar.register(MainActivity.this, BuildConfig.PUBLIC_URL);
                                 loadingHandler.removeCallbacks(retryHostedPage);
                                 loadingHandler.removeCallbacks(loadingAnimation);
@@ -639,6 +641,7 @@ public class MainActivity extends Activity {
         if (playBillingBridge != null) playBillingBridge.shutdown();
       if (callRingerBridge != null) callRingerBridge.shutdown();
         stopNativeVoice(false);
+        if (nativeSpeechRecognizer != null) { try { nativeSpeechRecognizer.destroy(); } catch (Exception ignored) {} nativeSpeechRecognizer = null; }
         super.onDestroy();
     }
     @Override public void onBackPressed(){if(webView!=null&&webView.canGoBack())webView.goBack();else super.onBackPressed();}
