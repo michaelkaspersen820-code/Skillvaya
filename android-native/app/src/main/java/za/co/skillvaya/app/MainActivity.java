@@ -209,7 +209,7 @@ public class MainActivity extends Activity {
                 @Override public void onEndOfSpeech() {}
                 @Override public void onError(int error) {
                     if (!nativeVoiceActive) return;
-                    // Preserve the last partial phrase before Android closes this recognition segment.
+                    // Commit the last partial phrase before Android closes this recognition segment.
                     voiceJs("window.svNativeVoiceFlushInterim && window.svNativeVoiceFlushInterim()");
                     if (nativeVoiceStopRequested) {
                         nativeVoiceActive = false;
@@ -217,19 +217,11 @@ public class MainActivity extends Activity {
                         voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(true)");
                         return;
                     }
-                    if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
-                            || error == SpeechRecognizer.ERROR_NETWORK || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT
-                            || error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY
-                            || error == SpeechRecognizer.ERROR_CLIENT) {
-                        // Recognition sessions naturally terminate between phrases on many Android services.
-                        // Keep the same user-initiated dictation session alive and preserve accumulated text.
-                        scheduleNativeVoiceRestart();
-                        return;
-                    }
-                    nativeVoiceActive = false;
-                    if (nativeSpeechRecognizer != null) { try { nativeSpeechRecognizer.destroy(); } catch (Exception ignored) {} nativeSpeechRecognizer = null; }
-                    voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(false)");
-                    voiceJs("window.svNativeVoiceError && window.svNativeVoiceError(" + org.json.JSONObject.quote("Android speech recognition stopped (error " + error + "). Check that English speech recognition is available, then tap the microphone to try again.") + ")");
+                    // Android speech services can terminate a recognition segment even while the
+                    // user is still dictating. Treat every non-manual segment error as recoverable:
+                    // keep the microphone session active and automatically start another segment.
+                    // The message field and accumulated transcript are deliberately left untouched.
+                    scheduleNativeVoiceRestart();
                 }
                 @Override public void onResults(Bundle results) {
                     if (!nativeVoiceActive) return;

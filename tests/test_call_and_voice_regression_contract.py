@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +47,10 @@ class CallAndVoiceRegressionContract(unittest.TestCase):
         self.assertIn("nativeVoiceStopRequested", source)
         self.assertIn("window.svNativeVoiceResult", source)
         self.assertIn("window.svNativeVoiceFlushInterim", source)
+        error_handler = source[source.index("@Override public void onError(int error)"):source.index("@Override public void onResults(Bundle results)")]
+        self.assertIn("if (nativeVoiceStopRequested)", error_handler)
+        self.assertIn("scheduleNativeVoiceRestart();", error_handler)
+        self.assertEqual(error_handler.count("nativeVoiceActive = false;"), 1)
         self.assertIn("EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L", source)
         self.assertIn("EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 30000L", source)
         self.assertIn("prepareNativeVoiceRecognizer();\n                                PushTokenRegistrar.register", source)
