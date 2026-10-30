@@ -27,6 +27,8 @@ jobs:
         run: python -m py_compile app.py run_local.py desktop_launcher.py qa_one_go.py verify_owner_app_shell.py verify_paypal_checkout.py test_deployment_owner_bootstrap.py test_owner_promotions.py test_growth_features.py
       - name: Guard Android customer, owner, and WorkFinder bootstrap against regressions
         run: python -m unittest discover -s tests -p 'test_native_webview_bootstrap_contract.py' -v
+      - name: Guard chat navigation, fresh message loading, and phone-call links
+        run: python -m unittest discover -s tests -p 'test_message_navigation_and_delivery_contract.py' -v
       - name: Run isolated marketplace end-to-end QA
         run: python qa_one_go.py
       - name: Verify owner app navigation and PayPal readiness
