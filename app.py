@@ -2905,7 +2905,7 @@ async function acceptSkillvayaVideoCall(){
 async function declineSkillvayaVideoCall(){const incoming=svIncomingVideoCall;svStopIncomingCallAlert();svIncomingVideoCall=null;const p=document.getElementById('svIncomingVideoCall');if(p)p.hidden=true;if(incoming)try{await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'reject',call_id:String(incoming.id)})})}catch(e){alert('The call could not be declined on the server: '+e.message)}}
 async function closeSkillvayaVideoCall(sendEnd){
  const call=svActiveVideoCall;svActiveVideoCall=null;
- if(call){if(call.pollTimer)clearInterval(call.pollTimer);if(sendEnd&&call.callId)api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'end',call_id:call.callId})}).catch(()=>{});if(call.pc)try{call.pc.onicecandidate=null;call.pc.ontrack=null;call.pc.close()}catch(_){}for(const stream of [call.localStream,call.remoteStream])if(stream)stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});}
+ if(call){if(call.pollTimer)clearInterval(call.pollTimer);if(sendEnd&&call.callId){try{const ended=await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'end',call_id:call.callId})});if(!ended||!['ended','rejected','missed'].includes(ended.status))throw new Error('The server did not confirm that the call ended.');}catch(e){svSetCallState('Call ended here, but the other phone may not have received the end signal. '+(e.message||''));}}if(call.pc)try{call.pc.onicecandidate=null;call.pc.ontrack=null;call.pc.close()}catch(_){}for(const stream of [call.localStream,call.remoteStream])if(stream)stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});}
  const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');const rv=document.getElementById('svCallRemoteVideo'),lv=document.getElementById('svCallLocalVideo');if(rv)rv.srcObject=null;if(lv)lv.srcObject=null;if(modal)modal.classList.remove('sv-call-voice-only');
 }
 function toggleSkillvayaCallMic(){const c=svActiveVideoCall;if(!c)return;const tracks=c.localStream.getAudioTracks();const next=tracks.some(t=>t.enabled);tracks.forEach(t=>t.enabled=!next);svSetCallState(next?'Microphone muted':'Microphone enabled');}
@@ -4215,7 +4215,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         # providers as customer-side participants in the existing chat model.
                         rows=c.execute(base_query+"WHERE (b.user_id=? OR vc.caller_id=? OR vc.callee_id=?) AND vc.status IN ('ringing','accepted') ORDER BY vc.created_at DESC LIMIT 30",(u["id"],u["id"],u["id"])).fetchall()
                     elif u["role"]=="customer":
-                        rows=c.execute(base_query+"WHERE vc.customer_id=? AND vc.status IN ('ringing','accepted') ORDER BY vc.created_at DESC LIMIT 30",(u["id"],)).fetchall()
+                        rows=c.execute(base_query+"WHERE (vc.callee_id=? OR vc.customer_id=?) AND vc.status IN ('ringing','accepted') ORDER BY vc.created_at DESC LIMIT 30",(u["id"],u["id"])).fetchall()
                     else:
                         rows=c.execute(base_query+"WHERE vc.status IN ('ringing','accepted') ORDER BY vc.created_at DESC LIMIT 30").fetchall()
                 return self.sendj({"items":[dict(x) for x in rows]})

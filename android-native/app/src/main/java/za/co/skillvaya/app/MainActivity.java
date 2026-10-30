@@ -55,6 +55,7 @@ import com.chaquo.python.android.AndroidPlatform;
 public class MainActivity extends Activity {
     private SpeechRecognizer nativeSpeechRecognizer;
     private boolean nativeVoiceActive = false;
+    private boolean nativeVoiceStopRequested = false;
     private long lastVoiceStartAt = 0L;
     private static final int NATIVE_VOICE_PERMISSION_REQUEST = 7343;
     private static final int PUSH_NOTIFICATION_PERMISSION_REQUEST = 7344;
@@ -139,12 +140,27 @@ public class MainActivity extends Activity {
         try { nativeSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(this); } catch (Exception ignored) { nativeSpeechRecognizer = null; }
     }
     private void stopNativeVoice(boolean notifyPage) {
-        nativeVoiceActive = false;
-        if (nativeSpeechRecognizer != null) { try { nativeSpeechRecognizer.cancel(); } catch (Exception ignored) {} }
-        if (notifyPage) voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(true)");
+        if (!nativeVoiceActive) {
+            if (notifyPage) voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(true)");
+            return;
+        }
+        // Request the final recognised phrase; cancel() discarded pending text.
+        nativeVoiceStopRequested = true;
+        if (nativeSpeechRecognizer != null) {
+            try { nativeSpeechRecognizer.stopListening(); }
+            catch (Exception ignored) {
+                nativeVoiceActive = false;
+                nativeVoiceStopRequested = false;
+                if (notifyPage) voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(true)");
+            }
+        } else {
+            nativeVoiceActive = false;
+            nativeVoiceStopRequested = false;
+            if (notifyPage) voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(true)");
+        }
     }
     private void scheduleNativeVoiceRestart() {
-        if (!nativeVoiceActive) return;
+        if (!nativeVoiceActive || nativeVoiceStopRequested) return;
         loadingHandler.postDelayed(() -> {
             if (!nativeVoiceActive || isFinishing() || isDestroyed()) return;
             try {
@@ -184,6 +200,7 @@ public class MainActivity extends Activity {
             prepareNativeVoiceRecognizer();
             if (nativeSpeechRecognizer == null) throw new IllegalStateException("Speech recognition could not be prepared.");
             nativeVoiceActive = true;
+            nativeVoiceStopRequested = false;
             nativeSpeechRecognizer.setRecognitionListener(new RecognitionListener() {
                 @Override public void onReadyForSpeech(Bundle params) { voiceJs("window.svNativeVoiceReady && window.svNativeVoiceReady()"); }
                 @Override public void onBeginningOfSpeech() {}
@@ -210,7 +227,11 @@ public class MainActivity extends Activity {
                     if (!nativeVoiceActive) return;
                     ArrayList<String> matches = results == null ? null : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null && !matches.isEmpty()) voiceJs("window.svNativeVoiceResult && window.svNativeVoiceResult(" + org.json.JSONObject.quote(matches.get(0)) + ",true)");
-                    scheduleNativeVoiceRestart();
+                    if (nativeVoiceStopRequested) {
+                        nativeVoiceActive = false;
+                        nativeVoiceStopRequested = false;
+                        voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(true)");
+                    } else scheduleNativeVoiceRestart();
                 }
                 @Override public void onPartialResults(Bundle partialResults) {
                     if (!nativeVoiceActive || partialResults == null) return;

@@ -41,12 +41,29 @@ class CallAndVoiceRegressionContract(unittest.TestCase):
         source = JAVA.read_text(encoding="utf-8")
         self.assertIn("private void prepareNativeVoiceRecognizer()", source)
         stop = source[source.index("private void stopNativeVoice"):source.index("private void scheduleNativeVoiceRestart")]
-        self.assertIn("nativeSpeechRecognizer.cancel()", stop)
-        self.assertNotIn("nativeSpeechRecognizer.destroy()", stop)
+        self.assertIn("nativeSpeechRecognizer.stopListening()", stop)
+        self.assertNotIn("nativeSpeechRecognizer.cancel()", stop)
         self.assertIn("prepareNativeVoiceRecognizer();", source)
+        self.assertIn("nativeVoiceStopRequested", source)
+        self.assertIn("window.svNativeVoiceResult", source)
         self.assertIn("EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 30000L", source)
         self.assertIn("EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 15000L", source)
         self.assertIn("prepareNativeVoiceRecognizer();\n                                PushTokenRegistrar.register", source)
 
+
+    def test_customer_call_inbox_includes_calls_addressed_to_callee(self):
+        for path in RUNTIMES:
+            source = path.read_text(encoding="utf-8")
+            self.assertIn("WHERE (vc.callee_id=? OR vc.customer_id=?) AND vc.status IN ('ringing','accepted')", source)
+
+    def test_end_call_waits_for_server_confirmation(self):
+        for path in RUNTIMES:
+            source = path.read_text(encoding="utf-8")
+            start = source.index("async function closeSkillvayaVideoCall(sendEnd)")
+            end = source.index("\nfunction toggleSkillvayaCallMic", start)
+            close = source[start:end]
+            self.assertIn("await api('/api/video-calls'", close)
+            self.assertIn("action:'end'", close)
+            self.assertIn("The server did not confirm that the call ended.", close)
 if __name__ == "__main__":
     unittest.main()
