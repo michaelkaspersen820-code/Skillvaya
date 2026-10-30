@@ -78,7 +78,7 @@ class MessageNavigationAndDeliveryContract(unittest.TestCase):
             with self.subTest(path=str(path)):
                 source = self.read(path)
                 start = source.index("async function sessionInfo(knownUser=null)")
-                end = source.index("\\nasync function saveProfilePhoto()", start)
+                end = source.index("\nasync function saveProfilePhoto()", start)
                 function = source[start:end]
                 self.assertIn("me=d.user;const bell=svEnsureNotificationBell();if(bell)bell.classList.toggle('is-visible',!!me);", function)
 
