@@ -209,6 +209,14 @@ public class MainActivity extends Activity {
                 @Override public void onEndOfSpeech() {}
                 @Override public void onError(int error) {
                     if (!nativeVoiceActive) return;
+                    // Preserve the last partial phrase before Android closes this recognition segment.
+                    voiceJs("window.svNativeVoiceFlushInterim && window.svNativeVoiceFlushInterim()");
+                    if (nativeVoiceStopRequested) {
+                        nativeVoiceActive = false;
+                        nativeVoiceStopRequested = false;
+                        voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(true)");
+                        return;
+                    }
                     if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
                             || error == SpeechRecognizer.ERROR_NETWORK || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT
                             || error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY
@@ -227,6 +235,7 @@ public class MainActivity extends Activity {
                     if (!nativeVoiceActive) return;
                     ArrayList<String> matches = results == null ? null : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null && !matches.isEmpty()) voiceJs("window.svNativeVoiceResult && window.svNativeVoiceResult(" + org.json.JSONObject.quote(matches.get(0)) + ",true)");
+                    else voiceJs("window.svNativeVoiceFlushInterim && window.svNativeVoiceFlushInterim()");
                     if (nativeVoiceStopRequested) {
                         nativeVoiceActive = false;
                         nativeVoiceStopRequested = false;

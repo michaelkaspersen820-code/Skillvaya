@@ -2819,8 +2819,18 @@ async function acceptSkillvayaVideoCall(){
 async function declineSkillvayaVideoCall(){const incoming=svIncomingVideoCall;svStopIncomingCallAlert();svIncomingVideoCall=null;const p=document.getElementById('svIncomingVideoCall');if(p)p.hidden=true;if(incoming)try{await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'reject',call_id:String(incoming.id)})})}catch(e){alert('The call could not be declined on the server: '+e.message)}}
 async function closeSkillvayaVideoCall(sendEnd){
  const call=svActiveVideoCall;svActiveVideoCall=null;
- if(call){if(call.pollTimer)clearInterval(call.pollTimer);if(sendEnd&&call.callId){try{const ended=await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'end',call_id:call.callId})});if(!ended||!['ended','rejected','missed'].includes(ended.status))throw new Error('The server did not confirm that the call ended.');}catch(e){svSetCallState('Call ended here, but the other phone may not have received the end signal. '+(e.message||''));}}if(call.pc)try{call.pc.onicecandidate=null;call.pc.ontrack=null;call.pc.close()}catch(_){}for(const stream of [call.localStream,call.remoteStream])if(stream)stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});}
+ if(call){
+  if(call.pollTimer)clearInterval(call.pollTimer);
+  if(call.pc)try{call.pc.onicecandidate=null;call.pc.ontrack=null;call.pc.close()}catch(_){}
+  for(const stream of [call.localStream,call.remoteStream])if(stream)stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});
+ }
  const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');const rv=document.getElementById('svCallRemoteVideo'),lv=document.getElementById('svCallLocalVideo');if(rv)rv.srcObject=null;if(lv)lv.srcObject=null;if(modal)modal.classList.remove('sv-call-voice-only');
+ // Tear down the local call immediately. Do not make the End button wait for a slow mobile/database request.
+ if(sendEnd&&call&&call.callId){
+  api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'end',call_id:call.callId})})
+   .then(ended=>{if(!ended||!['ended','rejected','missed'].includes(ended.status))throw new Error('The server did not confirm that the call ended.');})
+   .catch(e=>svSetCallState('Call ended on this phone; server notification is still pending. '+(e.message||'')));
+ }
 }
 function toggleSkillvayaCallMic(){const c=svActiveVideoCall;if(!c)return;const tracks=c.localStream.getAudioTracks();const next=tracks.some(t=>t.enabled);tracks.forEach(t=>t.enabled=!next);svSetCallState(next?'Microphone muted':'Microphone enabled');}
 function toggleSkillvayaCallCamera(){const c=svActiveVideoCall;if(!c)return;const tracks=c.localStream.getVideoTracks();const next=tracks.some(t=>t.enabled);tracks.forEach(t=>t.enabled=!next);svSetCallState(next?'Camera turned off':'Camera enabled');}
@@ -2931,7 +2941,43 @@ async function svPollMessageNotifications(){if(svMessageLiveBusy||!me||document.
 function svStartMessageLiveUpdates(){svEnsureNotificationBell();if(svMessageLiveTimer)clearInterval(svMessageLiveTimer);svMessageLiveTimer=setInterval(svPollMessageNotifications,10000);svPollMessageNotifications();}
 let svVoiceManualStop=false,svNativeVoiceForm=null,svNativeVoiceButton=null,svNativeVoiceStartText='',svNativeVoiceLastFinal='',svNativeVoiceAccumulated='',svNativeVoiceInterim='',svNativeVoiceFinals=new Set();
 window.svNativeVoiceReady=function(){if(svNativeVoiceButton){svNativeVoiceButton.classList.add('is-listening');svNativeVoiceButton.setAttribute('aria-pressed','true');svNativeVoiceButton.innerHTML='&#127908;';svNativeVoiceButton.setAttribute('aria-label','Stop voice typing');svNativeVoiceButton.title='Stop voice typing';}const st=svNativeVoiceForm&&svNativeVoiceForm.querySelector('.sv-voice-status');if(st)st.textContent='Listening… tap the microphone once to stop.';};
-window.svNativeVoiceResult=function(text,isFinal){const form=svNativeVoiceForm,field=form&&form.elements.message;if(!field||!text)return;let clean=String(text).replace(/\\s+/g,' ').trim();if(!clean)return;const status=form.querySelector('.sv-voice-status');if(!isFinal){svNativeVoiceInterim=clean;field.value=(svNativeVoiceStartText?svNativeVoiceStartText+' ':'')+svNativeVoiceAccumulated+(svNativeVoiceAccumulated&&svNativeVoiceInterim?' ':'')+svNativeVoiceInterim;field.dispatchEvent(new Event('input',{bubbles:true}));if(status)status.textContent='Listening…';return;}svNativeVoiceInterim='';const norm=clean.toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu,' ').trim();if(!norm||svNativeVoiceFinals.has(norm))return;svNativeVoiceFinals.add(norm);svNativeVoiceLastFinal=norm;const words=clean.split(/\\s+/),prior=svNativeVoiceAccumulated.split(/\\s+/);let overlap=0;for(let k=Math.min(prior.length,words.length);k>0;k--){const a=prior.slice(-k).join(' ').toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu,' ').trim(),b=words.slice(0,k).join(' ').toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu,' ').trim();if(a&&a===b){overlap=k;break;}}const add=words.slice(overlap).join(' ');if(add)svNativeVoiceAccumulated+=(svNativeVoiceAccumulated?' ':'')+add;field.value=(svNativeVoiceStartText?svNativeVoiceStartText+' ':'')+svNativeVoiceAccumulated;field.dispatchEvent(new Event('input',{bubbles:true}));if(status)status.textContent='Listening… recognised words are being kept. Tap the microphone to stop.';};
+function svNativeVoiceCommitText(clean){
+ const form=svNativeVoiceForm,field=form&&form.elements.message;if(!field||!clean)return;
+ const norm=clean.toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu,' ').trim();
+ if(!norm||svNativeVoiceFinals.has(norm))return;
+ svNativeVoiceFinals.add(norm);svNativeVoiceLastFinal=norm;
+ const words=clean.split(/\\s+/),prior=svNativeVoiceAccumulated.split(/\\s+/);let overlap=0;
+ for(let k=Math.min(prior.length,words.length);k>0;k--){
+  const a=prior.slice(-k).join(' ').toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu,' ').trim();
+  const b=words.slice(0,k).join(' ').toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu,' ').trim();
+  if(a&&a===b){overlap=k;break;}
+ }
+ const add=words.slice(overlap).join(' ');if(add)svNativeVoiceAccumulated+=(svNativeVoiceAccumulated?' ':'')+add;
+ field.value=(svNativeVoiceStartText?svNativeVoiceStartText+' ':'')+svNativeVoiceAccumulated;
+ field.dispatchEvent(new Event('input',{bubbles:true}));
+}
+window.svNativeVoiceFlushInterim=function(){
+ const pending=svNativeVoiceInterim;svNativeVoiceInterim='';
+ if(pending)svNativeVoiceCommitText(pending);
+ const form=svNativeVoiceForm,field=form&&form.elements.message;
+ if(field){field.value=(svNativeVoiceStartText?svNativeVoiceStartText+' ':'')+svNativeVoiceAccumulated;field.dispatchEvent(new Event('input',{bubbles:true}));}
+};
+window.svNativeVoiceResult=function(text,isFinal){
+ const form=svNativeVoiceForm,field=form&&form.elements.message;if(!field||!text)return;
+ let clean=String(text).replace(/\\s+/g,' ').trim();if(!clean)return;
+ const status=form.querySelector('.sv-voice-status');
+ if(!isFinal){
+  svNativeVoiceInterim=clean;
+  field.value=(svNativeVoiceStartText?svNativeVoiceStartText+' ':'')+svNativeVoiceAccumulated+(svNativeVoiceAccumulated&&svNativeVoiceInterim?' ':'')+svNativeVoiceInterim;
+  field.dispatchEvent(new Event('input',{bubbles:true}));if(status)status.textContent='Listening.';return;
+ }
+ // Some Android speech services return a shorter final than their last partial. Keep the longer
+ // prefix-compatible transcript so words already heard are not thrown away at a session boundary.
+ const interim=svNativeVoiceInterim;svNativeVoiceInterim='';
+ if(interim&&interim.toLocaleLowerCase().startsWith(clean.toLocaleLowerCase()))clean=interim;
+ svNativeVoiceCommitText(clean);
+ if(status)status.textContent='Listening. recognised words are being kept. Tap the microphone to stop.';
+};
 window.svNativeVoiceEnded=function(manual){const b=svNativeVoiceButton,form=svNativeVoiceForm;if(b){b.classList.remove('is-listening');b.setAttribute('aria-pressed','false');b.innerHTML='&#127908;';b.setAttribute('aria-label','Start voice typing');b.title='Start voice typing';}const st=form&&form.querySelector('.sv-voice-status');if(st&&manual)st.textContent='Stopped. Review your message, then press Send.';else if(st&&!manual)st.textContent='Speech service ended listening. Tap the microphone to start again.';if(manual){svNativeVoiceForm=null;svNativeVoiceButton=null;}};
 window.svNativeVoiceError=function(message){const b=svNativeVoiceButton;if(b){b.classList.remove('is-listening');b.setAttribute('aria-pressed','false');b.setAttribute('aria-label','Start voice typing');b.title='Start voice typing';}const st=svNativeVoiceForm&&svNativeVoiceForm.querySelector('.sv-voice-status');if(st)st.textContent=message||'Voice recognition stopped.';};
 function svToggleVoiceInput(button){const form=button&&button.closest('form'),field=form&&form.elements.message,status=form&&form.querySelector('.sv-voice-status');if(!field)return;

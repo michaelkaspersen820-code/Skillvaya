@@ -46,6 +46,7 @@ class CallAndVoiceRegressionContract(unittest.TestCase):
         self.assertIn("prepareNativeVoiceRecognizer();", source)
         self.assertIn("nativeVoiceStopRequested", source)
         self.assertIn("window.svNativeVoiceResult", source)
+        self.assertIn("window.svNativeVoiceFlushInterim", source)
         self.assertIn("EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L", source)
         self.assertIn("EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 30000L", source)
         self.assertIn("prepareNativeVoiceRecognizer();\n                                PushTokenRegistrar.register", source)
@@ -62,7 +63,9 @@ class CallAndVoiceRegressionContract(unittest.TestCase):
             start = source.index("async function closeSkillvayaVideoCall(sendEnd)")
             end = source.index("\nfunction toggleSkillvayaCallMic", start)
             close = source[start:end]
-            self.assertIn("await api('/api/video-calls'", close)
+            self.assertIn("api(", close)
+            self.assertNotIn("await api(", close)
+            self.assertIn("Tear down the local call immediately", close)
             self.assertIn("action:'end'", close)
             self.assertIn("The server did not confirm that the call ended.", close)
 if __name__ == "__main__":
