@@ -59,6 +59,41 @@ class CallAndVoiceRegressionContract(unittest.TestCase):
         self.assertIn("prepareNativeVoiceRecognizer();\n                                PushTokenRegistrar.register", source)
 
 
+    def test_voice_transcript_merges_words_across_recognition_segments(self):
+        for path in RUNTIMES:
+            source = path.read_text(encoding="utf-8")
+            start = source.index("function svNativeVoiceCommitText(clean){")
+            end = source.index("function svToggleVoiceInput(button)", start)
+            voice = source[start:end]
+            self.assertIn(r"clean.split(/\s+/)", voice)
+            self.assertIn(r"replace(/[^\p{L}\p{N}]+/gu", voice)
+            self.assertNotIn(r"clean.split(/\\s+/)", voice)
+            self.assertNotIn(r"replace(/[^\\p{L}", voice)
+
+    def test_accepting_call_suppresses_same_ringing_invitation_until_answer_finishes(self):
+        for path in RUNTIMES:
+            source = path.read_text(encoding="utf-8")
+            self.assertIn("svIncomingAcceptingCallId=null", source)
+            start = source.index("async function acceptSkillvayaVideoCall()")
+            end = source.index("async function declineSkillvayaVideoCall()", start)
+            accept = source[start:end]
+            self.assertIn("svIncomingAcceptingCallId===incomingId", accept)
+            self.assertIn("svProcessedIncomingCalls.add(incomingId)", accept)
+            self.assertLess(accept.index("if(svActiveVideoCall)"), accept.index("svIncomingAcceptingCallId=incomingId"))
+            self.assertIn("svIncomingAcceptingCallId=null", accept)
+            poll = source[source.index("async function pollSkillvayaIncomingCalls()"):source.index("function startSkillvayaVideoCallPolling()")]
+            self.assertIn("svIncomingAcceptingCallId||svIncomingPollBusy", poll)
+
+    def test_voice_dictation_does_not_drop_repeated_phrases_or_longer_partials(self):
+        for path in RUNTIMES:
+            source = path.read_text(encoding="utf-8")
+            start = source.index("function svNativeVoiceCommitText(clean){")
+            end = source.index("function svToggleVoiceInput(button)", start)
+            voice = source[start:end]
+            self.assertNotIn("svNativeVoiceFinals.has(norm)", voice)
+            self.assertIn("Math.max(0,words.length-1)", voice)
+            self.assertIn("interimCount>finalCount", voice)
+
     def test_customer_call_inbox_includes_calls_addressed_to_callee(self):
         for path in RUNTIMES:
             source = path.read_text(encoding="utf-8")

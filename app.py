@@ -2778,7 +2778,7 @@ function showMessagesScreen(loadThreads=true){
 function openSkillvayaStudioContact(){const b=(allBusinesses||[]).find(x=>String(x.name||'').toLowerCase().includes('skillvaya digital')&&String(x.category||'').toLowerCase().includes('software'));if(b){openProvider(b.id);return;}view('services');const search=document.getElementById('search');if(search){search.value='Skillvaya Digital & Creative Studio';if(typeof loadBusinesses==='function')loadBusinesses();}}
 function viewMessages(){showMessagesScreen();}
 
-let svActiveVideoCall=null,svIncomingVideoCall=null,svIncomingCallPoll=null,svVideoCallPollingStarted=false,svIncomingPollBusy=false,svIncomingWakeHandlersRegistered=false,svProcessedIncomingCalls=new Set();
+let svActiveVideoCall=null,svIncomingVideoCall=null,svIncomingCallPoll=null,svVideoCallPollingStarted=false,svIncomingPollBusy=false,svIncomingWakeHandlersRegistered=false,svIncomingAcceptingCallId=null,svProcessedIncomingCalls=new Set();
 function svEnsureCallOverlays(){
  let modal=document.getElementById('svVideoCallModal');
  if(!modal){
@@ -2869,9 +2869,10 @@ async function startSkillvayaVideoCall(businessId,customerId,mode='video'){
   }
 }
 async function acceptSkillvayaVideoCall(){
-  const incoming=svIncomingVideoCall;if(!incoming)return;svStopIncomingCallAlert();const panel=document.getElementById('svIncomingVideoCall');if(panel)panel.hidden=true;svIncomingVideoCall=null;
+  const incoming=svIncomingVideoCall;const incomingId=String(incoming&&incoming.id||'');if(!incoming||!incomingId||svIncomingAcceptingCallId===incomingId)return;svStopIncomingCallAlert();const panel=document.getElementById('svIncomingVideoCall');if(panel)panel.hidden=true;svIncomingVideoCall=null;
   if(svActiveVideoCall){alert('End your current call before accepting another.');return;}
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof RTCPeerConnection==='undefined'){alert('This browser or WebView cannot access the microphone for Skillvaya calls.');return;}
+  svIncomingAcceptingCallId=incomingId;svProcessedIncomingCalls.add(incomingId);
   const mode=incoming.media_type==='voice'?'voice':'video';
   let call=null,mediaPromise=null;
   const constraints=mode==='voice'?{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false}:{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}}};
@@ -2890,7 +2891,7 @@ async function acceptSkillvayaVideoCall(){
     if(svActiveVideoCall!==call){mediaResult.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});return;}
     await svAttachCallMedia(call,mediaResult.stream);
     const answer=await call.pc.createAnswer();await call.pc.setLocalDescription(answer);
-    await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'accept',call_id:call.callId,answer_sdp:JSON.stringify(call.pc.localDescription)})});
+    await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'accept',call_id:call.callId,answer_sdp:JSON.stringify(call.pc.localDescription)})});svIncomingAcceptingCallId=null;
     call.lastSignalId=(remote.signals||[]).reduce((n,x)=>Math.max(n,Number(x.id)||0),0);
     for(const event of (remote.signals||[])){if(Number(event.sender_id)===Number(me.id)||event.kind!=='candidate')continue;try{await call.pc.addIceCandidate(new RTCIceCandidate(JSON.parse(event.payload)))}catch(_){}}
     svSendPendingCandidates(call).catch(err=>svSetCallState('Call accepted; network setup is retrying: '+err.message));svStartCallPolling(call);svSetCallState(mode==='voice'?'Voice call accepted; connecting…':'Video call accepted; connecting…');
@@ -2899,7 +2900,7 @@ async function acceptSkillvayaVideoCall(){
     else{if(call&&call.pc)try{call.pc.close()}catch(_){}if(call&&call.localStream)call.localStream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');}
     if(mediaPromise)mediaPromise.then(result=>{if(result&&result.stream)result.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}})}).catch(()=>{});
     alert('Could not accept the call: '+(e.message||'Please check microphone/camera permissions.'));
-    try{await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'reject',call_id:String(incoming.id)})})}catch(_){}
+    try{await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'reject',call_id:String(incoming.id)})})}catch(_){svProcessedIncomingCalls.delete(incomingId);}finally{if(svIncomingAcceptingCallId===incomingId)svIncomingAcceptingCallId=null;}
   }
 }
 async function declineSkillvayaVideoCall(){const incoming=svIncomingVideoCall;svStopIncomingCallAlert();svIncomingVideoCall=null;const p=document.getElementById('svIncomingVideoCall');if(p)p.hidden=true;if(incoming)try{await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'reject',call_id:String(incoming.id)})})}catch(e){alert('The call could not be declined on the server: '+e.message)}}
@@ -2920,7 +2921,7 @@ async function closeSkillvayaVideoCall(sendEnd){
 }
 function toggleSkillvayaCallMic(){const c=svActiveVideoCall;if(!c)return;const tracks=c.localStream.getAudioTracks();const next=tracks.some(t=>t.enabled);tracks.forEach(t=>t.enabled=!next);svSetCallState(next?'Microphone muted':'Microphone enabled');}
 function toggleSkillvayaCallCamera(){const c=svActiveVideoCall;if(!c)return;const tracks=c.localStream.getVideoTracks();const next=tracks.some(t=>t.enabled);tracks.forEach(t=>t.enabled=!next);svSetCallState(next?'Camera turned off':'Camera enabled');}
-async function pollSkillvayaIncomingCalls(){if(!me||svActiveVideoCall||svIncomingPollBusy)return;svIncomingPollBusy=true;try{const d=await api('/api/video-calls');if(svIncomingVideoCall){const stillRinging=(d.items||[]).some(x=>String(x.id)===String(svIncomingVideoCall.id)&&x.status==='ringing');if(!stillRinging){svIncomingVideoCall=null;const p=document.getElementById('svIncomingVideoCall');if(p)p.hidden=true;svStopIncomingCallAlert();}return;}const incoming=(d.items||[]).find(x=>Number(x.callee_id)===Number(me.id)&&Number(x.caller_id)!==Number(me.id)&&x.status==='ringing'&&!svProcessedIncomingCalls.has(String(x.id)));if(!incoming)return;svIncomingVideoCall=incoming;svEnsureCallOverlays();const p=document.getElementById('svIncomingVideoCall');const title=document.getElementById('svIncomingTitle'),detail=document.getElementById('svIncomingDetail');if(title)title.textContent=(incoming.caller_name||'Your contact')+' is calling';if(detail)detail.textContent=(incoming.business_name||'Skillvaya chat')+' — incoming '+(incoming.media_type==='voice'?'voice call':'video call');if(p)p.hidden=false;svStartIncomingCallAlert(incoming);}catch(e){/* Messaging remains usable if call polling is temporarily unavailable. */}finally{svIncomingPollBusy=false;}}
+async function pollSkillvayaIncomingCalls(){if(!me||svActiveVideoCall||svIncomingAcceptingCallId||svIncomingPollBusy)return;svIncomingPollBusy=true;try{const d=await api('/api/video-calls');if(svIncomingVideoCall){const stillRinging=(d.items||[]).some(x=>String(x.id)===String(svIncomingVideoCall.id)&&x.status==='ringing');if(!stillRinging){svIncomingVideoCall=null;const p=document.getElementById('svIncomingVideoCall');if(p)p.hidden=true;svStopIncomingCallAlert();}return;}const incoming=(d.items||[]).find(x=>Number(x.callee_id)===Number(me.id)&&Number(x.caller_id)!==Number(me.id)&&x.status==='ringing'&&!svProcessedIncomingCalls.has(String(x.id)));if(!incoming)return;svIncomingVideoCall=incoming;svEnsureCallOverlays();const p=document.getElementById('svIncomingVideoCall');const title=document.getElementById('svIncomingTitle'),detail=document.getElementById('svIncomingDetail');if(title)title.textContent=(incoming.caller_name||'Your contact')+' is calling';if(detail)detail.textContent=(incoming.business_name||'Skillvaya chat')+' — incoming '+(incoming.media_type==='voice'?'voice call':'video call');if(p)p.hidden=false;svStartIncomingCallAlert(incoming);}catch(e){/* Messaging remains usable if call polling is temporarily unavailable. */}finally{svIncomingPollBusy=false;}}
 function startSkillvayaVideoCallPolling(){if(svVideoCallPollingStarted)return;svVideoCallPollingStarted=true;svEnsureCallOverlays();pollSkillvayaIncomingCalls();svIncomingCallPoll=setInterval(pollSkillvayaIncomingCalls,900);if(!svIncomingWakeHandlersRegistered){svIncomingWakeHandlersRegistered=true;document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pollSkillvayaIncomingCalls()});window.addEventListener('focus',()=>pollSkillvayaIncomingCalls());}}
 function renderSkillvayaChatMessage(m){
  const own=Number(m.sender_id)===Number(me&&me.id);
@@ -3025,17 +3026,18 @@ function svSetNotificationCount(n){const b=svEnsureNotificationBell();if(!b)retu
 async function svRefreshOpenConversation(items){const root=document.getElementById('messagesList');if(!root||!document.body.classList.contains('messages-conversation-open'))return;const form=root.querySelector('.message-compose'),bubbles=root.querySelector('.message-bubbles');if(!form||!bubbles)return;const send=form.getAttribute('onsubmit')||'',nums=send.match(/sendConversationReply\(event,\s*(\d+),\s*(\d+)\)/);if(!nums)return;const businessId=Number(nums[1]),customerId=Number(nums[2]);const thread=(items||[]).filter(m=>Number(m.business_id)===businessId&&Number(m.customer_id)===customerId).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||Number(a.id)-Number(b.id));const wasNearBottom=bubbles.scrollHeight-bubbles.scrollTop-bubbles.clientHeight<90;for(const m of thread){const id=String(m.id);if(svLastKnownMessageIds.has(id))continue;svLastKnownMessageIds.add(id);const holder=document.createElement('div');holder.innerHTML=renderSkillvayaChatMessage(m);const rendered=holder.firstElementChild;if(rendered)bubbles.appendChild(rendered);}if(wasNearBottom)bubbles.scrollTop=bubbles.scrollHeight;try{await api('/api/messages/read',{method:'POST',body:JSON.stringify({business_id:businessId,customer_id:customerId})});}catch(_){}}
 async function svPollMessageNotifications(){if(svMessageLiveBusy||!me||document.visibilityState==='hidden')return;svMessageLiveBusy=true;try{const d=await api('/api/messages'),items=d.items||[],previous=svLastKnownMessageIds;const hasNewIncoming=svMessagePollInitialized&&items.some(m=>!previous.has(String(m.id))&&Number(m.sender_id)!==Number(me.id));svSetNotificationCount(svRecipientUnreadMessages(items).length);svMessagePollInitialized=true;if(document.body.classList.contains('messages-conversation-open'))await svRefreshOpenConversation(items);else if(document.body.classList.contains('messages-screen-mode')&&hasNewIncoming)await loadMessageThreads();svLastKnownMessageIds=new Set(items.map(m=>String(m.id)));}catch(_){/* Temporary network errors must not disrupt other screens. */}finally{svMessageLiveBusy=false;}}
 function svStartMessageLiveUpdates(){svEnsureNotificationBell();if(svMessageLiveTimer)clearInterval(svMessageLiveTimer);svMessageLiveTimer=setInterval(svPollMessageNotifications,10000);svPollMessageNotifications();}
-let svVoiceManualStop=false,svNativeVoiceForm=null,svNativeVoiceButton=null,svNativeVoiceStartText='',svNativeVoiceLastFinal='',svNativeVoiceAccumulated='',svNativeVoiceInterim='',svNativeVoiceFinals=new Set();
+let svVoiceManualStop=false,svNativeVoiceForm=null,svNativeVoiceButton=null,svNativeVoiceStartText='',svNativeVoiceLastFinal='',svNativeVoiceAccumulated='',svNativeVoiceInterim='';
 window.svNativeVoiceReady=function(){if(svNativeVoiceButton){svNativeVoiceButton.classList.add('is-listening');svNativeVoiceButton.setAttribute('aria-pressed','true');svNativeVoiceButton.innerHTML='&#127908;';svNativeVoiceButton.setAttribute('aria-label','Stop voice typing');svNativeVoiceButton.title='Stop voice typing';}const st=svNativeVoiceForm&&svNativeVoiceForm.querySelector('.sv-voice-status');if(st)st.textContent='Listening… tap the microphone once to stop.';};
 function svNativeVoiceCommitText(clean){
  const form=svNativeVoiceForm,field=form&&form.elements.message;if(!field||!clean)return;
- const norm=clean.toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu,' ').trim();
- if(!norm||svNativeVoiceFinals.has(norm))return;
- svNativeVoiceFinals.add(norm);svNativeVoiceLastFinal=norm;
- const words=clean.split(/\\s+/),prior=svNativeVoiceAccumulated.split(/\\s+/);let overlap=0;
- for(let k=Math.min(prior.length,words.length);k>0;k--){
-  const a=prior.slice(-k).join(' ').toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu,' ').trim();
-  const b=words.slice(0,k).join(' ').toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu,' ').trim();
+ const norm=clean.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+ if(!norm)return;
+ svNativeVoiceLastFinal=norm;
+ const words=clean.split(/\s+/),prior=svNativeVoiceAccumulated.split(/\s+/);let overlap=0;
+ // Never discard an entire repeated phrase as "overlap": people can intentionally repeat words.
+ for(let k=Math.min(prior.length,Math.max(0,words.length-1));k>0;k--){
+  const a=prior.slice(-k).join(' ').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+  const b=words.slice(0,k).join(' ').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
   if(a&&a===b){overlap=k;break;}
  }
  const add=words.slice(overlap).join(' ');if(add)svNativeVoiceAccumulated+=(svNativeVoiceAccumulated?' ':'')+add;
@@ -3050,7 +3052,7 @@ window.svNativeVoiceFlushInterim=function(){
 };
 window.svNativeVoiceResult=function(text,isFinal){
  const form=svNativeVoiceForm,field=form&&form.elements.message;if(!field||!text)return;
- let clean=String(text).replace(/\\s+/g,' ').trim();if(!clean)return;
+ let clean=String(text).replace(/\s+/g,' ').trim();if(!clean)return;
  const status=form.querySelector('.sv-voice-status');
  if(!isFinal){
   svNativeVoiceInterim=clean;
@@ -3060,7 +3062,10 @@ window.svNativeVoiceResult=function(text,isFinal){
  // Some Android speech services return a shorter final than their last partial. Keep the longer
  // prefix-compatible transcript so words already heard are not thrown away at a session boundary.
  const interim=svNativeVoiceInterim;svNativeVoiceInterim='';
- if(interim&&interim.toLocaleLowerCase().startsWith(clean.toLocaleLowerCase()))clean=interim;
+ if(interim){
+  const finalCount=clean.split(/\s+/).length,interimCount=interim.split(/\s+/).length;
+  if(interim.toLocaleLowerCase().startsWith(clean.toLocaleLowerCase())||interimCount>finalCount)clean=interim;
+ }
  svNativeVoiceCommitText(clean);
  if(status)status.textContent='Listening. recognised words are being kept. Tap the microphone to stop.';
 };
@@ -3068,7 +3073,7 @@ window.svNativeVoiceEnded=function(manual){const b=svNativeVoiceButton,form=svNa
 window.svNativeVoiceError=function(message){const b=svNativeVoiceButton;if(b){b.classList.remove('is-listening');b.setAttribute('aria-pressed','false');b.setAttribute('aria-label','Start voice typing');b.title='Start voice typing';}const st=svNativeVoiceForm&&svNativeVoiceForm.querySelector('.sv-voice-status');if(st)st.textContent=message||'Voice recognition stopped.';};
 function svToggleVoiceInput(button){const form=button&&button.closest('form'),field=form&&form.elements.message,status=form&&form.querySelector('.sv-voice-status');if(!field)return;
 if(window.SkillvayaVoice){if(svNativeVoiceForm===form){svVoiceManualStop=true;try{window.SkillvayaVoice.stop();}catch(_){}return;}if(svNativeVoiceForm){try{window.SkillvayaVoice.stop();}catch(_){}}
-svVoiceManualStop=false;svNativeVoiceForm=form;svNativeVoiceButton=button;svNativeVoiceStartText=field.value.trim();svNativeVoiceLastFinal='';svNativeVoiceAccumulated='';svNativeVoiceInterim='';svNativeVoiceFinals=new Set();if(status)status.textContent='Starting microphone…';try{window.SkillvayaVoice.start();}catch(e){if(status)status.textContent='Could not start Android voice recognition.';}return;}
+svVoiceManualStop=false;svNativeVoiceForm=form;svNativeVoiceButton=button;svNativeVoiceStartText=field.value.trim();svNativeVoiceLastFinal='';svNativeVoiceAccumulated='';svNativeVoiceInterim='';if(status)status.textContent='Starting microphone…';try{window.SkillvayaVoice.start();}catch(e){if(status)status.textContent='Could not start Android voice recognition.';}return;}
 if(svVoiceRecognition&&svVoiceTarget===form){svVoiceManualStop=true;try{svVoiceRecognition.stop();}catch(_){}return;}
 if(svVoiceRecognition){svVoiceManualStop=true;try{svVoiceRecognition.abort();}catch(_){}svVoiceRecognition=null;svVoiceTarget=null;}
 const SpeechAPI=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SpeechAPI){if(status)status.textContent='Voice input is unavailable. Try your keyboard microphone.';return;}

@@ -19,7 +19,7 @@ Remove-Item Env:SKILLVAYA_KEYSTORE_PASSWORD,Env:SKILLVAYA_KEY_PASSWORD -ErrorAct
 if($code -ne 0){throw "Gradle release build failed: $code"}
 $out=Join-Path $root 'release'
 New-Item -ItemType Directory -Force $out | Out-Null
-Copy-Item 'app\build\outputs\apk\release\app-release.apk' (Join-Path $out 'Skillvaya-7.1.6.8-v71.apk') -Force
-Copy-Item 'app\build\outputs\bundle\release\app-release.aab' (Join-Path $out 'Skillvaya-7.1.6.8-v71.aab') -Force
-Get-Item (Join-Path $out 'Skillvaya-7.1.6.8-v71.apk'),(Join-Path $out 'Skillvaya-7.1.6.8-v71.aab') | Select-Object Name,Length,LastWriteTime | Format-Table -AutoSize
+Copy-Item 'app\build\outputs\apk\release\app-release.apk' (Join-Path $out 'Skillvaya-7.1.7.0-v73.apk') -Force
+Copy-Item 'app\build\outputs\bundle\release\app-release.aab' (Join-Path $out 'Skillvaya-7.1.7.0-v73.aab') -Force
+Get-Item (Join-Path $out 'Skillvaya-7.1.7.0-v73.apk'),(Join-Path $out 'Skillvaya-7.1.7.0-v73.aab') | Select-Object Name,Length,LastWriteTime | Format-Table -AutoSize
 Write-Output 'BOTH_SIGNED_RELEASE_ARTIFACTS_BUILT'
