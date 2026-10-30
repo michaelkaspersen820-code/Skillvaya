@@ -47,6 +47,9 @@ class CallAndVoiceRegressionContract(unittest.TestCase):
         self.assertIn("nativeVoiceStopRequested", source)
         self.assertIn("window.svNativeVoiceResult", source)
         self.assertIn("window.svNativeVoiceFlushInterim", source)
+        restart = source[source.index("private void scheduleNativeVoiceRestart()"):source.index("private void startNativeVoice()")]
+        self.assertNotIn("nativeVoiceActive = false;", restart)
+        self.assertIn("scheduleNativeVoiceRestart();", restart)
         error_handler = source[source.index("@Override public void onError(int error)"):source.index("@Override public void onResults(Bundle results)")]
         self.assertIn("if (nativeVoiceStopRequested)", error_handler)
         self.assertIn("scheduleNativeVoiceRestart();", error_handler)

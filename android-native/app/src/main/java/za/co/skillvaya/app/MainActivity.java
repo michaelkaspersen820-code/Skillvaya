@@ -180,9 +180,14 @@ public class MainActivity extends Activity {
                     nativeSpeechRecognizer.startListening(intent);
                 }
             } catch (Exception e) {
-                nativeVoiceActive = false;
-                voiceJs("window.svNativeVoiceEnded && window.svNativeVoiceEnded(false)");
-                voiceJs("window.svNativeVoiceError && window.svNativeVoiceError('Android could not continue listening. Check the speech service and try again.')");
+                // A recognition service can reject a restart while it is still releasing its
+                // previous segment. Keep the user-started dictation session active and retry.
+                // Only stopNativeVoice() may end an active session.
+                loadingHandler.postDelayed(() -> {
+                    if (nativeVoiceActive && !nativeVoiceStopRequested && !isFinishing() && !isDestroyed()) {
+                        scheduleNativeVoiceRestart();
+                    }
+                }, 500);
             }
         }, 120);
     }
