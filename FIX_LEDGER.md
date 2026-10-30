@@ -141,3 +141,16 @@ Server (150 ms per query): /api/me 941 -> 170 ms, message list 1406 -> 481 ms, s
 - `SV75-TEST-05` - `tests/test_speed_contract.py` (18 checks) plus the older message-freshness contract updated to the new, still strict, rule. 68 contract tests, 12 backend suites and PostgreSQL QA 41/41 pass.
 
 Not fixed (needs the owner): the free Render server sleeps after 15 idle minutes and the first request after that can take about 50 s (a paid Render plan or a keep-awake ping fixes it; a ping was not added because the workspace has 3 services sharing 750 free hours); Render's region is far from South Africa (about 400 ms per request before any work happens, a Frankfurt region would roughly halve it); calls on mobile networks still need a TURN relay.
+
+
+## 2026-10-31 SV77-CALL-MEDIA-01 - one-way calls (caller could not hear/see the person they called)
+- Symptom (owner, both phones, voice and video): the person being called hears/sees the caller, but the caller gets no audio/video back.
+- Cause: svCreatePeer() ran addTransceiver() on BOTH sides. On the answering side, transceivers made with addTransceiver() are never
+  matched to the offer's m-lines, so setRemoteDescription(offer) created new receive-only transceivers and the callee's microphone/camera
+  were attached to orphan transceivers. The SDP answer was recvonly -> media flowed one way only.
+- Fix: only the caller creates transceivers; the answerer runs svBindAnswerSenders() after setRemoteDescription(offer), sets the offer's
+  transceivers to sendrecv and uses their senders. Both app.py copies.
+- Verified: C:\Users\Public\sv_audit\call_media_e2e.py (two browsers, getStats bytes in BOTH directions). Old code a21f4c4: voice and video FAIL
+  (caller inbound 0 bytes, callee transceivers audio:recvonly). Fixed code: voice PASS, video PASS (sendrecv both sides, 640x480 remote video both sides).
+  New contract test tests/test_call_media_direction_contract.py (fails on a21f4c4, passes now). 69 contract OK, 12 root suites OK, PostgreSQL QA 41/41.
+- Lesson: call tests must check media bytes both ways, not just connectionState=='connected' (the old call_e2e.py did only that).

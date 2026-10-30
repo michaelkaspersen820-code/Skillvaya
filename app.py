@@ -3094,12 +3094,20 @@ async function svCreatePeer(call){
   const pc=new RTCPeerConnection({iceServers:await svGetIceServers(),iceCandidatePoolSize:10,bundlePolicy:'max-bundle'});
   call.pc=pc;call.remoteStream=new MediaStream();svSetRemoteStream(call.remoteStream);
   // Reserve audio/video media lines before camera permissions finish, so the recipient can be rung immediately.
-  call.audioSender=pc.addTransceiver('audio',{direction:'sendrecv'}).sender;
-  call.videoSender=call.mediaMode==='video'?pc.addTransceiver('video',{direction:'sendrecv'}).sender:null;
+  // SV77-CALL-MEDIA-01: only the CALLER creates transceivers. The answerer must reuse the transceivers created by the offer
+  // (addTransceiver() ones are never matched to offer m-lines, which made every answer receive-only = one-way audio/video).
+  if(call.isCaller){call.audioSender=pc.addTransceiver('audio',{direction:'sendrecv'}).sender;
+  call.videoSender=call.mediaMode==='video'?pc.addTransceiver('video',{direction:'sendrecv'}).sender:null;}
   pc.ontrack=e=>{if(e.streams&&e.streams[0])e.streams[0].getTracks().forEach(t=>{if(!call.remoteStream.getTracks().some(x=>x.id===t.id))call.remoteStream.addTrack(t);});else if(e.track&&!call.remoteStream.getTracks().some(x=>x.id===e.track.id))call.remoteStream.addTrack(e.track);};
   pc.onicecandidate=e=>{if(!e.candidate)return;const c=e.candidate.toJSON?e.candidate.toJSON():{candidate:e.candidate.candidate,sdpMid:e.candidate.sdpMid,sdpMLineIndex:e.candidate.sdpMLineIndex,usernameFragment:e.candidate.usernameFragment};if(!call.callId){call.pendingCandidates.push(c);return;}api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'candidate',call_id:call.callId,candidate:c})}).catch(err=>svSetCallState('Network candidate could not be sent: '+err.message));};
   pc.onconnectionstatechange=()=>{if(!svActiveVideoCall||svActiveVideoCall.callId!==call.callId)return;const state=pc.connectionState;if(state==='connected')svSetCallState(call.mediaMode==='voice'?'Voice call connected — microphone is live':'Connected — camera and microphone are live');else if(state==='connecting')svSetCallState('Connecting to the other participant…');else if(state==='disconnected')svSetCallState('Connection interrupted; attempting to reconnect…');else if(state==='failed')svSetCallState('Could not connect directly. This network may require TURN relay configuration.');};
   return pc;
+}
+function svBindAnswerSenders(call){
+  // SV77-CALL-MEDIA-01: take the offer's own transceivers and make them send as well as receive.
+  const trs=call.pc.getTransceivers();const pick=k=>trs.find(t=>t.receiver&&t.receiver.track&&t.receiver.track.kind===k&&!t.stopped);
+  const ta=pick('audio');if(ta){ta.direction='sendrecv';call.audioSender=ta.sender;}else call.audioSender=call.pc.addTransceiver('audio',{direction:'sendrecv'}).sender;
+  if(call.mediaMode==='video'){const tv=pick('video');if(tv){tv.direction='sendrecv';call.videoSender=tv.sender;}else call.videoSender=call.pc.addTransceiver('video',{direction:'sendrecv'}).sender;}else call.videoSender=null;
 }
 async function svAttachCallMedia(call,stream){
   if(svActiveVideoCall!==call){stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});return false;}
@@ -3172,6 +3180,7 @@ async function acceptSkillvayaVideoCall(){
     await svCreatePeer(call);
     const got=await api('/api/video-calls/'+encodeURIComponent(call.callId)+'?after=0');const remote=got.call;if(remote.status!=='ringing')throw Error('This call is no longer available.');
     await call.pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(remote.offer_sdp)));call.remoteDescriptionSet=true;
+    svBindAnswerSenders(call);
     // Attach the recipient's real media tracks BEFORE creating/sending the SDP answer.
     // This ensures the answer advertises the correct send/receive media directions.
     const mediaResult=await mediaPromise;if(mediaResult.error)throw mediaResult.error;
