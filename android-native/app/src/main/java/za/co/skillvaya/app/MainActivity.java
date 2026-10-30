@@ -59,6 +59,7 @@ public class MainActivity extends Activity {
     private long lastVoiceStartAt = 0L;
     private static final int NATIVE_VOICE_PERMISSION_REQUEST = 7343;
     private static final int PUSH_NOTIFICATION_PERMISSION_REQUEST = 7344;
+    private static final int CALL_STARTUP_PERMISSION_REQUEST = 7791;
     private boolean notificationPermissionRequestedFromCall = false;
     public final class NotificationPermissionBridge {
         @JavascriptInterface public void ensureForCall() {
@@ -335,8 +336,15 @@ public class MainActivity extends Activity {
         }
         // Create the call-ringtone notification channel before any background FCM arrives.
         SkillvayaMessagingService.ensureChannels(this);
-        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, PUSH_NOTIFICATION_PERMISSION_REQUEST);
+        // Ask for everything a call needs up front (notifications, microphone, camera) so that answering a call never
+        // stalls behind a first-time permission dialog.
+        java.util.ArrayList<String> startupPermissions = new java.util.ArrayList<>();
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) startupPermissions.add(Manifest.permission.POST_NOTIFICATIONS);
+        if (android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) startupPermissions.add(Manifest.permission.RECORD_AUDIO);
+        if (android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) startupPermissions.add(Manifest.permission.CAMERA);
+        if (!startupPermissions.isEmpty()) {
+            requestPermissions(startupPermissions.toArray(new String[0]),
+                Manifest.permission.POST_NOTIFICATIONS.equals(startupPermissions.get(0)) ? PUSH_NOTIFICATION_PERMISSION_REQUEST : CALL_STARTUP_PERMISSION_REQUEST);
         }
         getWindow().setStatusBarColor(Color.rgb(7,20,38));
         getWindow().setNavigationBarColor(Color.rgb(7,20,38));
@@ -377,6 +385,9 @@ public class MainActivity extends Activity {
         loadingHandler.postDelayed(pushTokenRegistrationRetry, 5000);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true); settings.setUserAgentString(settings.getUserAgentString() + " SkillvayaNative");
+        // Call audio/video and the in-app ring tone start from timers and network events, not from a tap, so the WebView
+        // must be allowed to play media without a direct user gesture or the other person is silent.
+        settings.setMediaPlaybackRequiresUserGesture(false);
         nativeVoiceBridge = new NativeVoiceBridge();
         webView.addJavascriptInterface(nativeVoiceBridge, "SkillvayaVoice");
         notificationPermissionBridge = new NotificationPermissionBridge();

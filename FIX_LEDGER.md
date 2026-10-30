@@ -81,3 +81,15 @@ Measured on production before changing anything: requests that touch the databas
 - `SV74-TEST-02` - `tests/test_realtime_performance_contract.py` (10 checks). Totals: 35 contract tests, 12 root backend suites, 41/41 PostgreSQL end-to-end checks, plus the real-PostgreSQL pool/FCM/pulse/ICE/index verification script.
 
 Not proven by this round: real push delivery to a phone, two-device call audio/connection (needs a TURN server for carrier networks), and the production latency after deploy (measure again once live). Remaining latency floor is the network round-trip to the Render region (about 0.4 s from South Africa); a Render region and Neon region that are close to each other and to users would reduce it further.
+
+### Target 74 (round 3, same unreleased 7.1.7.1 / versionCode 74) - answering calls on the phone, blocking, audit
+
+Reproduced the call flow with two real browser sessions (customer calls provider, provider answers) with the recipient on Home, Account, Messages and Services: incoming panel shown in 0.5-0.6 s, Accept is the top element and tappable, call connected in about 1 s, no JS errors. So the web logic is sound; the phone-specific defects were in the Android layer.
+
+- `SV74-ANDROID-CALL-01` - `MainActivity.java`: the WebView never allowed media playback without a direct tap (`setMediaPlaybackRequiresUserGesture(false)` was missing), so remote call audio and the in-app ring tone, which start from timers/network events, could be blocked. Now allowed.
+- `SV74-ANDROID-CALL-02` - `MainActivity.java`: microphone and camera permission are now requested at launch together with notifications (new `CALL_STARTUP_PERMISSION_REQUEST`), so answering a call never stalls behind a first-time permission dialog.
+- `SV74-WF-BLOCK-01` - WorkFinder (`static/workfinder.html` and the Android copy): `blockUser()` existed but nothing called it. Added a Block button in the conversation header, blocked people's conversations are hidden, blocks persist in localStorage, and unblocking persists too.
+- `SV74-AUDIT-03` - static check of /, /workfinder, /customer-app, /owner-app, /terms, /privacy: no inline handler references a missing function. Click-through: home page 37 controls and WorkFinder-as-customer 20 controls with no JS/console errors or HTTP 5xx. The bounded customer-app re-crawl hung on one control and was stopped (round-1 click-through of all 9 customer-app views x 3 roles had passed). Unreferenced legacy functions remain in the customer app (`rateCustomer`, `replyMessage`, `verifyPayment`, ...) and were left alone.
+- `SV74-TEST-03` - 2 more regression checks (37 contract tests total).
+
+Still not proven: answering on a real phone (no device connected via adb), a TURN relay for carrier networks (host variables `SKILLVAYA_TURN_*` not set), and push delivery to a device.

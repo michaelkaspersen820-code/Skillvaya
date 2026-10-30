@@ -111,6 +111,20 @@ class RealtimeAndPerformanceContract(unittest.TestCase):
             for k, v in saved.items():
                 if v is not None: os.environ[k] = v
 
+    def test_android_webview_can_play_call_audio_and_asks_for_call_permissions_up_front(self):
+        java = (ROOT / "android-native/app/src/main/java/za/co/skillvaya/app/MainActivity.java").read_text(encoding="utf-8")
+        self.assertIn("settings.setMediaPlaybackRequiresUserGesture(false);", java)
+        self.assertIn("CALL_STARTUP_PERMISSION_REQUEST", java)
+        self.assertIn("Manifest.permission.RECORD_AUDIO", java[java.index("startupPermissions"):])
+        self.assertIn("Manifest.permission.CAMERA", java[java.index("startupPermissions"):])
+
+    def test_workfinder_users_can_actually_be_blocked_and_blocks_persist(self):
+        for label, src in WORKFINDER.items():
+            self.assertIn('onclick="blockUser(wfActivePartnerName)">Block</button>', src, label)
+            self.assertIn("function saveBlockedUsers()", src, label)
+            self.assertIn("localStorage.getItem('skillvaya.workfinder.blocked')", src, label)
+            self.assertIn("wfConversations.filter(c=>!blockedUsers.has(c.partner_name))", src, label)
+
     def test_visible_text_has_no_corrupted_question_mark_glyphs(self):
         banned = ['bottom-tab-icon">?<', "PAID ? confirmed", "No ratings yet ? be", "Stars are ready ? the", "Thank you ? your",
                   "+' ? '+me.role", "Local ? R105", "Priority ? R210", "Business Plus ? R500", "Business Spotlight ? R1,000"]
