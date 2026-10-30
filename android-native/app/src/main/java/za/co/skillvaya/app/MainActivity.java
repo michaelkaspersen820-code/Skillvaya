@@ -175,8 +175,8 @@ public class MainActivity extends Activity {
                     intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false);
                     // Ask compatible Android speech services for punctuation and text formatting.
                     if (android.os.Build.VERSION.SDK_INT >= 33) intent.putExtra("android.speech.extra.ENABLE_FORMATTING", "quality");
-                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 30000L);
-                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 15000L);
+                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L);
+                    intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 30000L);
                     nativeSpeechRecognizer.startListening(intent);
                 }
             } catch (Exception e) {
@@ -248,8 +248,8 @@ public class MainActivity extends Activity {
             intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false);
                     // Ask compatible Android speech services for punctuation and text formatting.
                     if (android.os.Build.VERSION.SDK_INT >= 33) intent.putExtra("android.speech.extra.ENABLE_FORMATTING", "quality");
-            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 30000L);
-            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 15000L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 30000L);
             nativeSpeechRecognizer.startListening(intent);
         } catch (Exception e) {
             nativeVoiceActive = false;

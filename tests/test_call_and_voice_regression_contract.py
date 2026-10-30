@@ -34,7 +34,7 @@ class CallAndVoiceRegressionContract(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             self.assertIn("call.videoSender=call.mediaMode==='video'?", source)
             self.assertIn("if(call.videoSender)replacements.push", source)
-            self.assertIn("CASE WHEN vc.offer_sdp LIKE '%m=video%' THEN 'video' ELSE 'voice' END AS media_type", source)
+            self.assertIn("CASE WHEN vc.offer_sdp LIKE '%%m=video%%' THEN 'video' ELSE 'voice' END AS media_type", source)
             self.assertIn("sv-call-voice-only", source)
 
     def test_android_voice_recognition_is_prepared_and_kept_until_manual_stop(self):
@@ -46,8 +46,8 @@ class CallAndVoiceRegressionContract(unittest.TestCase):
         self.assertIn("prepareNativeVoiceRecognizer();", source)
         self.assertIn("nativeVoiceStopRequested", source)
         self.assertIn("window.svNativeVoiceResult", source)
-        self.assertIn("EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 30000L", source)
-        self.assertIn("EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 15000L", source)
+        self.assertIn("EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L", source)
+        self.assertIn("EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 30000L", source)
         self.assertIn("prepareNativeVoiceRecognizer();\n                                PushTokenRegistrar.register", source)
 
 

@@ -4118,7 +4118,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 stamp=now()
                 with conn() as c:
                     c.execute("UPDATE video_calls SET status='missed',updated_at=?,ended_at=? WHERE status='ringing' AND created_at<?",(stamp,stamp,cutoff))
-                    base_query="""SELECT vc.id,vc.business_id,vc.customer_id,vc.caller_id,vc.callee_id,vc.status,CASE WHEN vc.offer_sdp LIKE '%m=video%' THEN 'video' ELSE 'voice' END AS media_type,vc.created_at,vc.updated_at,
+                    base_query="""SELECT vc.id,vc.business_id,vc.customer_id,vc.caller_id,vc.callee_id,vc.status,CASE WHEN vc.offer_sdp LIKE '%%m=video%%' THEN 'video' ELSE 'voice' END AS media_type,vc.created_at,vc.updated_at,
                         b.name business_name,cu.name customer_name,caller.name caller_name,callee.name callee_name
                         FROM video_calls vc JOIN businesses b ON b.id=vc.business_id
                         JOIN users cu ON cu.id=vc.customer_id JOIN users caller ON caller.id=vc.caller_id
