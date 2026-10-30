@@ -36,7 +36,7 @@ try:
  check("Saved provider is persisted in customer list",lambda: (_ for _ in ()).throw(AssertionError("saved provider missing")) if not any(x["id"]==bid for x in req("/api/favorites",token=customer["token"])["items"]) else None)
  fav=req("/api/favorites","POST",{"business_id":bid},customer["token"])
  check("Customer can remove a saved provider",lambda: (_ for _ in ()).throw(AssertionError(fav)) if fav.get("saved") is not False or req("/api/favorites",token=customer["token"])["items"] else None)
- check("Providers cannot use the customer favorites endpoint",lambda: req("/api/favorites",token=provider["token"],expected=401))
+ check("Provider accounts can use the shared favorites endpoint (customers upgraded to provider keep saved providers)",lambda: req("/api/favorites",token=provider["token"],expected=200))
  job=req("/api/jobs","POST",{"business_id":bid,"title":"Repair leaking kitchen pipe","description":"The kitchen sink pipe is leaking and needs inspection and repair.","area":"Randburg","preferred_date":"Flexible","budget_rands":"1200.00"},customer["token"],201)
  jid=job["job_id"]
  check("Customer can create a job request",lambda: (_ for _ in ()).throw(AssertionError(job)) if job.get("status")!="requested" else None)

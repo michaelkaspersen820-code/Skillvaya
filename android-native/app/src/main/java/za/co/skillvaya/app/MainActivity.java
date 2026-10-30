@@ -326,6 +326,13 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Android 13+ (and mandatory for apps targeting SDK 36): onBackPressed() is no longer called when predictive back is on.
+        // Same behaviour as before: go back through WebView history, otherwise leave the app.
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, () -> {
+                if (webView != null && webView.canGoBack()) webView.goBack(); else finish();
+            });
+        }
         // Create the call-ringtone notification channel before any background FCM arrives.
         SkillvayaMessagingService.ensureChannels(this);
         if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
