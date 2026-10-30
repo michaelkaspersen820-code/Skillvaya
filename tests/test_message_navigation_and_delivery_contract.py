@@ -60,6 +60,18 @@ class MessageNavigationAndDeliveryContract(unittest.TestCase):
                 self.assertIn("b.phone business_phone", source)
                 self.assertIn("cu.phone customer_phone", source)
 
+    def test_notification_bell_is_home_header_only_in_both_runtime_copies(self):
+        for path in SOURCES:
+            with self.subTest(path=str(path)):
+                source = self.read(path)
+                self.assertEqual(source.count('id="svNotificationBell"'), 1)
+                self.assertIn('<header class="top"><div class="wrap nav">', source)
+                self.assertIn('id="svNotificationBell" class="sv-notification-bell"', source)
+                self.assertIn('.sv-notification-bell{position:relative;', source)
+                self.assertIn("const b=document.getElementById('svNotificationBell');if(!b)return null;", source)
+                self.assertNotIn("document.body.appendChild(b)", source)
+                self.assertIn("api('/api/notifications')", source)
+
 if __name__ == "__main__":
     unittest.main()
 
