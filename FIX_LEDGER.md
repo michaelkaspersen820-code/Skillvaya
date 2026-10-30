@@ -111,3 +111,33 @@ Real-browser audit at 390x844 (and 360x740) of every customer-app, provider, acc
 Measured after the change (Playwright, phone widths): every header 62 px (back bar 56 px) with a 20 px / 800 title; no horizontal scroll on any screen; bars lock at top 0 (or just under the masthead) after scrolling.
 
 Not covered: owner dashboard is a desktop layout (sticky title bar added, not re-designed for phones); the WorkFinder "apply" page needs a job in the database to render, so it was not measured.
+
+### Target 75 (round 2, same unreleased 7.1.7.2 / versionCode 75) - speed on every screen, messages and calls
+
+Owner request: every screen, Messages and calls must appear fast. Measured first with a real browser (phone CPU 4x slower, 300 ms network latency) against the real app on real PostgreSQL behind a proxy that delays each query 150 ms (the hosted database costs about 0.2 s per query on top of about 0.4 s network from South Africa).
+
+Root causes: every database call cost 3 network round trips (psycopg's implicit BEGIN, the query, COMMIT) and every signed-in request paid it twice (session check, then data), so /api/me cost 6 trips and opening Messages 9; start-up waited for /api/me, then loaded the directory, then waited up to 1.8 s for categories before the splash left; Messages, a conversation, a category and the Services tab always waited for the network even when the data was already on the phone; the app shell and logo were re-downloaded on every launch.
+
+Median of 3 rounds, old code (what was live) -> new code:
+
+| What the user does | Before | After |
+|---|---|---|
+| Re-open the app (second launch) | 3421 ms | 873 ms |
+| First ever open | 3989 ms | 2268 ms |
+| Open a conversation | 2410 ms | 12 ms |
+| Open a category | 2037 ms | 217 ms |
+| Message delivered after tap Send | 1266 ms | 490 ms |
+| Provider opens Services (first time) | 1233 ms | 620 ms |
+| Open Contacts after the app was closed and reopened | 2164 ms | 23 ms |
+| Call: the other phone rings after you tap Call | 2421 ms | 1729 ms |
+| Call: connected after the other person taps Accept | 6066 ms | 4457 ms |
+Server (150 ms per query): /api/me 941 -> 170 ms, message list 1406 -> 481 ms, send message 1254 -> 482 ms, call poll 937 -> 327 ms, call signal sync 3 trips -> 1.
+
+- `SV76-PERF-01` - PostgreSQL connections are autocommit; a transaction (BEGIN) is opened only when the first write happens, commit/rollback cost nothing when none is open. Reads are exactly one round trip.
+- `SV76-PERF-02` - `execute_atomic` (one statement = one trip) and `execute_batch` (psycopg pipeline: several reads in one trip) with SQLite fallbacks (`db_atomic`, `db_batch`); used by message send (message + enquiry in one statement), mark-read, call start (call row + chat invitation in one statement), call accept/candidate/end, call sync (call + signals in one trip) and /api/me (single query).
+- `SV76-PERF-03` - app shell: ETag/304 for /customer-app and /workfinder, logo and icon cached for a day, service worker v4 serves the saved app after 2.5 s so a sleeping server never leaves a blank screen (works with the server completely down).
+- `SV76-SPEED-01` - start-up runs session, directory, rating and categories in parallel and no longer waits for the session or categories; the provider directory, favourites, inbox and provider tools paint from the last visit (localStorage) and refresh in the background; categories open from the list already on the phone; a conversation opens from memory when the inbox is under 2 minutes old and is re-checked with the server in the background; anything that adds a message (send, attachment, call invitation) discards the in-memory copy. Private caches (inbox, provider plan) are wiped on logout; the directory cache never stores a user's personal ratings.
+- `SV76-WF-SPEED-01` - WorkFinder loads profile, applications, saved jobs, conversations and /api/me in one trip instead of three.
+- `SV75-TEST-05` - `tests/test_speed_contract.py` (18 checks) plus the older message-freshness contract updated to the new, still strict, rule. 68 contract tests, 12 backend suites and PostgreSQL QA 41/41 pass.
+
+Not fixed (needs the owner): the free Render server sleeps after 15 idle minutes and the first request after that can take about 50 s (a paid Render plan or a keep-awake ping fixes it; a ping was not added because the workspace has 3 services sharing 750 free hours); Render's region is far from South Africa (about 400 ms per request before any work happens, a Frankfurt region would roughly halve it); calls on mobile networks still need a TURN relay.

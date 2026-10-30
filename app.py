@@ -46,16 +46,30 @@ if DATABASE_URL:
     _PG_POOL_MAX = 6
     _PG_POOL_ENABLED = os.environ.get("SKILLVAYA_DB_POOL", "on").strip().lower() != "off"
 
+    _PG_IDLE = psycopg.pq.TransactionStatus.IDLE
+    try: _PG_PIPELINE = bool(psycopg.Pipeline.is_supported())
+    except Exception: _PG_PIPELINE = False
+    def _pg_is_read(sql):
+        head = sql.lstrip()[:12].upper()
+        return head.startswith(("SELECT", "SHOW ", "EXPLAIN"))
+
     class PgConnection:
         def __init__(self, raw, pooled=False):
             self.raw = raw
             self._pooled = pooled
             self._released = False
             self._used = False
+        def _run(self, sql, params):
+            # SV76-PERF-01: the connection is in autocommit mode, so a plain SELECT is exactly one network round trip
+            # (psycopg's implicit BEGIN and COMMIT used to add two more, each costing a full trip to the hosted database).
+            # The first write opens an explicit transaction that stays open until commit()/rollback()/close().
+            if self.raw.info.transaction_status == _PG_IDLE and not _pg_is_read(sql):
+                self.raw.execute("BEGIN")
+            return self.raw.execute(sql, params)
         def execute(self, sql, params=()):
             sql = sql.replace("?", "%s")
             try:
-                return self.raw.execute(sql, params)
+                return self._run(sql, params)
             except (psycopg.OperationalError, psycopg.InterfaceError):
                 # A pooled connection the server dropped while idle (compute suspend/restart): the very first
                 # statement is safe to replay on a fresh connection. Never retry mid-transaction.
@@ -64,11 +78,38 @@ if DATABASE_URL:
                 try: self.raw.close()
                 except Exception: pass
                 self.raw = _new_pg_connection()
-                return self.raw.execute(sql, params)
+                return self._run(sql, params)
             finally:
                 self._used = True
-        def commit(self): return self.raw.commit()
-        def rollback(self): return self.raw.rollback()
+        def commit(self):
+            if self.raw.info.transaction_status != _PG_IDLE: return self.raw.commit()
+        def rollback(self):
+            if self.raw.info.transaction_status != _PG_IDLE: return self.raw.rollback()
+        def _redo(self, fn):
+            try:
+                return fn()
+            except (psycopg.OperationalError, psycopg.InterfaceError):
+                if not (self._pooled and _PG_POOL_ENABLED) or self._used: raise
+                try: self.raw.close()
+                except Exception: pass
+                self.raw = _new_pg_connection()
+                return fn()
+            finally:
+                self._used = True
+        def execute_atomic(self, sql, params=()):
+            # SV76-PERF-02: one statement = one round trip, atomic on its own (no BEGIN/COMMIT). Only for single writes.
+            sql = sql.replace("?", "%s")
+            return self._redo(lambda: self.raw.execute(sql, params))
+        def execute_batch(self, statements):
+            # SV76-PERF-02: several independent READ statements in ONE network round trip (psycopg pipeline mode).
+            stmts = [(s.replace("?", "%s"), p) for s, p in statements]
+            def run():
+                if not _PG_PIPELINE:
+                    return [self.raw.execute(s, p).fetchall() for s, p in stmts]
+                with self.raw.pipeline():
+                    cursors = [self.raw.execute(s, p) for s, p in stmts]
+                return [cur.fetchall() for cur in cursors]
+            return self._redo(run)
         def close(self):
             if self._released: return None
             self._released = True
@@ -91,7 +132,7 @@ if DATABASE_URL:
             return None
 
     def _new_pg_connection():
-        raw = psycopg.connect(DATABASE_URL, row_factory=hybrid_row, connect_timeout=15,
+        raw = psycopg.connect(DATABASE_URL, row_factory=hybrid_row, connect_timeout=15, autocommit=True,
                               keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3)
         # Long-lived connections must not auto-prepare statements (breaks behind PgBouncer-style poolers).
         raw.prepare_threshold = None
@@ -99,7 +140,7 @@ if DATABASE_URL:
 
     def connect_db():
         if not _PG_POOL_ENABLED:
-            return PgConnection(psycopg.connect(DATABASE_URL, row_factory=hybrid_row))
+            return PgConnection(psycopg.connect(DATABASE_URL, row_factory=hybrid_row, autocommit=True))
         while True:
             with _PG_POOL_LOCK:
                 item = _PG_POOL.pop() if _PG_POOL else None
@@ -120,6 +161,17 @@ else:
         c = sqlite3.connect(DB, timeout=15)
         c.row_factory = sqlite3.Row
         return c
+
+def db_atomic(c, sql, params=()):
+    """Run ONE write as a single round trip on PostgreSQL (autocommit); plain execute on SQLite."""
+    f = getattr(c, "execute_atomic", None)
+    return f(sql, params) if f else c.execute(sql, params)
+
+def db_batch(c, statements):
+    """Run independent read statements in one round trip on PostgreSQL; sequentially on SQLite. Returns one row list per statement."""
+    f = getattr(c, "execute_batch", None)
+    if f: return f(statements)
+    return [c.execute(s, p).fetchall() for s, p in statements]
 
 def fcm_send_to_user(user_id, title, body, data=None):
     """Send a visible high-priority Android call notification; never block call signalling."""
@@ -2361,17 +2413,21 @@ async function openProviderOnboarding(){
 function scrollAccountSection(id){const target=document.getElementById(id);if(!target)return;document.querySelectorAll('#settings .account-link').forEach(b=>b.classList.toggle('active',b.getAttribute('onclick')&&b.getAttribute('onclick').includes(id)));if(id==='passwordForm'){target.scrollIntoView({behavior:'smooth',block:'center'});target.querySelector('input')?.focus({preventScroll:true});return}target.scrollIntoView({behavior:'smooth',block:'start'})}
 function profileAuthMode(mode){const signed=!!me;document.getElementById('profileAuthTabs').classList.toggle('hidden',signed);document.getElementById('signinPane').classList.toggle('hidden',signed||mode!=='signin');document.getElementById('signupPane').classList.toggle('hidden',signed||mode!=='signup');document.getElementById('profileSigninTab').className=mode==='signin'?'primary':'ghost';document.getElementById('profileSignupTab').className=mode==='signup'?'primary':'ghost';document.getElementById('profileSettingsCard').classList.toggle('hidden',!signed)}
 
-async function api(path,opts={}){opts.headers={...(opts.headers||{}),'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})};const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),60000);let r;try{r=await fetch(path,{...opts,signal:controller.signal})}catch(e){if(e.name==='AbortError')throw Error('The server took too long to respond. Please try again.');throw e}finally{clearTimeout(timer)}let j=await r.json().catch(()=>({error:'Invalid server response'}));if(!r.ok)throw Error(j.error||'Request failed');return j}
+async function api(path,opts={}){/* SV76-SPEED-01: anything that adds a message (send, attachment, call invitation) discards the in-memory inbox so a chat never opens without it */if(opts&&/^POST$/i.test(String(opts.method||''))&&((String(path).indexOf('/api/messages')===0&&String(path).indexOf('/api/messages/read')!==0)||String(path).indexOf('/api/video-calls')===0))window.svMessagesItems=null;opts.headers={...(opts.headers||{}),'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})};const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),60000);let r;try{r=await fetch(path,{...opts,signal:controller.signal})}catch(e){if(e.name==='AbortError')throw Error('The server took too long to respond. Please try again.');throw e}finally{clearTimeout(timer)}let j=await r.json().catch(()=>({error:'Invalid server response'}));if(!r.ok)throw Error(j.error||'Request failed');return j}
 function msg(id,text,good=false){let el=document.getElementById(id);if(!el)return;el.className='notice '+(good?'good':'bad');el.textContent=text}
 function submitPlatformContact(e){if(e&&e.preventDefault)e.preventDefault();const f=document.getElementById('platformContactForm'),st=document.getElementById('platformContactStatus');const val=id=>{const el=document.getElementById(id);return el?String(el.value||'').trim():''};const name=val('platformContactName'),email=val('platformContactEmail'),topic=val('platformContactTopic')||'General enquiry',message=val('platformContactMessage');if(f&&f.checkValidity&&!f.checkValidity()){if(f.reportValidity)f.reportValidity();return false}if(!name||email.indexOf('@')<1||message.length<5){if(st){st.className='notice bad';st.textContent='Please enter your name, a valid email and a message of at least 5 characters.'}return false}const subject='Skillvaya enquiry: '+topic;const body='Name: '+name+'\nEmail: '+email+'\nTopic: '+topic+'\n\n'+message;if(st){st.className='notice good';st.textContent='Opening your email app. If nothing opens, email skillvaya@gmail.com directly.'}window.location.href='mailto:skillvaya@gmail.com?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);return false}
 function applyLaunchGate(user){const gate=document.getElementById('firstLaunchGate');if(!gate)return;const nativeApp=/SkillvayaNative/i.test(navigator.userAgent),hasSavedSession=!!(token||localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token')||sessionStorage.getItem('skillvaya_token')||sessionStorage.getItem('sv_token'));if(nativeApp&&!user&&!hasSavedSession){gate.style.display='flex';document.body.style.overflow='hidden'}else{gate.style.display='none';document.body.style.overflow=''}}function enterLaunchAuth(mode){const gate=document.getElementById('firstLaunchGate');if(gate)gate.style.display='none';document.body.style.overflow='';view('settings');profileAuthMode(mode);const target=document.getElementById(mode==='signup'?'signupPane':'signinPane');if(target)target.scrollIntoView({behavior:'auto',block:'start'});const field=target?.querySelector('input:not([type=checkbox])');if(field)field.focus({preventScroll:true})}
 async function init(){
   // Restore the saved customer/provider session before dismissing the launch splash.
   // Do not expose the first-launch sign-in gate while an existing session is still being checked.
-  try{const restoredUser=await sessionInfo();applyLaunchGate(restoredUser)}catch(e){console.warn('Session check failed:',e.message);applyLaunchGate(null)}
-  // Directory and rating data can load in parallel after the identity check; they do not replace auth state.
-  loadBusinesses();
+  // SV76-SPEED-01: nothing at start-up waits for anything else. Paint the last directory at once, then run the session
+  // check, directory, rating and categories in parallel. A saved session never needs the launch gate, so do not wait for it.
+  try{svPaintCachedDirectory()}catch(e){}
+  applyLaunchGate(null);
+  const svSessionP=sessionInfo().then(user=>{applyLaunchGate(user);if(user&&user.role==='customer')svRefreshFavorites().catch(()=>{});return user},e=>{console.warn('Session check failed:',e.message);applyLaunchGate(null);return null});
+  const svDirectoryP=loadBusinesses();
   loadPlatformRating();
+  const svCategoriesP=api('/api/categories').then(d=>d,()=>null);
   const renderCategoryOptions=()=>{
     const categorySelect=document.getElementById('categories');
     if(categorySelect){categorySelect.innerHTML='<option value="All categories">All categories</option>'+cats.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('');categorySelect.value=cats.includes(chosen)?chosen:'All categories';}
@@ -2380,15 +2436,14 @@ async function init(){
     renderDesignCategoryTiles();
   };
   cats=DEFAULT_CATEGORIES.slice();renderCategoryOptions();
-  let d=null,lastError=null;
-  try{d=await Promise.race([api('/api/categories'),new Promise(resolve=>setTimeout(()=>resolve(null),1800))]);if(!d||!Array.isArray(d.categories)||!d.categories.length)throw Error('Using built-in categories while the server responds');}catch(e){lastError=e;}
-  if(d&&Array.isArray(d.categories)&&d.categories.length){cats=d.categories;renderCategoryOptions();}
-  else console.warn('Using built-in service categories after API retries:',lastError&&lastError.message);
-  if(me&&me.role==='admin'&&!document.getElementById('ownerEditionBar')){
+  svCategoriesP.then(d=>{if(d&&Array.isArray(d.categories)&&d.categories.length){cats=d.categories;renderCategoryOptions();}else console.warn('Using built-in service categories while the server responds')});
+  svSessionP.then(()=>{if(me&&me.role==='admin'&&!document.getElementById('ownerEditionBar')){
     document.body.insertAdjacentHTML('afterbegin','<div id="ownerEditionBar" style="position:sticky;top:0;z-index:999;background:#0b766e;color:white;padding:10px 14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><strong>SKILLVAYA OWNER EDITION — ALL FEATURES UNLOCKED FREE</strong><a href="/owner-app" style="color:white;font-weight:700">← Back to Owner / Controller</a></div>');
-  }
+  }});
   try{drawPlans();}catch(e){}
-  refreshProviderGate().catch(e=>console.warn('Provider status unavailable during startup:',e.message));
+  svSessionP.then(()=>refreshProviderGate()).catch(e=>console.warn('Provider status unavailable during startup:',e.message));
+  // Only hold the splash for the directory when there is nothing cached to show (never longer than 1.5 s).
+  if(!svDirectoryHadCache)await Promise.race([svDirectoryP,new Promise(r=>setTimeout(r,1500))]);
 }
 let designCategoriesExpanded=false;
 function designCategoryIcon(name){const n=String(name||'').toLowerCase();if(/graphic|artist|photo|design|creative|brand/.test(n))return '✦';if(/web|software|coding|computer|it support|app|ai|digital/.test(n))return '⌘';if(/doctor|dentist|nurse|clinic|health|care/.test(n))return '✚';if(/law|legal|account|finance|tax/.test(n))return '§';if(/builder|construction|roof|carpenter|weld|plumb|electric|paint/.test(n))return '⌂';if(/clean|garden|landscap|housekeep/.test(n))return '✧';if(/mechanic|automotive|appliance|repair/.test(n))return '⚙';return '◈'}
@@ -2451,8 +2506,19 @@ async function loadProviderWorkstation(){
  if(!me||!(me.role==='provider'||me.role==='admin')){root.innerHTML='<div class="sv-workstation"><div class="sv-workstation-hero"><h1>Provider-only workstation</h1><p>Sign in with a service-provider account to open the business tools. Customers can continue browsing and chatting for free.</p><button type="button" class="sv-tool-outline" onclick="view(\'settings\')">Open Account</button></div></div>';return;}
  svWorkspacePlan=me.role==='admin'?(window.svSubscriptionTestMode?window.svSubscriptionTestTier:'spotlight'):'local';svWorkspaceRank=me.role==='admin'?(svWorkspaceRanks[svWorkspacePlan]??3):0;svWorkspaceBusiness=null;
  if(me.role==='provider'){
-  try{const d=await api('/api/provider/profile');svWorkspaceBusiness=d.business||null;if(svWorkspaceBusiness){svWorkspacePlan=String(svWorkspaceBusiness.plan||'local').toLowerCase();svWorkspaceRank=svWorkspaceRanks[svWorkspacePlan]??0;}}
-  catch(e){cards.innerHTML='<div class="sv-workstation-banner">Could not verify your provider plan: '+esc(e.message)+'. Retry after your connection returns.</div>';return;}
+  // SV76-SPEED-01: show the tools from the last verified plan at once, then confirm it quietly (re-render only if the plan changed).
+  const wsKey='sv_ws_profile_v1_'+String(me.id);let wsCached=null;try{wsCached=JSON.parse(svCacheGet(wsKey)||'null')}catch(_){}
+  const wsSlim=(b)=>b?{id:b.id,plan:b.plan,status:b.status,payment_status:b.payment_status}:null;
+  const wsApply=(b)=>{svWorkspaceBusiness=b||null;if(svWorkspaceBusiness){svWorkspacePlan=String(svWorkspaceBusiness.plan||'local').toLowerCase();svWorkspaceRank=svWorkspaceRanks[svWorkspacePlan]??0;}};
+  const wsSig=(b)=>b?String(b.plan||'')+'|'+String(b.status||'')+'|'+String(b.payment_status||''):'none';
+  if(wsCached&&wsCached.business){
+   wsApply(wsCached.business);
+   const wsUser=me.id;
+   api('/api/provider/profile').then(d=>{const nb=wsSlim(d.business||null);svCacheSet(wsKey,JSON.stringify({business:nb}));if(wsSig(nb)!==wsSig(wsCached.business)&&me&&me.id===wsUser)loadProviderWorkstation().catch(()=>{})}).catch(()=>{});
+  }else{
+   try{const d=await api('/api/provider/profile');wsApply(d.business||null);svCacheSet(wsKey,JSON.stringify({business:wsSlim(d.business||null)}));}
+   catch(e){cards.innerHTML='<div class="sv-workstation-banner">Could not verify your provider plan: '+esc(e.message)+'. Retry after your connection returns.</div>';return;}
+  }
  }
  const planLabel=window.svSubscriptionTestMode?'TEST PREVIEW: '+svProviderTierName(svWorkspacePlan).toUpperCase()+' - NO SUBSCRIPTION':me.role==='admin'?'OWNER EDITION - SPOTLIGHT TOOLS - FREE':svProviderTierName(svWorkspacePlan).toUpperCase()+' PLAN';
  const badge=document.getElementById('svWorkstationPlan');if(badge)badge.textContent=planLabel;
@@ -2809,11 +2875,20 @@ document.addEventListener('click',function(e){
   setTimeout(resetHomeScroll,320);
 },true);
 
-function pickCat(c){const priorServices=document.getElementById('servicesTabScreen');categoryReturnView=priorServices&&!priorServices.classList.contains('hidden')?'services':'customer';document.body.classList.remove('account-screen-mode','messages-screen-mode');document.body.classList.add('category-screen-mode');['platformRatingCard','platform-rating-card','rateSkillvayaCard','owner-promotions-public'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('hidden')});directorySearchActive=false;const raw=String(c||'All categories').trim();const canonical=(cats||[]).find(x=>String(x).toLocaleLowerCase()===raw.toLocaleLowerCase())||raw;chosen=canonical;const select=document.getElementById('categories');if(select)select.value=canonical;if(canonical==='All categories'){backToCategories();return}setHomeChrome(false);for(const id of ['customer','servicesTabScreen','contactUsScreen','providerDetailScreen','provider','account','settings','terms','admin','services','contact']){const el=document.getElementById(id);if(el)el.classList.add('hidden')}const category=document.getElementById('categoryScreen');if(category)category.classList.remove('hidden');const title=document.getElementById('categoryScreenTitle');if(title)title.textContent=canonical;const count=document.getElementById('categoryScreenCount');if(count)count.textContent='Loading service providers.';const sort=document.getElementById('categoryScreenSort'),homeSort=document.getElementById('sort');if(sort&&homeSort)sort.value=homeSort.value;window.scrollTo(0,0);loadBusinesses()}
+function pickCat(c){const priorServices=document.getElementById('servicesTabScreen');categoryReturnView=priorServices&&!priorServices.classList.contains('hidden')?'services':'customer';document.body.classList.remove('account-screen-mode','messages-screen-mode');document.body.classList.add('category-screen-mode');['platformRatingCard','platform-rating-card','rateSkillvayaCard','owner-promotions-public'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('hidden')});directorySearchActive=false;const raw=String(c||'All categories').trim();const canonical=(cats||[]).find(x=>String(x).toLocaleLowerCase()===raw.toLocaleLowerCase())||raw;chosen=canonical;const select=document.getElementById('categories');if(select)select.value=canonical;if(canonical==='All categories'){backToCategories();return}setHomeChrome(false);for(const id of ['customer','servicesTabScreen','contactUsScreen','providerDetailScreen','provider','account','settings','terms','admin','services','contact']){const el=document.getElementById(id);if(el)el.classList.add('hidden')}const category=document.getElementById('categoryScreen');if(category)category.classList.remove('hidden');const title=document.getElementById('categoryScreenTitle');if(title)title.textContent=canonical;const count=document.getElementById('categoryScreenCount');if(count)count.textContent='Loading service providers.';const sort=document.getElementById('categoryScreenSort'),homeSort=document.getElementById('sort');if(sort&&homeSort)sort.value=homeSort.value;window.scrollTo(0,0);if(svFullDirectory){allBusinesses=svFullDirectory.filter(b=>String(b.category||'').toLowerCase()===String(canonical).toLowerCase());svRenderDirectory({businesses:allBusinesses});}loadBusinesses()}
 function searchDirectory(){document.body.classList.remove('account-screen-mode','messages-screen-mode');document.body.classList.add('category-screen-mode');setHomeChrome(false);directorySearchActive=true;const field=document.getElementById('q'),raw=(field.value||'').trim(),key=raw.toLocaleLowerCase().replace(/[^a-z0-9]+/g,' ').trim();const aliases={'plumber':'Plumbers','plumbing':'Plumbers','electrician':'Electricians','doctor':'Doctors','private doctor':'Private doctors & clinics','private doctors':'Private doctors & clinics','clinic':'Private doctors & clinics','nurse':'Nurses','mechanic':'Mechanics','gardener':'Gardeners','gardeners':'Gardeners','landscaper':'Landscapers','lawyer':'Lawyers & legal services','lawyers':'Lawyers & legal services','graphic designer':'Graphic designers','builder':'Builders & construction','painter':'Painters & decorators','dentist':'Dentists','carpenter':'Carpenters & furniture'};const exact=(cats||[]).find(c=>c.toLocaleLowerCase().replace(/[^a-z0-9]+/g,' ').trim()===key);const service=exact||aliases[key];if(service){chosen=service;field.value='';}else{chosen='All categories';}document.getElementById('categories').value=chosen;document.getElementById('customer').classList.add('hidden');document.getElementById('categoryScreen').classList.remove('hidden');document.getElementById('categoryScreenSort').value=document.getElementById('sort').value;const area=(document.getElementById('area').value||'').trim();document.getElementById('categoryScreenTitle').textContent=service?service+(area?' in '+area:''):(raw?(area?'Search results for '+raw+' in '+area:'Search results for '+raw):(area?'Service providers in '+area:'All service providers'));document.getElementById('categoryScreenCount').textContent='Searching…';loadBusinesses();window.scrollTo(0,0)}
 document.getElementById('categories').addEventListener('change',e=>pickCat(e.target.value));
 function backToCategories(){directorySearchActive=false;chosen='All categories';const category=document.getElementById('categoryScreen');if(category)category.classList.add('hidden');document.getElementById('categoryScreenTitle').textContent='Service providers';document.getElementById('categories').value='All categories';if(categoryReturnView==='services'){view('services');return}view('customer');window.scrollTo(0,0);loadBusinesses()}
-async function loadBusinesses(){try{let p=new URLSearchParams({q:document.getElementById('q').value,area:document.getElementById('area').value,category:chosen,sort:document.getElementById('sort').value});let d=await api('/api/businesses?'+p);allBusinesses=d.businesses;if(me&&me.role==='customer'){try{const f=await api('/api/favorites');favoriteIds=(f.items||[]).map(x=>Number(x.id))}catch(e){favoriteIds=[]}}else{favoriteIds=[]}const categoryMode=!document.getElementById('categoryScreen').classList.contains('hidden');document.getElementById(categoryMode?'categoryScreenCount':'count').textContent=d.businesses.length+' matching businesses · contact for free';const dropdownCount=document.getElementById('providerDropdownCount'),dropdownHint=document.getElementById('providerDropdownHint'),dropdown=document.getElementById('providerDirectoryDropdown');if(dropdownCount)dropdownCount.textContent=d.businesses.length+' provider'+(d.businesses.length===1?'':'s');if(dropdownHint)dropdownHint.textContent=d.businesses.length?' Choose a provider below to view details':' No providers match this search yet';if(dropdown&&d.businesses.length===0)dropdown.open=true;if(!directorySearchActive)document.getElementById('categoryScreenTitle').textContent=chosen==='All categories'?'Service providers':chosen;document.getElementById('resTitle').textContent=chosen==='All categories'?'Providers you can contact':chosen;const markup=d.businesses.map(b=>'<article class="card biz '+b.plan+'" role="button" tabindex="0" aria-label="Open '+esc(b.name)+' provider profile" onclick="openProvider('+Number(b.id)+')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openProvider('+Number(b.id)+')}"><span class="tag '+(b.plan==='plus'?'plus':b.plan==='spotlight'?'spotlight':'')+'">'+(b.plan==='local'?'Local listing':b.plan==='priority'?'Priority · Sponsored':b.plan==='plus'?'Business Plus · Sponsored':'Spotlight · Sponsored')+'</span><h3>'+esc(b.name)+'</h3><div class="muted tiny">'+esc(b.category)+' · '+esc(b.area)+'</div><p>'+esc(b.description)+'</p>'+ratingMarkup(b.id,b.rating,b.rating_count,b.my_rating)+'<div style="margin-top:8px"><button class="ghost" type="button" onclick="event.stopPropagation();toggleFavorite('+Number(b.id)+')">'+(favoriteIds.includes(Number(b.id))?'♥ Saved provider':'♡ Save provider')+'</button></div><div class="provider-open"><span class="muted tiny">View details and contact options</span><button class="primary" type="button" onclick="event.stopPropagation();openProvider('+Number(b.id)+')">View provider</button></div></article>').join('')||'<div class="card"><h3>'+(document.getElementById('area').value.trim()?'No service providers found in '+esc(document.getElementById('area').value.trim()):'No active providers listed in this category yet')+'</h3><p class="muted">'+(document.getElementById('area').value.trim()?'There are currently no active '+esc(chosen==='All categories'?'matching service providers':chosen.toLowerCase())+' listed for this area. Try another town or suburb.':'This category is available, but no matching active provider profiles are published yet.')+'</p><button type="button" class="ghost" onclick="backToCategories()">Browse all service categories</button></div>';document.getElementById(categoryMode?'categoryScreenResults':'results').innerHTML=markup;document.getElementById('results').setAttribute('aria-label','Public service provider directory');}catch(e){
+/* SV76-SPEED-01: caches that let every screen paint at once and refresh in the background. */
+var svDirectoryHadCache=false,svFullDirectory=null;
+function svCacheGet(k){try{return localStorage.getItem(k)||sessionStorage.getItem(k)}catch(_){return null}}
+function svCacheSet(k,v){try{localStorage.setItem(k,v)}catch(_){try{sessionStorage.setItem(k,v)}catch(__){}}}
+function svClearUserCaches(){try{window.svMessagesItems=null;[localStorage,sessionStorage].forEach(s=>{const del=[];for(let i=0;i<s.length;i++){const k=s.key(i);if(k&&(k.indexOf('sv_message_cache_v54_')===0||k.indexOf('sv_ws_profile_v1_')===0))del.push(k)}del.forEach(k=>s.removeItem(k))})}catch(_){}}
+function svSaveDirectoryCache(p,d){try{if(!document.getElementById('q').value&&!document.getElementById('area').value&&chosen==='All categories'&&document.getElementById('sort').value==='featured'){svFullDirectory=d.businesses;localStorage.setItem('sv_dir_cache_v1',JSON.stringify({t:Date.now(),businesses:d.businesses.slice(0,80).map(b=>{const c=Object.assign({},b);delete c.my_rating;return c})}))}}catch(_){}}
+function svPaintCachedDirectory(){try{const c=JSON.parse(localStorage.getItem('sv_dir_cache_v1')||'null');if(c&&Array.isArray(c.businesses)&&c.businesses.length&&Date.now()-Number(c.t||0)<6048e5){allBusinesses=c.businesses;svFullDirectory=c.businesses;svDirectoryHadCache=true;svRenderDirectory({businesses:c.businesses})}}catch(_){}}
+async function svRefreshFavorites(){if(!(me&&me.role==='customer'))return;const f=await api('/api/favorites');favoriteIds=(f.items||[]).map(x=>Number(x.id));const cs=document.getElementById('categoryScreen');if(allBusinesses&&allBusinesses.length&&cs&&cs.classList.contains('hidden'))svRenderDirectory({businesses:allBusinesses})}
+function svRenderDirectory(d){const categoryMode=!document.getElementById('categoryScreen').classList.contains('hidden');document.getElementById(categoryMode?'categoryScreenCount':'count').textContent=d.businesses.length+' matching businesses · contact for free';const dropdownCount=document.getElementById('providerDropdownCount'),dropdownHint=document.getElementById('providerDropdownHint'),dropdown=document.getElementById('providerDirectoryDropdown');if(dropdownCount)dropdownCount.textContent=d.businesses.length+' provider'+(d.businesses.length===1?'':'s');if(dropdownHint)dropdownHint.textContent=d.businesses.length?' Choose a provider below to view details':' No providers match this search yet';if(dropdown&&d.businesses.length===0)dropdown.open=true;if(!directorySearchActive)document.getElementById('categoryScreenTitle').textContent=chosen==='All categories'?'Service providers':chosen;document.getElementById('resTitle').textContent=chosen==='All categories'?'Providers you can contact':chosen;const markup=d.businesses.map(b=>'<article class="card biz '+b.plan+'" role="button" tabindex="0" aria-label="Open '+esc(b.name)+' provider profile" onclick="openProvider('+Number(b.id)+')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openProvider('+Number(b.id)+')}"><span class="tag '+(b.plan==='plus'?'plus':b.plan==='spotlight'?'spotlight':'')+'">'+(b.plan==='local'?'Local listing':b.plan==='priority'?'Priority · Sponsored':b.plan==='plus'?'Business Plus · Sponsored':'Spotlight · Sponsored')+'</span><h3>'+esc(b.name)+'</h3><div class="muted tiny">'+esc(b.category)+' · '+esc(b.area)+'</div><p>'+esc(b.description)+'</p>'+ratingMarkup(b.id,b.rating,b.rating_count,b.my_rating)+'<div style="margin-top:8px"><button class="ghost" type="button" onclick="event.stopPropagation();toggleFavorite('+Number(b.id)+')">'+(favoriteIds.includes(Number(b.id))?'♥ Saved provider':'♡ Save provider')+'</button></div><div class="provider-open"><span class="muted tiny">View details and contact options</span><button class="primary" type="button" onclick="event.stopPropagation();openProvider('+Number(b.id)+')">View provider</button></div></article>').join('')||'<div class="card"><h3>'+(document.getElementById('area').value.trim()?'No service providers found in '+esc(document.getElementById('area').value.trim()):'No active providers listed in this category yet')+'</h3><p class="muted">'+(document.getElementById('area').value.trim()?'There are currently no active '+esc(chosen==='All categories'?'matching service providers':chosen.toLowerCase())+' listed for this area. Try another town or suburb.':'This category is available, but no matching active provider profiles are published yet.')+'</p><button type="button" class="ghost" onclick="backToCategories()">Browse all service categories</button></div>';document.getElementById(categoryMode?'categoryScreenResults':'results').innerHTML=markup;document.getElementById('results').setAttribute('aria-label','Public service provider directory');}
+async function loadBusinesses(){try{let p=new URLSearchParams({q:document.getElementById('q').value,area:document.getElementById('area').value,category:chosen,sort:document.getElementById('sort').value});const svFavP=(me&&me.role==='customer')?api('/api/favorites').then(f=>(f.items||[]).map(x=>Number(x.id)),()=>[]):Promise.resolve([]);let d=await api('/api/businesses?'+p);allBusinesses=d.businesses;favoriteIds=await svFavP;svSaveDirectoryCache(p,d);svRenderDirectory(d);}catch(e){
  console.error('Provider directory failed to load:',e);
  const message=e&&e.message?e.message:'Check your connection and try again.';
  const categoryScreen=document.getElementById('categoryScreen');
@@ -3189,18 +3264,20 @@ async function openMessageConversation(businessId,customerId){
  const navVersion=++svMessagesNavigationVersion;
  const root=document.getElementById('messagesList');if(!root)return;
  document.body.classList.add('messages-conversation-open');
- root.innerHTML='<div class="message-conversation-screen"><button type="button" class="ghost message-back-button" onclick="loadMessageThreads()">&#8592; Back to conversations</button><div class="notice">Loading conversation&#8230;</div></div>';
+ // SV76-SPEED-01: when the inbox was loaded a moment ago, open the conversation from memory at once and confirm it with the
+ // server in the background (new messages are patched into the open chat); otherwise show the loading note and fetch.
+ let svWarm=(window.svMessagesItems&&window.svMessagesItems.userId===Number(me.id)&&Date.now()-window.svMessagesItems.at<120000)?window.svMessagesItems.items:null;
+ if(svWarm&&!svWarm.some(m=>Number(m.business_id)===Number(businessId)))svWarm=null;
+ if(!svWarm)root.innerHTML='<div class="message-conversation-screen"><button type="button" class="ghost message-back-button" onclick="loadMessageThreads()">&#8592; Back to conversations</button><div class="notice">Loading conversation&#8230;</div></div>';
  try{
-  // Always fetch the server copy. The old session cache could hide messages received
-  // after the inbox was first opened, making a successfully sent message look missing.
-  const d=await api('/api/messages');
+  // Without a warm copy always fetch the server copy, so a message received after the inbox was opened is never hidden.
+  const d=svWarm?{items:svWarm}:await api('/api/messages');
   if(navVersion!==svMessagesNavigationVersion)return;
   const items=d.items||[];
   svLastKnownMessageIds=new Set(items.map(m=>String(m.id)));svMessagePollInitialized=true;
-  try{const key=svMessageCacheKey(),cached=JSON.parse(sessionStorage.getItem(key)||'null');if(cached){cached.messages=items;cached.messagesLoaded=true;cached.savedAt=Date.now();sessionStorage.setItem(key,JSON.stringify(cached));}}catch(_){}
-  const providerOwnsListing=me.role==='provider'||(me.role==='admin'&&items.some(m=>Number(m.business_id)===Number(businessId)&&Number(m.business_owner_id)===Number(me.id)));
-  const thread=items.filter(m=>Number(m.business_id)===Number(businessId)&&(providerOwnsListing?Number(m.customer_id)===Number(customerId):Number(m.customer_id)===Number(me.id)));
-  thread.sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||Number(a.id)-Number(b.id));
+  try{const key=svMessageCacheKey(),cached=JSON.parse(svCacheGet(key)||'null');if(cached){cached.messages=items;cached.messagesLoaded=true;cached.savedAt=Date.now();svCacheSet(key,JSON.stringify(cached));}}catch(_){}
+  const buildThread=(its)=>{const own=me.role==='provider'||(me.role==='admin'&&its.some(m=>Number(m.business_id)===Number(businessId)&&Number(m.business_owner_id)===Number(me.id)));const th=its.filter(m=>Number(m.business_id)===Number(businessId)&&(own?Number(m.customer_id)===Number(customerId):Number(m.customer_id)===Number(me.id)));th.sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||Number(a.id)-Number(b.id));return th};
+  const thread=buildThread(items);
   const first=thread[0];
   let contactInfo=first||null;
   if(!contactInfo){
@@ -3224,6 +3301,7 @@ async function openMessageConversation(businessId,customerId){
   const bubbles=root.querySelector('.message-bubbles');if(bubbles)bubbles.scrollTop=bubbles.scrollHeight;
   const field=root.querySelector('.message-compose textarea');
   if(field){const resize=()=>{field.style.height="auto";field.style.height=Math.min(field.scrollHeight,150)+"px";if(bubbles)bubbles.scrollTop=bubbles.scrollHeight;};field.addEventListener("input",resize);field.addEventListener("focus",()=>setTimeout(resize,50));resize();}
+  if(svWarm){api('/api/messages').then(fresh=>{if(navVersion!==svMessagesNavigationVersion)return;const fi=fresh.items||[];window.svMessagesItems={userId:Number(me.id),items:fi,at:Date.now()};const sig=a=>a.length+':'+a.reduce((m,x)=>Math.max(m,Number(x.id)||0),0);if(sig(fi)===sig(svWarm))return;const bb=root.querySelector('.message-bubbles');if(!bb)return;const near=bb.scrollHeight-bb.scrollTop-bb.clientHeight<140;bb.innerHTML=buildThread(fi).map(m=>renderSkillvayaChatMessage(m)).join('');if(near)bb.scrollTop=bb.scrollHeight}).catch(()=>{})}
   try{await api("/api/messages/read",{method:"POST",body:JSON.stringify({business_id:Number(businessId),customer_id:Number(first.customer_id)})});}catch(_){}
  }catch(e){if(navVersion===svMessagesNavigationVersion)root.textContent='Could not open conversation: '+e.message;}
 }
@@ -3307,7 +3385,7 @@ async function loadMessageThreads(){
  document.body.classList.remove('messages-conversation-open');
  const root=document.getElementById('messagesList'),count=document.getElementById('messagesCount');if(!root)return;
  if(!me){root.innerHTML='<div class="messages-empty-state"><h3>Sign in to view contacts</h3><p>Your private conversations appear here after you sign in.</p></div>';if(count)count.textContent='';return;}
- const key=svMessageCacheKey();let cached=null;try{cached=JSON.parse(sessionStorage.getItem(key)||'null')}catch(_){}
+ const key=svMessageCacheKey();let cached=null;try{cached=JSON.parse(svCacheGet(key)||'null')}catch(_){}
  if(cached&&cached.html){root.innerHTML=cached.html;if(count)count.textContent=cached.count||'';}else{root.innerHTML='<div class="messages-loading"><span class="messages-loading-dot"></span>Loading conversations.</div>';if(count)count.textContent='';}
  try{
   const results=await Promise.allSettled([api('/api/messages'),api('/api/contacts')]);
@@ -3316,7 +3394,7 @@ async function loadMessageThreads(){
   if(navVersion!==svMessagesNavigationVersion||document.body.classList.contains('messages-conversation-open'))return;
   if(results[0].status==='rejected'&&results[1].status==='rejected')throw results[0].reason||results[1].reason;
   const d=results[0].status==='fulfilled'?results[0].value:{items:[]},contactData=results[1].status==='fulfilled'?results[1].value:{items:[]};
-  svLastKnownMessageIds=new Set((d.items||[]).map(m=>String(m.id)));svMessagePollInitialized=true;
+  svLastKnownMessageIds=new Set((d.items||[]).map(m=>String(m.id)));svMessagePollInitialized=true;window.svMessagesItems={userId:Number(me.id),items:d.items||[],at:Date.now()};
   const items=(d.items||[]).filter(m=>me.role!=='admin'||Number(m.customer_id)===Number(me.id)||Number(m.business_owner_id)===Number(me.id)),contacts=contactData.items||[],threads=new Map();
   for(const c of contacts){const k=String(c.business_id)+'|'+String(c.customer_id);if(!threads.has(k))threads.set(k,{business_id:Number(c.business_id),customer_id:Number(c.customer_id),business_name:c.business_name,business_owner_id:Number(c.business_owner_id||0),customer_name:c.customer_name,created_at:c.created_at,messages:[]});}
   for(const m of items){const k=String(m.business_id)+'|'+String(m.customer_id);if(!threads.has(k))threads.set(k,{business_id:Number(m.business_id),customer_id:Number(m.customer_id),business_name:m.business_name,business_owner_id:Number(m.business_owner_id||0),customer_name:m.customer_name,created_at:m.created_at,messages:[]});else{const x=threads.get(k);x.business_owner_id=Number(m.business_owner_id||x.business_owner_id||0);x.business_name=m.business_name||x.business_name;x.customer_name=m.customer_name||x.customer_name;}threads.get(k).messages.push(m);}
@@ -3324,12 +3402,12 @@ async function loadMessageThreads(){
   if(count)count.textContent=grouped.length+' conversation'+(grouped.length===1?'':'s');
   root.innerHTML=grouped.map(t=>{t.messages.sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||Number(a.id)-Number(b.id));const last=t.messages[t.messages.length-1],title=((me.role==='provider'&&Number(t.business_owner_id)===Number(me.id))||(me.role==='admin'&&t.messages.some(m=>Number(m.business_owner_id)===Number(me.id))))?t.customer_name:t.business_name,preview=last?last.message:'Tap to start a conversation',when=last?.created_at||t.created_at||'',unread=t.messages.filter(m=>Number(m.sender_id)!==Number(me.id)&&!m.read_at).length;return '<button type="button" class="conversation-list-item" onclick="openMessageConversation('+t.business_id+','+t.customer_id+')"><span class="conversation-avatar">'+esc(String(title||'?').slice(0,1).toUpperCase())+'</span><span class="conversation-summary"><strong>'+esc(title||'Conversation')+'</strong><span>'+esc(preview)+'</span></span><span class="conversation-meta"><small>'+esc(formatMessageDate(when))+'</small>'+(unread?'<span class="conversation-count">'+unread+'</span>':'')+'</span></button>';}).join('')||'<div class="messages-empty-state"><h3>No conversations yet</h3><p>When you contact a service provider, your conversations will appear here.</p></div>';
   const search=document.getElementById('messageSearch');if(search&&search.value)filterMessageThreads(search.value);
-  try{sessionStorage.setItem(key,JSON.stringify({html:root.innerHTML,count:count?count.textContent:'',messages:d.items||[],messagesLoaded:results[0].status==='fulfilled',contacts:contactData.items||[],savedAt:Date.now()}));}catch(_){}
+  try{svCacheSet(key,JSON.stringify({html:root.innerHTML,count:count?count.textContent:'',messages:d.items||[],messagesLoaded:results[0].status==='fulfilled',contacts:contactData.items||[],savedAt:Date.now()}));}catch(_){}
  }catch(e){if(navVersion===svMessagesNavigationVersion&&!cached)root.innerHTML='<div class="messages-empty-state"><h3>Could not load conversations</h3><p>'+esc(e&&e.message?e.message:'Please check your connection and try again.')+'</p><button type="button" class="ghost" onclick="loadMessageThreads()">Try again</button></div>';}
 }
 async function replyMessage(e,business_id,customer_id){e.preventDefault();const f=e.target,field=f.elements.message,body=field.value.trim();if(!body)return;const button=f.querySelector('button[type=submit]');if(button){button.disabled=true;button.textContent='Sending...'}try{await api('/api/messages/send',{method:'POST',body:JSON.stringify({business_id,customer_id,message:body})});f.reset();msg('messagesStatus','Reply sent and saved to this conversation.',true);await loadMessageThreads()}catch(x){msg('messagesStatus','Reply not sent: '+x.message)}finally{if(button){button.disabled=false;button.textContent='Send reply'}}}
 async function requestAccountDeletion(){if(!me||!token){alert('Please sign in to request account deletion.');return}if(me.role==='admin'){alert('The owner account cannot be deleted through the public account-deletion flow.');return}const reason=prompt('Optional reason for your account-deletion request:')||'';if(!confirm('Submit an account-deletion request for '+(me.email||'this account')+'? Your account is not deleted immediately. Skillvaya will verify the request and review lawful retention requirements. Google Play provider plans are prepaid and do not renew automatically. A new purchase is required to extend the paid period; deleting your Skillvaya account does not automatically refund an already-paid period.'))return;try{const d=await api('/api/account/delete-request',{method:'POST',body:JSON.stringify({reason})});alert(d.message||('Your request #'+d.request_id+' has been recorded.'));}catch(e){alert('Could not submit your deletion request: '+e.message+'\nYou can use the public deletion information page to contact Skillvaya.')}}
-async function logout(){const t=token||localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token');try{if(t)await fetch('/api/logout',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:'{}'})}catch(e){}token='';me=null;localStorage.removeItem('sv_token');localStorage.removeItem('skillvaya_token');localStorage.removeItem('skillvaya_owner_token');localStorage.removeItem('skillvaya_user');sessionStorage.removeItem('sv_token');sessionStorage.removeItem('skillvaya_token');location.replace('/');}
+async function logout(){const t=token||localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token');try{if(t)await fetch('/api/logout',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:'{}'})}catch(e){}try{svClearUserCaches()}catch(e){}token='';me=null;localStorage.removeItem('sv_token');localStorage.removeItem('skillvaya_token');localStorage.removeItem('skillvaya_owner_token');localStorage.removeItem('skillvaya_user');sessionStorage.removeItem('sv_token');sessionStorage.removeItem('skillvaya_token');location.replace('/');}
 document.getElementById('profileForm').onsubmit=async e=>{e.preventDefault();try{let d=await api('/api/account/profile',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});me=d.user;document.getElementById('profileIdentity').textContent=me.email+' · '+me.role;msg('profileMsg','Profile saved successfully.',true);await sessionInfo();setProfileEditing(false)}catch(x){msg('profileMsg',x.message)}};
 document.getElementById('passwordForm').onsubmit=async e=>{e.preventDefault();let f=e.target;if(f.elements.new_password.value!==f.elements.confirm_password.value){msg('passwordMsg','The new password and confirmation do not match.');return}try{let d=await api('/api/account/password',{method:'POST',body:JSON.stringify({current_password:f.elements.current_password.value,new_password:f.elements.new_password.value})});f.reset();msg('passwordMsg',d.message||'Password changed successfully.',true)}catch(x){msg('passwordMsg',x.message)}};
 async function openStudioEditor(){const form=document.getElementById('bizForm');if(!form)return;try{const d=await api('/api/admin/owner-promotions');const item=(d.items||[]).find(x=>x.kind==='business'&&String(x.business_name||'').trim()==='Skillvaya Digital & Creative Studio'&&x.status==='active')||(d.items||[]).find(x=>x.kind==='business'&&String(x.business_name||'').trim()==='Skillvaya Digital & Creative Studio');if(item){form.elements.promotion_id.value=item.id;form.elements.name.value=item.business_name||'Skillvaya Digital & Creative Studio';form.elements.category.value=item.category||'Graphic designers';form.elements.area.value=item.area||'Worldwide (Online & Remote)';form.elements.phone.value=item.phone||'+27 83 787 45 69';form.elements.whatsapp.value=item.whatsapp||'+27 83 787 45 69';form.elements.email.value=item.contact_email||'Skillvaya@gmail.com';form.elements.website.value=item.target_url||'';form.elements.description.value=item.description||'';form.elements.tagline.value=item.title||'Your Vision. Our Skills. Real Results.';window.skillvayaStudioPromotion=item;}else{msg('bizMsg','Your published owner listing could not be found, so no changes were made.');return;}form.classList.remove('hidden');form.scrollIntoView({behavior:'smooth',block:'start'});}catch(e){msg('bizMsg','Could not load your saved profile for editing: '+e.message);}}
@@ -3546,7 +3624,7 @@ class Handler(BaseHTTPRequestHandler):
         max_bytes=20_000_000 if path=="/api/messages/attachments" else 3_000_000
         if n<0 or n>max_bytes: raise ValueError("Request too large")
         return json.loads(self.rfile.read(n) or b"{}")
-    def user(self):
+    def user(self,want_photo=False):
         t=self.headers.get("Authorization","").removeprefix("Bearer ").strip()
         if not t:
             for item in self.headers.get("Cookie","").split(";"):
@@ -3558,16 +3636,17 @@ class Handler(BaseHTTPRequestHandler):
         # Always validate the durable session and expiry, even if this worker has a cached user.
         # Sessions live in the database so a Render restart does not silently log users out.
         with conn() as c:
-            row=c.execute("SELECT u.id,u.name,u.email,u.phone,u.role,s.expires_at FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.token=?",(t,)).fetchone()
+            row=c.execute("SELECT u.id,u.name,u.email,u.phone,u.role,s.expires_at"+(",u.profile_photo" if want_photo else "")+" FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.token=?",(t,)).fetchone()
         if not row: return None
         if row["expires_at"] <= now():
             with conn() as c: c.execute("DELETE FROM auth_sessions WHERE token=?",(t,))
             return None
         user={"id":row["id"],"name":row["name"],"email":row["email"],"phone":row["phone"] or "","role":row["role"]}
         SESSIONS[t]=user
+        if want_photo: return dict(user,profile_photo=row["profile_photo"])
         return user
-    def require(self,role=None):
-        u=self.user()
+    def require(self,role=None,want_photo=False):
+        u=self.user(want_photo)
         local_only = (role == "admin" and self.client_address[0] in ("127.0.0.1", "::1")
                       and self.server.server_address[0] in ("127.0.0.1", "::1"))
         if not u and local_only:
@@ -4220,7 +4299,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
             if path=="/sv-logo.jpeg":
                 logo_path=os.path.join(ROOT,"sv-logo.jpeg")
                 with open(logo_path,"rb") as f: b=f.read()
-                self.send_response(200); self.send_header("Content-Type","image/jpeg"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
+                self.send_response(200); self.send_header("Content-Type","image/jpeg"); self.send_header("Cache-Control","public, max-age=86400"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
             if path=="/manifest.json":
                 manifest={"id":"/login","name":"Skillvaya","short_name":"Skillvaya","description":"Sign in to Skillvaya to open your workspace.","start_url":"/login?installed=1","scope":"/","display":"standalone","background_color":"#071426","theme_color":"#071426","categories":["business","shopping","lifestyle"],"icons":[{"src":"/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},{"src":"/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}
                 b=json.dumps(manifest).encode()
@@ -4233,15 +4312,18 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 logo_path=os.path.join(ROOT,"sv-logo.jpeg")
                 with open(logo_path,"rb") as logo_file: logo_data=base64.b64encode(logo_file.read()).decode("ascii")
                 svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#08142b"/><image href="data:image/jpeg;base64,'+logo_data+'" x="24" y="24" width="464" height="464" preserveAspectRatio="xMidYMid meet"/></svg>'
-                b=svg.encode("utf-8"); self.send_response(200); self.send_header("Content-Type","image/svg+xml; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
+                b=svg.encode("utf-8"); self.send_response(200); self.send_header("Content-Type","image/svg+xml; charset=utf-8"); self.send_header("Cache-Control","public, max-age=86400"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
             if path=="/sw.js":
-                worker=("const CACHE='skillvaya-shell-v3-login-sv';"
+                # SV76-PERF-03: network first, but a saved copy of the app opens after 2.5 s so a sleeping server never blanks the app.
+                worker=("const CACHE='skillvaya-shell-v4-fast';"
                 "const ASSETS=['/manifest.json','/icon.svg','/icon-192.png','/icon-512.png','/sv-logo.jpeg'];"
-                "const HTML_ROUTES=['/','/index.html','/login','/customer','/customer-app','/website','/terms'];"
+                "const HTML_ROUTES=['/','/index.html','/login','/customer','/customer-app','/website','/terms','/workfinder'];"
                 "self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));"
                 "self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));"
                 "self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||u.origin!==location.origin||u.pathname.startsWith('/api/'))return;"
-                "if(HTML_ROUTES.includes(u.pathname)){e.respondWith(fetch(e.request,{cache:'no-store'}).catch(()=>new Response('<!doctype html><meta name=viewport content=width=device-width,initial-scale=1><title>Skillvaya offline</title><main style=font:16px system-ui;margin:15vh auto;max-width:32rem;padding:1rem><h1>Skillvaya</h1><p>Connect to the internet to sign in and open your workspace.</p></main>',{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}})));return;}"
+                "if(HTML_ROUTES.includes(u.pathname)){e.respondWith((async()=>{const cache=await caches.open(CACHE),key=u.pathname;const offline=()=>new Response('<!doctype html><meta name=viewport content=width=device-width,initial-scale=1><title>Skillvaya offline</title><main style=font:16px system-ui;margin:15vh auto;max-width:32rem;padding:1rem><h1>Skillvaya</h1><p>Connect to the internet to sign in and open your workspace.</p></main>',{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});"
+                "const net=fetch(e.request,{cache:'no-cache'}).then(r=>{if(r&&r.ok&&r.status===200)cache.put(key,r.clone());return r});const cached=await cache.match(key);if(!cached)return net.catch(offline);try{e.waitUntil(net.catch(()=>{}))}catch(_){}"
+                "return Promise.race([net.then(r=>r&&r.ok?r:cached),new Promise(res=>setTimeout(()=>res(cached),2500))]).catch(()=>cached);})());return;}"
                 "e.respondWith(fetch(e.request).then(r=>{if(r&&r.ok&&ASSETS.includes(u.pathname)){const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));}return r;}).catch(()=>caches.match(e.request)));});").encode("utf-8")
                 self.send_response(200); self.send_header("Content-Type","application/javascript; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Service-Worker-Allowed","/"); self.send_header("Content-Length",str(len(worker))); self.end_headers(); self.wfile.write(worker); return
             if path=="/owner-app":
@@ -4266,9 +4348,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         workfinder_html = f.read()
                 except OSError:
                     return self.sendj({"error": "WorkFinder is temporarily unavailable."}, 503)
+                wf_etag = '"' + hashlib.sha1(workfinder_html).hexdigest()[:24] + '"'
+                if self.headers.get("If-None-Match", "").replace("W/", "").strip() == wf_etag:
+                    self.send_response(304); self.send_header("ETag", wf_etag); self.send_header("Cache-Control", "no-cache"); self.end_headers()
+                    return
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Cache-Control", "no-store")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("ETag", wf_etag)
                 self.send_header("Content-Length", str(len(workfinder_html)))
                 self.end_headers()
                 self.wfile.write(workfinder_html)
@@ -4337,7 +4424,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         '<link rel="canonical" href="https://skillvaya.onrender.com/customer">'
                     )
                 customer_html = customer_page.encode("utf-8")
-                self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(customer_html))); self.end_headers(); self.wfile.write(customer_html); return
+                # SV76-PERF-03: validators let the phone reuse its saved copy (304, no body) when nothing changed.
+                etag='"'+hashlib.sha1(customer_html).hexdigest()[:24]+'"'
+                if self.headers.get("If-None-Match","").replace("W/","").strip()==etag:
+                    self.send_response(304); self.send_header("ETag",etag); self.send_header("Cache-Control","no-cache"); self.end_headers(); return
+                self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("ETag",etag); self.send_header("Content-Length",str(len(customer_html))); self.end_headers(); self.wfile.write(customer_html); return
             if path=="/owner-control":
                 try:
                     self.require("admin")
@@ -4506,11 +4597,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 try: after=max(0,int(query.get("after",["0"])[0]))
                 except (TypeError,ValueError): after=0
                 with conn() as c:
-                    call=c.execute("SELECT vc.*,b.user_id AS provider_owner_id,b.name business_name,cu.name customer_name,caller.name caller_name,callee.name callee_name FROM video_calls vc JOIN businesses b ON b.id=vc.business_id JOIN users cu ON cu.id=vc.customer_id JOIN users caller ON caller.id=vc.caller_id JOIN users callee ON callee.id=vc.callee_id WHERE vc.id=?",(call_id,)).fetchone()
+                    call_rows,signals=db_batch(c,[("SELECT vc.*,b.user_id AS provider_owner_id,b.name business_name,cu.name customer_name,caller.name caller_name,callee.name callee_name FROM video_calls vc JOIN businesses b ON b.id=vc.business_id JOIN users cu ON cu.id=vc.customer_id JOIN users caller ON caller.id=vc.caller_id JOIN users callee ON callee.id=vc.callee_id WHERE vc.id=?",(call_id,)),("SELECT id,sender_id,kind,payload,created_at FROM video_call_signals WHERE call_id=? AND id>? ORDER BY id ASC LIMIT 300",(call_id,after))])
+                    call=call_rows[0] if call_rows else None
                     if not call: return self.sendj({"error":"Video call not found."},404)
                     allowed=(u["role"]=="admin" or int(u["id"]) in (int(call["caller_id"]),int(call["callee_id"])) or (u["role"]=="provider" and int(u["id"])==int(call["provider_owner_id"])))
                     if not allowed: return self.sendj({"error":"You cannot access this video call."},403)
-                    signals=c.execute("SELECT id,sender_id,kind,payload,created_at FROM video_call_signals WHERE call_id=? AND id>? ORDER BY id ASC LIMIT 300",(call_id,after)).fetchall()
                 result=dict(call);result["signals"]=[dict(x) for x in signals]
                 return self.sendj({"call":result})
             if path in ("/api/provider/quote-templates","/api/provider/campaigns"):
@@ -4716,9 +4807,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     x["whatsapp"]=x.get("whatsapp") or x.get("phone") or ""
                 return self.sendj({"businesses":items})
             if path=="/api/me":
-                u=self.require()
-                with conn() as c: row=c.execute("SELECT id,name,email,phone,role,profile_photo FROM users WHERE id=?",(u["id"],)).fetchone()
-                return self.sendj({"user":dict(row) if row else u})
+                u=self.require(want_photo=True)
+                if "profile_photo" not in u:
+                    with conn() as c: row=c.execute("SELECT id,name,email,phone,role,profile_photo FROM users WHERE id=?",(u["id"],)).fetchone()
+                    return self.sendj({"user":dict(row) if row else u})
+                return self.sendj({"user":{"id":u["id"],"name":u["name"],"email":u["email"],"phone":u["phone"],"role":u["role"],"profile_photo":u["profile_photo"]}})
             if path=="/api/account/profile":
                 u=self.require(); return self.sendj({"user":u})
             if path=="/api/admin/summary":
@@ -5069,9 +5162,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         interaction=c.execute("SELECT 1 FROM messages WHERE business_id=? AND customer_id=? UNION SELECT 1 FROM enquiries WHERE business_id=? AND customer_id=? UNION SELECT 1 FROM contacts WHERE business_id=? AND customer_id=? LIMIT 1",(bid,customer_id,bid,customer_id,bid,customer_id)).fetchone()
                         if not interaction: return self.sendj({"error":"Start a chat with a text message before calling."},403)
                         call_id=secrets.token_urlsafe(18);stamp=now()
-                        c.execute("INSERT INTO video_calls(id,business_id,customer_id,caller_id,callee_id,status,offer_sdp,answer_sdp,created_at,updated_at,ended_at) VALUES(?,?,?,?,?,'ringing',?,'',?,?, '')",(call_id,bid,customer_id,u["id"],callee_id,offer_obj and json.dumps(offer_obj),stamp,stamp))
-                        # Save a call-invitation event in the existing chat so both sides have a durable record.
-                        c.execute("INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)",(bid,customer_id,u["id"],"Video call invitation",stamp))
+                        if hasattr(c,"execute_atomic"):
+                            # SV76-PERF-02: the call row and its chat invitation are written by ONE statement (one round trip, atomic).
+                            c.execute_atomic("WITH vc AS (INSERT INTO video_calls(id,business_id,customer_id,caller_id,callee_id,status,offer_sdp,answer_sdp,created_at,updated_at,ended_at) VALUES(?,?,?,?,?,'ringing',?,'',?,?, '')) INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)",(call_id,bid,customer_id,u["id"],callee_id,offer_obj and json.dumps(offer_obj),stamp,stamp,bid,customer_id,u["id"],"Video call invitation",stamp))
+                        else:
+                            c.execute("INSERT INTO video_calls(id,business_id,customer_id,caller_id,callee_id,status,offer_sdp,answer_sdp,created_at,updated_at,ended_at) VALUES(?,?,?,?,?,'ringing',?,'',?,?, '')",(call_id,bid,customer_id,u["id"],callee_id,offer_obj and json.dumps(offer_obj),stamp,stamp))
+                            # Save a call-invitation event in the existing chat so both sides have a durable record.
+                            c.execute("INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)",(bid,customer_id,u["id"],"Video call invitation",stamp))
                     # The call row is already committed. Dispatch push outside the request path so
                     # Firebase network latency cannot delay the caller's immediate "ringing" response.
                     try:
@@ -5102,19 +5199,19 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                             if ans_obj.get("type")!="answer" or not ans_obj.get("sdp") or len(answer)>100000: raise ValueError()
                         except Exception: return self.sendj({"error":"A valid video call answer is required."},400)
                         if call["status"]!="ringing": return self.sendj({"error":"This call is no longer ringing."},409)
-                        c.execute("UPDATE video_calls SET status='accepted',answer_sdp=?,updated_at=? WHERE id=?",(json.dumps(ans_obj),now(),call_id))
+                        db_atomic(c,"UPDATE video_calls SET status='accepted',answer_sdp=?,updated_at=? WHERE id=?",(json.dumps(ans_obj),now(),call_id))
                         return self.sendj({"ok":True,"status":"accepted"})
                     if action=="candidate":
                         if call["status"] not in ("ringing","accepted"): return self.sendj({"error":"This call is no longer active."},409)
                         candidate=d.get("candidate")
                         if not isinstance(candidate,dict) or len(json.dumps(candidate))>8000: return self.sendj({"error":"Invalid network candidate."},400)
-                        row=c.execute("INSERT INTO video_call_signals(call_id,sender_id,kind,payload,created_at) VALUES(?,?,'candidate',?,?) RETURNING id",(call_id,u["id"],json.dumps(candidate),now())).fetchone()
+                        row=db_atomic(c,"INSERT INTO video_call_signals(call_id,sender_id,kind,payload,created_at) VALUES(?,?,'candidate',?,?) RETURNING id",(call_id,u["id"],json.dumps(candidate),now())).fetchone()
                         return self.sendj({"ok":True,"signal_id":row["id"]},201)
                     if action in ("reject","end"):
                         if action=="reject" and int(u["id"])!=int(call["callee_id"]) and u["role"]!="admin": return self.sendj({"error":"Only the person receiving the call can decline it."},403)
                         status="rejected" if action=="reject" else "ended";stamp=now()
                         if call["status"] in ("ended","rejected","missed"): return self.sendj({"ok":True,"status":call["status"]})
-                        c.execute("UPDATE video_calls SET status=?,updated_at=?,ended_at=? WHERE id=?",(status,stamp,stamp,call_id))
+                        db_atomic(c,"UPDATE video_calls SET status=?,updated_at=?,ended_at=? WHERE id=?",(status,stamp,stamp,call_id))
                         return self.sendj({"ok":True,"status":status})
                 return self.sendj({"error":"Unsupported video call action."},400)
             if path in ("/api/provider/quote-templates","/api/provider/campaigns"):
@@ -5641,7 +5738,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     else:
                         allowed=(customer_id==int(u["id"]) and u["role"] in ("customer","admin")) or (u["role"]=="admin" and c.execute("SELECT 1 FROM businesses WHERE id=? AND user_id=?",(bid,u["id"])).fetchone())
                     if not allowed:return self.sendj({"error":"Conversation not found."},404)
-                    c.execute("UPDATE messages SET read_at=? WHERE business_id=? AND customer_id=? AND sender_id<>? AND read_at IS NULL",(now(),bid,customer_id,u["id"]))
+                    db_atomic(c,"UPDATE messages SET read_at=? WHERE business_id=? AND customer_id=? AND sender_id<>? AND read_at IS NULL",(now(),bid,customer_id,u["id"]))
                 return self.sendj({"ok":True})
             if path=="/api/messages/send":
                 u=self.require()
@@ -5662,9 +5759,16 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         customer_id=u["id"]
                     elif u["role"]=="admin": customer_id=int(d.get("customer_id",u["id"]))
                     else:return self.sendj({"error":"You cannot message this listing."},403)
-                    c.execute("INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)",(bid,customer_id,u["id"],body,now()))
-                    if u["role"]=="customer":
-                        c.execute("INSERT INTO enquiries(business_id,customer_id,message,created_at) VALUES(?,?,?,?)",(bid,customer_id,body,now()))
+                    if hasattr(c,"execute_atomic") and u["role"]=="customer":
+                        # SV76-PERF-02: message + enquiry in ONE statement (one round trip, atomic) instead of BEGIN + 2 inserts + COMMIT.
+                        stamp=now()
+                        c.execute_atomic("WITH m AS (INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)) INSERT INTO enquiries(business_id,customer_id,message,created_at) VALUES(?,?,?,?)",(bid,customer_id,u["id"],body,stamp,bid,customer_id,body,stamp))
+                    elif hasattr(c,"execute_atomic"):
+                        c.execute_atomic("INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)",(bid,customer_id,u["id"],body,now()))
+                    else:
+                        c.execute("INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)",(bid,customer_id,u["id"],body,now()))
+                        if u["role"]=="customer":
+                            c.execute("INSERT INTO enquiries(business_id,customer_id,message,created_at) VALUES(?,?,?,?)",(bid,customer_id,body,now()))
                     recipient_id = int(biz["user_id"]) if int(biz["user_id"] or 0) != int(u["id"]) else int(customer_id)
                 try:
                     fcm_send_async(recipient_id, "Skillvaya message", (u.get("name") or "Your contact") + ": " + body,

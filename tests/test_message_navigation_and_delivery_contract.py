@@ -26,7 +26,10 @@ class MessageNavigationAndDeliveryContract(unittest.TestCase):
                 start = source.index("async function openMessageConversation(")
                 end = source.index("\nasync function sendConversationReply(", start)
                 function = source[start:end]
-                self.assertIn("const d=await api('/api/messages');", function)
+                # cold path always asks the server; the warm path (inbox loaded < 2 min ago) must re-check the server in the background
+                self.assertIn("await api('/api/messages')", function)
+                self.assertIn("window.svMessagesItems.at<120000", function)
+                self.assertIn("if(svWarm){api('/api/messages').then(fresh=>", function)
                 self.assertNotIn("sessionStorage.getItem(svMessageCacheKey())", function)
                 self.assertIn("svLastKnownMessageIds=new Set(items.map(m=>String(m.id)))", function)
 
