@@ -104,7 +104,7 @@ def fcm_send_to_user(user_id, title, body, data=None):
                     data=payload,
                     android=messaging.AndroidConfig(
                         priority="high",
-                        ttl=30,
+                        ttl=datetime.timedelta(seconds=30),
                         notification=messaging.AndroidNotification(
                             channel_id="skillvaya_incoming_calls_v2",
                             priority="max",
@@ -119,7 +119,7 @@ def fcm_send_to_user(user_id, title, body, data=None):
                 message = messaging.Message(
                     token=token,
                     data=payload,
-                    android=messaging.AndroidConfig(priority="high", ttl=300000),
+                    android=messaging.AndroidConfig(priority="high", ttl=datetime.timedelta(seconds=300)),
                 )
             message_id = messaging.send(message, app=app)
             sent += 1
