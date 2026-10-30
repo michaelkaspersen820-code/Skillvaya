@@ -72,6 +72,17 @@ class MessageNavigationAndDeliveryContract(unittest.TestCase):
                 self.assertNotIn("document.body.appendChild(b)", source)
                 self.assertIn("api('/api/notifications')", source)
 
+
+    def test_home_notification_bell_shows_immediately_after_session_restore(self):
+        for path in SOURCES:
+            with self.subTest(path=str(path)):
+                source = self.read(path)
+                start = source.index("async function sessionInfo(knownUser=null)")
+                end = source.index("\\nasync function saveProfilePhoto()", start)
+                function = source[start:end]
+                self.assertIn("me=d.user;const bell=svEnsureNotificationBell();if(bell)bell.classList.toggle('is-visible',!!me);", function)
+
+
 if __name__ == "__main__":
     unittest.main()
 
