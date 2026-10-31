@@ -23,9 +23,9 @@ def check(name,fn): fn(); passed.append(name); print("PASS",name)
 def one(sql,p=()):
  with app.conn() as c:return c.execute(sql,p).fetchone()
 try:
- provider=req("/api/signup","POST",{"name":"Job Provider","email":"provider-jobs@example.test","password":"SecurePass123","role":"provider","accept_terms":True})
- customer=req("/api/signup","POST",{"name":"Job Customer","email":"customer-jobs@example.test","password":"SecurePass123","role":"customer","accept_terms":True})
- other=req("/api/signup","POST",{"name":"Other Customer","email":"other-jobs@example.test","password":"SecurePass123","role":"customer","accept_terms":True})
+ provider=req("/api/signup","POST",{"name":"Job Provider","email":"provider-jobs@example.test","password":"SecurePass123","role":"provider","accept_terms":True,"phone":"0821234567"})
+ customer=req("/api/signup","POST",{"name":"Job Customer","email":"customer-jobs@example.test","password":"SecurePass123","role":"customer","accept_terms":True,"phone":"0821234567"})
+ other=req("/api/signup","POST",{"name":"Other Customer","email":"other-jobs@example.test","password":"SecurePass123","role":"customer","accept_terms":True,"phone":"0821234567"})
  with app.conn() as c:
   c.execute("INSERT INTO businesses(user_id,name,category,area,phone,email,description,plan,billing,status,payment_status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(provider["user"]["id"],"QA Plumbing","Plumbers","Johannesburg","+27123456789","jobs@example.test","QA job provider listing","local","monthly","active","verified",app.now()))
   bid=c.execute("SELECT id FROM businesses WHERE name='QA Plumbing'").fetchone()["id"]

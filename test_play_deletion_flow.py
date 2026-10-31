@@ -25,7 +25,7 @@ try:
     assert status==200 and "Request deletion of your Skillvaya account" in body
     status,_=req("/account-deletion","HEAD")
     assert status==200
-    status,body=req("/api/signup","POST",{"name":"Play Prep Tester","email":"playprep-test@example.invalid","phone":"","password":"Test-only-password-9841","role":"customer","accept_terms":True})
+    status,body=req("/api/signup","POST",{"name":"Play Prep Tester","email":"playprep-test@example.invalid","phone":"0821230000","password":"Test-only-password-9841","role":"customer","accept_terms":True})
     assert status==200, (status,body)
     token=json.loads(body)["token"]
     status,body=req("/api/account/delete-request","POST",{"reason":"Automated isolated Play readiness test"},token)
@@ -58,7 +58,7 @@ try:
     assert status==409, (status,body)
 
     # Provider deletion regression: remove its listing, conversations/media, jobs, and provider workspace data.
-    status,body=req("/api/signup","POST",{"name":"Provider Test","email":"provider-delete-test@example.invalid","phone":"","password":"Test-only-password-9842","role":"provider","accept_terms":True})
+    status,body=req("/api/signup","POST",{"name":"Provider Test","email":"provider-delete-test@example.invalid","phone":"0821230000","password":"Test-only-password-9842","role":"provider","accept_terms":True})
     assert status==200, (status,body)
     provider_token=json.loads(body)["token"]
     with app.conn() as c:
