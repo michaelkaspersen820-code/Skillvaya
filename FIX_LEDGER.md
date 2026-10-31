@@ -227,3 +227,19 @@ Not fixed (needs the owner): the free Render server sleeps after 15 idle minutes
   not const (a const was in its dead zone and every phone searched ZA).
 - Tests: tests/test_sv81_world_contract.py; sv81_e2e.py (SQLite + PostgreSQL), sv81_browser.py (UK/ZA/US/AU phones at 384px), run_sv81.bat.
   sv77 "replies within an hour" must run before other suites on a fresh server (10-min cache) - order issue, not a bug.
+
+
+## 2026-10-31 SV82 Languages + Google Play only (7.1.7.9 / versionCode 82)
+- Owner: "every payment is handled through Play Store" -> website PayPal and bank transfer switched off (SV82-PLAY-ONLY): /api/paypal/create-order and
+  /api/bank-transfer return 410 play_only; website plan buttons show "Subscribe in the Android app" (Google Play link). Old PayPal records, capture
+  and owner refunds kept for past payments. Terms (in-app + /terms + policies) now say payments are made through Google Play (Google handles VAT/sales
+  tax as merchant of record); 11A adds Google Play refund route + local consumer rights. Also stops showing the owner's bank account to providers.
+- Languages (SV82-I18N): English + af, zu, xh, st, tn, sw, fr, pt, es, de, hi, zh, ar (Arabic right-to-left). Runtime translation layer: exact-match
+  dictionary of 999 UI strings (crawled from guest/customer/provider screens + JS literals; sv82_crawl.py, static_strings.py, merge_strings.py),
+  applied to text nodes + placeholder/title/aria-label, MutationObserver for new screens, alert/confirm/prompt wrapped. Never touches chat bubbles,
+  conversation previews, inputs/textareas or [data-no-tr]. Language auto-detected from phone, Settings > Language picker, cached in localStorage
+  (offline). Data: i18n_data.json + i18n_data.py (both app copies) built by C:\Users\Public\sv_audit\build_i18n.py from i18n\<lang>_part*.json;
+  served by GET /api/i18n?lang=xx. Legal documents stay in English. Translations are machine-made: native-speaker review recommended.
+- Long words: SV82-I18N-FIT CSS (non-English only) wraps header subtitle, section headings, bottom tab labels; overflow-x hidden safety net.
+  Measured 384px at 384 for every language. To add a language: translate strings_en.json -> <lang>_part*.json, add to build_i18n.py + svLangs().
+- Tests: tests/test_sv82_languages_contract.py, sv82_e2e.py, sv82_browser.py (every language at phone width), run_sv82.bat.
