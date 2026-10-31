@@ -1,0 +1,1 @@
+# no dependencies: the retired staging service only forwards visitors to the live app
