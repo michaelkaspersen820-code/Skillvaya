@@ -178,3 +178,20 @@ Not fixed (needs the owner): the free Render server sleeps after 15 idle minutes
 - Verified: sv78_webpush_e2e.py 15/15 on SQLite and real PostgreSQL (stand-in push service decrypts aes128gcm payloads); sv78_browser.py banner/iPhone/Android
   checks; SV77 features 7/7; two-way calls PASS; contract 73 OK; root suites OK; PostgreSQL QA 41/41. Automated Chrome cannot create a real push
   subscription (permission denied in automation) - final check is on a real phone/computer.
+
+
+## 2026-10-31 SV79 growth release (7.1.7.6 / versionCode 79) - get Skillvaya off the ground + Future Chat ahead of launch
+- Verified badges: provider "Get verified" -> owner alert -> owner presses Verify in Admin > Business listings (no ID documents stored).
+- Jobs done badge (completed jobs), "Available today" switch (South African date), "Near me" + "Available today" sort options on home and category screens.
+  Near me: customer GPS (web/iPhone) or the town typed in the area box (Android app - no new Android permission, so Play Data safety is unchanged).
+  Provider location = their service-area town via OpenStreetMap Nominatim (cached in geo_cache, rounded to ~1 km, never sent to customers; kill switch SKILLVAYA_GEOCODE=off).
+- Share: profile Share button + provider "Share my profile"; share sheet lists Future Chat FIRST (notify-me until launch), then the phone's share menu, then Copy link.
+  Public link /p/<id> gives a preview card in chat apps and opens the profile in the app (?provider=<id>).
+- Data saver (Settings switch; auto on with the phone's data-saver): work photos and chat photos/videos load only on tap.
+- BUG FIXED: provider portfolio photos never showed on profiles (the listing strips photos). Now loaded on demand from /api/businesses/<id>/photos.
+- Future Chat "Coming soon - Notify me" card on home; launch list table futurechat_waitlist; owner sees the count in Admin > Business listings and can
+  "Announce launch" (push to everyone on the list via Firebase + web push).
+- WhatsApp contact buttons kept until Future Chat launches (owner: no preference -> recommended option).
+- Verified: sv79_e2e 26/26 on SQLite and real PostgreSQL; sv79_browser at 390x844 (screens checked by eye: profile, share sheet, Future Chat card, provider tools,
+  data saver) incl. fix of the share sheet hidden under the profile screen (z-index 21000); SV77 7/7; SV78 web push 15/15; two-way calls PASS;
+  contract 74 OK; root suites OK; PostgreSQL QA 41/41.
