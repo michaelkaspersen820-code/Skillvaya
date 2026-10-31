@@ -316,6 +316,7 @@ def delete_account_data(c, user_id, request_id=None):
     delete_where("auth_sessions", "user_id=?", [user_id])
     delete_where("customer_marketing_preferences", "user_id=?", [user_id])
     delete_where("platform_ratings", "rater_id=?", [user_id])
+    delete_where("webpush_subscriptions", "user_id=?", [user_id])
     delete_where("favorites", "customer_id=?", [user_id])
     delete_where("contacts", "customer_id=?", [user_id])
     delete_where("ratings", "rater_id=? OR target_user_id=?", [user_id, user_id])
@@ -535,6 +536,8 @@ def init():
         );
         CREATE TABLE IF NOT EXISTS contacts(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, customer_id INTEGER NOT NULL, created_at TEXT NOT NULL, UNIQUE(business_id,customer_id));
         CREATE TABLE IF NOT EXISTS ratings(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, rater_id INTEGER NOT NULL, target_type TEXT NOT NULL, target_user_id INTEGER NOT NULL, stars INTEGER NOT NULL CHECK(stars BETWEEN 1 AND 5), created_at TEXT NOT NULL, UNIQUE(business_id,rater_id,target_type,target_user_id));
+        CREATE TABLE IF NOT EXISTS webpush_subscriptions(endpoint TEXT PRIMARY KEY, user_id BIGINT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, user_agent TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS webpush_keys(id INTEGER PRIMARY KEY, private_pem TEXT NOT NULL, public_key TEXT NOT NULL, created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS platform_ratings(id BIGSERIAL PRIMARY KEY, rater_id INTEGER NOT NULL UNIQUE, stars INTEGER NOT NULL CHECK(stars BETWEEN 1 AND 5), created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS complaints(id BIGSERIAL PRIMARY KEY, business_id INTEGER NOT NULL, customer_id INTEGER NOT NULL, reason TEXT NOT NULL, evidence TEXT DEFAULT '', status TEXT DEFAULT 'open', priority TEXT DEFAULT 'normal', created_at TEXT NOT NULL, admin_note TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS payments(id BIGSERIAL PRIMARY KEY, user_id INTEGER NOT NULL, business_id INTEGER, plan TEXT NOT NULL, billing TEXT NOT NULL, amount INTEGER NOT NULL, reference TEXT NOT NULL UNIQUE, status TEXT DEFAULT 'pending', created_at TEXT NOT NULL, verified_at TEXT, pf_payment_id TEXT, refunded_amount INTEGER NOT NULL DEFAULT 0, refund_status TEXT NOT NULL DEFAULT 'none');
@@ -696,6 +699,79 @@ def sv_missed_call_notice(c, call):
         if push: push(int(call["callee_id"]),"Missed call","Missed %s call from %s. Open Skillvaya to call back."%(kind,name),{"type":"missed_call","business_id":int(call["business_id"]),"customer_id":int(call["customer_id"])})
     except Exception as exc:
         print("Missed-call notice failed:", type(exc).__name__)
+# SV78-WEBPUSH-01: browser push (iPhone home-screen app, computers, other phones) next to Firebase for the Android app.
+# The server makes its own VAPID key pair once and keeps it in the database, so no secret is ever configured by hand.
+_SV_WP={"vapid":None,"public":""}
+_SV_WP_LOCK=threading.Lock()
+def _sv_wp_host_ok(endpoint):
+    try: u=urlparse(str(endpoint))
+    except Exception: return False
+    host=(u.hostname or "").lower()
+    extra=[h.strip().lower() for h in os.environ.get("SKILLVAYA_WEBPUSH_TEST_HOSTS","").split(",") if h.strip()]
+    if host and host in extra: return u.scheme in ("http","https")
+    if u.scheme!="https": return False
+    return host in ("fcm.googleapis.com","updates.push.services.mozilla.com","web.push.apple.com") or host.endswith(".push.services.mozilla.com") or host.endswith(".push.apple.com") or host.endswith(".notify.windows.com")
+def webpush_keys():
+    """(Vapid02, public key base64url) or (None,'') when web push is unavailable on this server."""
+    if _SV_WP["vapid"] is not None: return _SV_WP["vapid"],_SV_WP["public"]
+    try:
+        from py_vapid import Vapid02
+        from cryptography.hazmat.primitives import serialization
+    except Exception:
+        return None,""
+    with _SV_WP_LOCK:
+        if _SV_WP["vapid"] is not None: return _SV_WP["vapid"],_SV_WP["public"]
+        try:
+            with conn() as c:
+                row=c.execute("SELECT private_pem,public_key FROM webpush_keys WHERE id=1").fetchone()
+                if not row:
+                    v=Vapid02(); v.generate_keys()
+                    pem=v.private_pem().decode("ascii")
+                    raw=v.public_key.public_bytes(serialization.Encoding.X962,serialization.PublicFormat.UncompressedPoint)
+                    pub=base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+                    c.execute("INSERT INTO webpush_keys(id,private_pem,public_key,created_at) VALUES(1,?,?,?) ON CONFLICT(id) DO NOTHING",(pem,pub,now()))
+                    row=c.execute("SELECT private_pem,public_key FROM webpush_keys WHERE id=1").fetchone()
+            _SV_WP["vapid"]=Vapid02.from_pem(str(row["private_pem"]).encode("ascii"));_SV_WP["public"]=str(row["public_key"])
+        except Exception as exc:
+            print("Web push key setup failed:", type(exc).__name__)
+            return None,""
+    return _SV_WP["vapid"],_SV_WP["public"]
+def webpush_send_to_user(user_id, title, body, data=None):
+    """Visible notification to every browser where this user turned notifications on. Never raises."""
+    try:
+        from pywebpush import webpush, WebPushException
+    except Exception:
+        return 0
+    vapid,_pub=webpush_keys()
+    if not vapid: return 0
+    try:
+        with conn() as c:
+            rows=c.execute("SELECT endpoint,p256dh,auth FROM webpush_subscriptions WHERE user_id=? AND enabled=1",(int(user_id),)).fetchall()
+    except Exception as exc:
+        print("Web push lookup failed:", type(exc).__name__); return 0
+    payload={str(k):str(v)[:500] for k,v in (data or {}).items() if v is not None}
+    payload["title"]=str(title)[:100]; payload["body"]=str(body)[:220]
+    is_call=payload.get("type")=="incoming_call"
+    sent=0
+    for r in rows:
+        ep=str(r["endpoint"])
+        if not _sv_wp_host_ok(ep): continue
+        try:
+            webpush(subscription_info={"endpoint":ep,"keys":{"p256dh":str(r["p256dh"]),"auth":str(r["auth"])}},data=json.dumps(payload),
+                    vapid_private_key=vapid,vapid_claims={"sub":"mailto:skillvaya@gmail.com"},ttl=30 if is_call else 3600,headers={"Urgency":"high"},timeout=10)
+            sent+=1
+        except WebPushException as exc:
+            code=getattr(getattr(exc,"response",None),"status_code",0) or 0
+            if code in (404,410):
+                try:
+                    with conn() as c: c.execute("UPDATE webpush_subscriptions SET enabled=0,updated_at=? WHERE endpoint=?",(now(),ep))
+                except Exception: pass
+            print("Web push rejected", code)
+        except Exception as exc:
+            print("Web push send failed:", type(exc).__name__)
+    return sent
+def webpush_send_async(user_id, title, body, data=None):
+    threading.Thread(target=lambda: webpush_send_to_user(user_id,title,body,data),name="skillvaya-webpush",daemon=True).start()
 def hashpw(p):
     salt=secrets.token_hex(16)
     rounds=310000
@@ -3269,7 +3345,7 @@ async function svRefreshOpenConversation(items){const root=document.getElementBy
 let svPulseKey=null,svPulseBusy=false;
 async function svMessagePulse(){if(svPulseBusy||!me||document.visibilityState==='hidden')return;svPulseBusy=true;try{const d=await api('/api/messages/pulse');const key=String(d.latest_id||0)+':'+String(d.unread||0);const changed=svPulseKey!==null&&key!==svPulseKey;svPulseKey=key;if(changed)await svPollMessageNotifications();}catch(_){}finally{svPulseBusy=false;}}
 async function svPollMessageNotifications(){if(svMessageLiveBusy||!me||document.visibilityState==='hidden')return;svMessageLiveBusy=true;try{const d=await api('/api/messages'),items=d.items||[],previous=svLastKnownMessageIds;const hasNewIncoming=svMessagePollInitialized&&items.some(m=>!previous.has(String(m.id))&&Number(m.sender_id)!==Number(me.id));svSetNotificationCount(svRecipientUnreadMessages(items).length);svMessagePollInitialized=true;if(document.body.classList.contains('messages-conversation-open'))await svRefreshOpenConversation(items);else if(document.body.classList.contains('messages-screen-mode')&&hasNewIncoming)await loadMessageThreads();svLastKnownMessageIds=new Set(items.map(m=>String(m.id)));}catch(_){/* Temporary network errors must not disrupt other screens. */}finally{svMessageLiveBusy=false;}}
-function svStartMessageLiveUpdates(){svEnsureNotificationBell();if(svMessageLiveTimer)clearInterval(svMessageLiveTimer);svMessageLiveTimer=setInterval(svPollMessageNotifications,10000);if(window.svMessagePulseTimer)clearInterval(window.svMessagePulseTimer);window.svPulseTick=0;window.svMessagePulseTimer=setInterval(()=>{window.svPulseTick++;if(document.body.classList.contains('messages-conversation-open')||(window.svPulseTick%2===0&&document.body.classList.contains('messages-screen-mode')))svMessagePulse();},1500);svPollMessageNotifications();}
+function svStartMessageLiveUpdates(){svEnsureNotificationBell();try{svWebPushSync()}catch(_){};if(svMessageLiveTimer)clearInterval(svMessageLiveTimer);svMessageLiveTimer=setInterval(svPollMessageNotifications,10000);if(window.svMessagePulseTimer)clearInterval(window.svMessagePulseTimer);window.svPulseTick=0;window.svMessagePulseTimer=setInterval(()=>{window.svPulseTick++;if(document.body.classList.contains('messages-conversation-open')||(window.svPulseTick%2===0&&document.body.classList.contains('messages-screen-mode')))svMessagePulse();},1500);svPollMessageNotifications();}
 let svVoiceManualStop=false,svNativeVoiceForm=null,svNativeVoiceButton=null,svNativeVoiceStartText='',svNativeVoiceLastFinal='',svNativeVoiceAccumulated='',svNativeVoiceInterim='';
 window.svNativeVoiceReady=function(){if(svNativeVoiceButton){svNativeVoiceButton.classList.add('is-listening');svNativeVoiceButton.setAttribute('aria-pressed','true');svNativeVoiceButton.innerHTML='&#127908;';svNativeVoiceButton.setAttribute('aria-label','Stop voice typing');svNativeVoiceButton.title='Stop voice typing';}const st=svNativeVoiceForm&&svNativeVoiceForm.querySelector('.sv-voice-status');if(st)st.textContent='Listening… tap the microphone once to stop.';};
 function svNativeVoiceCommitText(clean){
@@ -3359,7 +3435,7 @@ async function loadMessageThreads(){
 }
 async function replyMessage(e,business_id,customer_id){e.preventDefault();const f=e.target,field=f.elements.message,body=field.value.trim();if(!body)return;const button=f.querySelector('button[type=submit]');if(button){button.disabled=true;button.textContent='Sending...'}try{await api('/api/messages/send',{method:'POST',body:JSON.stringify({business_id,customer_id,message:body})});f.reset();msg('messagesStatus','Reply sent and saved to this conversation.',true);await loadMessageThreads()}catch(x){msg('messagesStatus','Reply not sent: '+x.message)}finally{if(button){button.disabled=false;button.textContent='Send reply'}}}
 async function requestAccountDeletion(){if(!me||!token){alert('Please sign in to request account deletion.');return}if(me.role==='admin'){alert('The owner account cannot be deleted through the public account-deletion flow.');return}const reason=prompt('Optional reason for your account-deletion request:')||'';if(!confirm('Submit an account-deletion request for '+(me.email||'this account')+'? Your account is not deleted immediately. Skillvaya will verify the request and review lawful retention requirements. Google Play provider plans are prepaid and do not renew automatically. A new purchase is required to extend the paid period; deleting your Skillvaya account does not automatically refund an already-paid period.'))return;try{const d=await api('/api/account/delete-request',{method:'POST',body:JSON.stringify({reason})});alert(d.message||('Your request #'+d.request_id+' has been recorded.'));}catch(e){alert('Could not submit your deletion request: '+e.message+'\nYou can use the public deletion information page to contact Skillvaya.')}}
-async function logout(){const t=token||localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token');try{if(t)await fetch('/api/logout',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:'{}'})}catch(e){}try{svClearUserCaches()}catch(e){}token='';me=null;localStorage.removeItem('sv_token');localStorage.removeItem('skillvaya_token');localStorage.removeItem('skillvaya_owner_token');localStorage.removeItem('skillvaya_user');sessionStorage.removeItem('sv_token');sessionStorage.removeItem('skillvaya_token');location.replace('/');}
+async function logout(){try{await svWebPushForget()}catch(_){}const t=token||localStorage.getItem('skillvaya_token')||localStorage.getItem('sv_token');try{if(t)await fetch('/api/logout',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:'{}'})}catch(e){}try{svClearUserCaches()}catch(e){}token='';me=null;localStorage.removeItem('sv_token');localStorage.removeItem('skillvaya_token');localStorage.removeItem('skillvaya_owner_token');localStorage.removeItem('skillvaya_user');sessionStorage.removeItem('sv_token');sessionStorage.removeItem('skillvaya_token');location.replace('/');}
 document.getElementById('profileForm').onsubmit=async e=>{e.preventDefault();try{let d=await api('/api/account/profile',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});me=d.user;document.getElementById('profileIdentity').textContent=me.email+' · '+me.role;msg('profileMsg','Profile saved successfully.',true);await sessionInfo();setProfileEditing(false)}catch(x){msg('profileMsg',x.message)}};
 document.getElementById('passwordForm').onsubmit=async e=>{e.preventDefault();let f=e.target;if(f.elements.new_password.value!==f.elements.confirm_password.value){msg('passwordMsg','The new password and confirmation do not match.');return}try{let d=await api('/api/account/password',{method:'POST',body:JSON.stringify({current_password:f.elements.current_password.value,new_password:f.elements.new_password.value})});f.reset();msg('passwordMsg',d.message||'Password changed successfully.',true)}catch(x){msg('passwordMsg',x.message)}};
 async function openStudioEditor(){const form=document.getElementById('bizForm');if(!form)return;try{const d=await api('/api/admin/owner-promotions');const item=(d.items||[]).find(x=>x.kind==='business'&&String(x.business_name||'').trim()==='Skillvaya Digital & Creative Studio'&&x.status==='active')||(d.items||[]).find(x=>x.kind==='business'&&String(x.business_name||'').trim()==='Skillvaya Digital & Creative Studio');if(item){form.elements.promotion_id.value=item.id;form.elements.name.value=item.business_name||'Skillvaya Digital & Creative Studio';form.elements.category.value=item.category||'Graphic designers';form.elements.area.value=item.area||'Worldwide (Online & Remote)';form.elements.phone.value=item.phone||'+27 83 787 45 69';form.elements.whatsapp.value=item.whatsapp||'+27 83 787 45 69';form.elements.email.value=item.contact_email||'Skillvaya@gmail.com';form.elements.website.value=item.target_url||'';form.elements.description.value=item.description||'';form.elements.tagline.value=item.title||'Your Vision. Our Skills. Real Results.';window.skillvayaStudioPromotion=item;}else{msg('bizMsg','Your published owner listing could not be found, so no changes were made.');return;}form.classList.remove('hidden');form.scrollIntoView({behavior:'smooth',block:'start'});}catch(e){msg('bizMsg','Could not load your saved profile for editing: '+e.message);}}
@@ -3507,6 +3583,20 @@ init().finally(()=>{clearTimeout(splashFailsafe);const splash=document.getElemen
 try{fetch('/api/analytics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:'visit',detail:/Mobi|Android|iPhone/i.test(navigator.userAgent)?'mobile':'desktop'})})}catch(e){}
 let installPrompt=null;window.addEventListener('beforeinstallprompt',e=>{installPrompt=e;});window.addEventListener('appinstalled',()=>{fetch('/api/analytics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:'install',detail:'pwa'})}).catch(()=>{})});
 if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).then(reg=>reg.update()).catch(console.warn);
+/* SV78-WEBPUSH-01: alerts for the iPhone home-screen app, computers and other browsers (the Android app keeps using Firebase). */
+function svIsNativeApp(){return /SkillvayaNative/.test(navigator.userAgent||'')||!!window.SkillvayaNotifications}
+function svIsIOS(){return /iPad|iPhone|iPod/.test(navigator.userAgent||'')||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)}
+function svIsStandalone(){try{return window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true}catch(_){return false}}
+function svWebPushSupported(){return !svIsNativeApp()&&('serviceWorker' in navigator)&&('PushManager' in window)&&('Notification' in window)}
+function svB64ToBytes(s){const p='='.repeat((4-s.length%4)%4),b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));const a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
+function svSwReady(){return Promise.race([navigator.serviceWorker.ready,new Promise((_,rej)=>setTimeout(()=>rej(new Error('The app is still loading. Try again in a moment.')),8000))])}
+async function svWebPushSubscribe(){const k=await api('/api/webpush/key');if(!k||!k.publicKey)throw new Error('Notifications are not available right now.');const reg=await svSwReady();let sub=await reg.pushManager.getSubscription();if(sub){try{const cur=sub.options&&sub.options.applicationServerKey;if(cur){const a=new Uint8Array(cur),b=svB64ToBytes(k.publicKey);if(a.length!==b.length||a.some((x,i)=>x!==b[i])){await sub.unsubscribe();sub=null}}}catch(_){}}if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:svB64ToBytes(k.publicKey)});await api('/api/webpush/subscribe',{method:'POST',body:JSON.stringify({subscription:sub.toJSON()})});return sub}
+async function svEnableWebPush(){if(!svWebPushSupported())return false;try{const p=await Notification.requestPermission();if(p!=='granted'){svHidePushBanner();return false}await svWebPushSubscribe();svHidePushBanner();try{await api('/api/webpush/test',{method:'POST',body:'{}'})}catch(_){}return true}catch(e){alert('Could not turn on notifications: '+(e&&e.message||e));return false}}
+async function svWebPushSync(){try{if(!me)return;if(svWebPushSupported()&&Notification.permission==='granted'){await svWebPushSubscribe();return}svMaybeShowPushBanner()}catch(e){console.warn('Web push sync',e&&e.message||e)}}
+async function svWebPushForget(){try{if(!svWebPushSupported())return;const reg=await svSwReady();const sub=await reg.pushManager.getSubscription();if(sub)await api('/api/webpush/unsubscribe',{method:'POST',body:JSON.stringify({endpoint:sub.endpoint})})}catch(_){}}
+function svHidePushBanner(){const b=document.getElementById('svPushBanner');if(b)b.remove()}
+function svMaybeShowPushBanner(){try{if(!me||svIsNativeApp()||document.getElementById('svPushBanner'))return;let dismissed=false;try{dismissed=localStorage.getItem('sv_push_banner_dismissed')==='1'}catch(_){}if(dismissed)return;let html='';if(svWebPushSupported()&&Notification.permission==='default')html='<span>Get alerts for new messages and calls.</span><button type="button" id="svPushOn">Turn on</button>';else if(svIsIOS()&&!svIsStandalone())html='<span>On iPhone, tap <b>Share</b> then <b>Add to Home Screen</b> to get message and call alerts.</span>';else return;const bar=document.createElement('div');bar.id='svPushBanner';bar.setAttribute('role','status');bar.style.cssText='position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:9500;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:14px;background:#10233f;color:#eef6ff;box-shadow:0 10px 30px #0006;font-size:14px;line-height:1.4;max-width:560px;margin:0 auto';bar.innerHTML=html+'<button type="button" id="svPushX" aria-label="Dismiss" style="margin-left:auto;background:transparent;border:0;color:#9fb3cc;font-size:20px;cursor:pointer">\u00d7</button>';document.body.appendChild(bar);const on=document.getElementById('svPushOn');if(on){on.style.cssText='background:#19c3d6;color:#04202a;border:0;border-radius:10px;padding:8px 14px;font-weight:700;cursor:pointer';on.onclick=()=>svEnableWebPush()}document.getElementById('svPushX').onclick=()=>{try{localStorage.setItem('sv_push_banner_dismissed','1')}catch(_){}svHidePushBanner()}}catch(_){}}
+if('serviceWorker' in navigator){try{navigator.serviceWorker.addEventListener('message',ev=>{if(ev.data&&ev.data.type==='sv-push-open'){try{svPollMessageNotifications()}catch(_){}}})}catch(_){}}
 </script></body></html>'''
 SESSIONS={}
 def issue_session(user):
@@ -4276,7 +4366,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 "if(HTML_ROUTES.includes(u.pathname)){e.respondWith((async()=>{const cache=await caches.open(CACHE),key=u.pathname;const offline=()=>new Response('<!doctype html><meta name=viewport content=width=device-width,initial-scale=1><title>Skillvaya offline</title><main style=font:16px system-ui;margin:15vh auto;max-width:32rem;padding:1rem><h1>Skillvaya</h1><p>Connect to the internet to sign in and open your workspace.</p></main>',{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});"
                 "const net=fetch(e.request,{cache:'no-cache'}).then(r=>{if(r&&r.ok&&r.status===200)cache.put(key,r.clone());return r});const cached=await cache.match(key);if(!cached)return net.catch(offline);try{e.waitUntil(net.catch(()=>{}))}catch(_){}"
                 "return Promise.race([net.then(r=>r&&r.ok?r:cached),new Promise(res=>setTimeout(()=>res(cached),2500))]).catch(()=>cached);})());return;}"
-                "e.respondWith(fetch(e.request).then(r=>{if(r&&r.ok&&ASSETS.includes(u.pathname)){const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));}return r;}).catch(()=>caches.match(e.request)));});").encode("utf-8")
+                "e.respondWith(fetch(e.request).then(r=>{if(r&&r.ok&&ASSETS.includes(u.pathname)){const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));}return r;}).catch(()=>caches.match(e.request)));});"
+                # SV78-WEBPUSH-01: show pushed alerts and open the app when one is tapped.
+                "self.addEventListener('push',e=>{let d={};try{d=e.data?e.data.json():{}}catch(_){d={body:e.data?e.data.text():''}}const call=d.type==='incoming_call';"
+                "const tag=call?'sv-call-'+(d.call_id||''):(d.type==='missed_call'?'sv-missed':'sv-msg-'+(d.business_id||'')+'-'+(d.customer_id||''));"
+                "e.waitUntil(self.registration.showNotification(d.title||'Skillvaya',{body:d.body||'',icon:'/icon-192.png',badge:'/icon-192.png',tag:tag,renotify:true,requireInteraction:call,vibrate:call?[400,200,400,200,400]:[200],data:{url:'/customer-app'}}));});"
+                "self.addEventListener('notificationclick',e=>{e.notification.close();const url=(e.notification.data&&e.notification.data.url)||'/customer-app';"
+                "e.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{for(const c of list){if(new URL(c.url).origin===location.origin&&'focus' in c){try{c.postMessage({type:'sv-push-open'})}catch(_){}return c.focus();}}return self.clients.openWindow(url);}));});").encode("utf-8")
                 self.send_response(200); self.send_header("Content-Type","application/javascript; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Service-Worker-Allowed","/"); self.send_header("Content-Length",str(len(worker))); self.end_headers(); self.wfile.write(worker); return
             if path=="/owner-app":
                 owner_app_html = OWNER_APP_HTML.encode()
@@ -4464,6 +4560,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     else:
                         rows=c.execute("SELECT ct.*,b.name business_name,b.phone business_phone,b.user_id business_owner_id,cu.name customer_name,cu.phone customer_phone FROM contacts ct JOIN businesses b ON b.id=ct.business_id JOIN users cu ON cu.id=ct.customer_id WHERE ct.customer_id=? ORDER BY ct.created_at DESC LIMIT 500",(u["id"],)).fetchall()
                 return self.sendj({"items":[dict(x) for x in rows]})
+            if path=="/api/webpush/key":
+                _v,pub=webpush_keys()
+                return self.sendj({"publicKey":pub,"enabled":bool(pub)})
             if path=="/api/ice-servers":
                 u=self.require()
                 return self.sendj({"iceServers":build_ice_servers(u)})
@@ -5020,6 +5119,24 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return self.handle_customer_marketing_preferences("POST",d)
             if path=="/api/team/my-assignments":
                 return self.handle_my_team_assignments("POST",d)
+            if path in ("/api/webpush/subscribe","/api/webpush/unsubscribe","/api/webpush/test"):
+                u=self.require()
+                if path.endswith("/test"):
+                    n=webpush_send_to_user(int(u["id"]),"Skillvaya notifications are on","You will be alerted here about new messages and calls.",{"type":"test"})
+                    return self.sendj({"ok":True,"sent":n})
+                sub=d.get("subscription") if isinstance(d.get("subscription"),dict) else {}
+                endpoint=str(sub.get("endpoint") or d.get("endpoint") or "").strip()
+                if not endpoint or len(endpoint)>1000 or not _sv_wp_host_ok(endpoint): return self.sendj({"error":"This browser's notification service is not supported."},400)
+                if path.endswith("/unsubscribe"):
+                    with conn() as c: c.execute("UPDATE webpush_subscriptions SET enabled=0,updated_at=? WHERE endpoint=? AND user_id=?",(now(),endpoint,int(u["id"])))
+                    return self.sendj({"ok":True})
+                keys=sub.get("keys") if isinstance(sub.get("keys"),dict) else {}
+                p256dh=str(keys.get("p256dh") or "").strip(); auth=str(keys.get("auth") or "").strip()
+                if not (40<=len(p256dh)<=200 and 10<=len(auth)<=100): return self.sendj({"error":"Invalid notification keys."},400)
+                stamp=now(); ua=str(self.headers.get("User-Agent",""))[:200]
+                with conn() as c:
+                    c.execute("INSERT INTO webpush_subscriptions(endpoint,user_id,p256dh,auth,user_agent,enabled,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?) ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id,p256dh=excluded.p256dh,auth=excluded.auth,user_agent=excluded.user_agent,enabled=1,updated_at=excluded.updated_at",(endpoint,int(u["id"]),p256dh,auth,ua,stamp,stamp))
+                return self.sendj({"ok":True})
             if path=="/api/marketing/track":
                 return self.handle_public_marketing_track(d)
             if path=="/api/messages/attachments":

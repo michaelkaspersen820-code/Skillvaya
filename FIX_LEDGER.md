@@ -165,3 +165,16 @@ Not fixed (needs the owner): the free Render server sleeps after 15 idle minutes
 - Reviews were already built (ratings + provider replies, shown on cards/profile); unread-message push already existed (sent instantly).
 - Verified: sv77_feature_e2e.py on SQLite AND real PostgreSQL (pg_sv77.py) 7/7; call_media_e2e.py two-way voice+video PASS; contract 70 OK;
   12 root suites OK; PostgreSQL QA 41/41.
+
+
+## 2026-10-31 SV78-WEBPUSH-01 (7.1.7.5 / versionCode 78) - alerts on iPhone (home-screen app), computers and other browsers
+- Server makes its own VAPID key pair once (table webpush_keys) - no secret to configure. Browsers subscribe via /api/webpush/subscribe
+  (table webpush_subscriptions; only real push services fcm.googleapis.com / *.push.services.mozilla.com / web.push.apple.com / *.notify.windows.com).
+- Every Firebase alert (incoming call, message, missed call) is also sent as web push (hook at top of fcm_send_to_user, runs even without Firebase).
+- Service worker shows the alert and opens/focuses the app on tap. Banner "Get alerts for new messages and calls - Turn on" for signed-in browser users;
+  iPhone Safari tab users are told to Add to Home Screen (iOS only allows web push for home-screen apps). Never shown inside the Android app (SkillvayaNative).
+  Subscription re-links on sign-in, is switched off on sign-out, removed on account deletion, disabled automatically when the push service says 404/410.
+- requirements.txt: pywebpush. render.yaml: plan starter (matches the $7 plan set on Render 2026-10-31).
+- Verified: sv78_webpush_e2e.py 15/15 on SQLite and real PostgreSQL (stand-in push service decrypts aes128gcm payloads); sv78_browser.py banner/iPhone/Android
+  checks; SV77 features 7/7; two-way calls PASS; contract 73 OK; root suites OK; PostgreSQL QA 41/41. Automated Chrome cannot create a real push
+  subscription (permission denied in automation) - final check is on a real phone/computer.
