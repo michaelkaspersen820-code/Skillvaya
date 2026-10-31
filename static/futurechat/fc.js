@@ -292,12 +292,30 @@
     el.addEventListener('touchstart', () => { t = setTimeout(() => { t = null; if (navigator.vibrate) navigator.vibrate(15); fn(); }, 450); }, { passive: true });
     ['touchend', 'touchmove', 'touchcancel'].forEach(ev => el.addEventListener(ev, () => clearTimeout(t), { passive: true }));
   }
+  // Photos, videos and files live on the phone (IndexedDB); the server only passes them along.
+  let dbP = null;
+  function mediaDb() {
+    if (dbP) return dbP;
+    dbP = new Promise(res => { try { const r = indexedDB.open('futurechat_media', 1); r.onupgradeneeded = () => r.result.createObjectStore('files'); r.onsuccess = () => res(r.result); r.onerror = () => res(null); } catch (_) { res(null); } });
+    return dbP;
+  }
+  async function localGet(id) { const db = await mediaDb(); if (!db) return null; return new Promise(res => { try { const q = db.transaction('files').objectStore('files').get(id); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch (_) { res(null); } }); }
+  async function localPut(id, blob) { const db = await mediaDb(); if (!db) return; try { db.transaction('files', 'readwrite').objectStore('files').put(blob, id); } catch (_) {} }
   async function blobFor(id) {
     if (S.media.has(id)) return S.media.get(id);
-    const p = fetch('/api/fc/file/' + id, { headers: { Authorization: 'Bearer ' + token() }, credentials: 'same-origin' }).then(r => { if (!r.ok) throw new Error('File unavailable'); return r.blob(); }).then(b => URL.createObjectURL(b));
+    const p = (async () => {
+      const kept = await localGet(id); if (kept) return URL.createObjectURL(kept);
+      const r = await fetch('/api/fc/file/' + id, { headers: { Authorization: 'Bearer ' + token() }, credentials: 'same-origin' });
+      if (r.status === 410) { const e = new Error('Saved on the phones it was sent to'); e.purged = true; throw e; }
+      if (!r.ok) throw new Error('File unavailable');
+      const b = await r.blob(); localPut(id, b); return URL.createObjectURL(b);
+    })();
     S.media.set(id, p); p.catch(() => S.media.delete(id)); return p;
   }
-  async function loadMedia(el) { try { const u = await blobFor(Number(el.dataset.att)); el.src = u; if (el.tagName === 'IMG') el.onclick = () => viewImage(u); } catch (_) { el.alt = 'Photo unavailable'; } }
+  async function loadMedia(el) {
+    try { const u = await blobFor(Number(el.dataset.att)); el.src = u; if (el.tagName === 'IMG') el.onclick = () => viewImage(u); }
+    catch (e) { const n = document.createElement('div'); n.className = 'fc-file'; n.innerHTML = '<i>' + (el.tagName === 'VIDEO' ? '🎬' : el.tagName === 'AUDIO' ? '🎤' : '📷') + '</i><span>' + esc(e.purged ? 'No longer on this phone' : 'Couldn\'t load') + '<br><small>' + esc(e.purged ? 'Media is kept on the phones it was sent to' : 'Check your connection') + '</small></span>'; (el.closest('.fc-voice') || el).replaceWith(n); }
+  }
   async function download(id, name) { try { const u = await blobFor(id); const a = document.createElement('a'); a.href = u; a.download = name || 'file'; document.body.appendChild(a); a.click(); a.remove(); } catch (e) { toast(e.message); } }
   function viewImage(u) { const d = sheet('<img src="' + u + '" style="width:100%;border-radius:14px" alt="Photo"><button class="fc-btn sec" id="fcImgClose">Close</button>', (el, done) => { $('#fcImgClose', el).onclick = done; }); return d; }
 
@@ -334,7 +352,7 @@
       if (f.size > 16 * 1024 * 1024) { toast(f.name + ' is bigger than 16 MB'); continue; }
       const kind = /^image\//.test(f.type) ? 'photo' : /^video\//.test(f.type) ? 'video' : /^audio\//.test(f.type) ? 'voice' : 'file';
       toast('Sending ' + (kind === 'file' ? f.name : kind) + '…');
-      try { await sendRaw({ c: S.conv.id, kind, body: caption || '', reply_to: S.reply ? S.reply.id : 0, files: [{ filename: f.name, mime_type: f.type || 'application/octet-stream', data_base64: await toB64(f) }] }); caption = ''; } catch (_) {}
+      try { const d = await sendRaw({ c: S.conv.id, kind, body: caption || '', reply_to: S.reply ? S.reply.id : 0, files: [{ filename: f.name, mime_type: f.type || 'application/octet-stream', data_base64: await toB64(f) }] }); caption = ''; if (d && d.attachments && d.attachments[0]) { localPut(d.attachments[0], f); S.media.delete(d.attachments[0]); } } catch (_) {}
     }
   }
   function pickFiles(accept, capture, multiple) {

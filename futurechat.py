@@ -49,7 +49,9 @@ def init(c):
         CREATE TABLE IF NOT EXISTS fc_attachments(id %(pk)s, message_id BIGINT NOT NULL, conversation_id BIGINT NOT NULL, filename TEXT NOT NULL,
             mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, data_base64 TEXT NOT NULL, created_at TEXT NOT NULL, legacy_id BIGINT NOT NULL DEFAULT 0);
         CREATE INDEX IF NOT EXISTS idx_fc_attachments_msg ON fc_attachments(message_id);
+        CREATE TABLE IF NOT EXISTS fc_fetches(attachment_id BIGINT NOT NULL, user_id BIGINT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(attachment_id, user_id));
     """ % {"pk": pk})
+    if "purged_at" not in _columns(c, "fc_attachments"): c.execute("ALTER TABLE fc_attachments ADD COLUMN purged_at TEXT NOT NULL DEFAULT ''")
     cols = _columns(c, "users")
     if "phone_e164" not in cols: c.execute("ALTER TABLE users ADD COLUMN phone_e164 TEXT DEFAULT ''")
     if "phone_verified_at" not in cols: c.execute("ALTER TABLE users ADD COLUMN phone_verified_at TEXT DEFAULT ''")
@@ -64,6 +66,7 @@ def _columns(c, table):
 # ---------------------------------------------------------------- legacy Skillvaya messages -> Future Chat
 _MIGRATE_LOCK = threading.Lock()
 _MIGRATED_AT = [0.0]
+_SWEPT_AT = [0.0]
 
 
 def migrate_legacy(force=False):
@@ -210,7 +213,9 @@ def handle_get(h, path):
     uid = int(u["id"])
     q = urllib.parse.parse_qs(urllib.parse.urlparse(h.path).query)
     if path == "/api/fc/conversations":
-        if time.monotonic() - _MIGRATED_AT[0] > 60: threading.Thread(target=migrate_legacy, daemon=True).start()
+        if time.monotonic() - _MIGRATED_AT[0] > 60:
+            threading.Thread(target=migrate_legacy, daemon=True).start()
+            if time.monotonic() - _SWEPT_AT[0] > 3600: _SWEPT_AT[0] = time.monotonic(); threading.Thread(target=purge_old_media, daemon=True).start()
         with A.conn() as c:
             rows = c.execute(
                 "SELECT cv.id,cv.kind,cv.title,cv.business_id,cv.customer_id,cv.updated_at,m.archived,m.muted,m.pinned,"
@@ -261,8 +266,8 @@ def handle_get(h, path):
                     reacts.setdefault(int(r["message_id"]), []).append({"user_id": int(r["user_id"]), "emoji": r["emoji"]})
                 for r in c.execute("SELECT message_id FROM fc_stars WHERE user_id=? AND message_id IN (" + marks + ")", (uid,) + tuple(ids)).fetchall():
                     stars.add(int(r["message_id"]))
-                for r in c.execute("SELECT id,message_id,filename,mime_type,size_bytes FROM fc_attachments WHERE message_id IN (" + marks + ") ORDER BY id", tuple(ids)).fetchall():
-                    atts.setdefault(int(r["message_id"]), []).append({"id": int(r["id"]), "filename": r["filename"], "mime_type": r["mime_type"], "size": int(r["size_bytes"])})
+                for r in c.execute("SELECT id,message_id,filename,mime_type,size_bytes,purged_at FROM fc_attachments WHERE message_id IN (" + marks + ") ORDER BY id", tuple(ids)).fetchall():
+                    atts.setdefault(int(r["message_id"]), []).append({"id": int(r["id"]), "filename": r["filename"], "mime_type": r["mime_type"], "size": int(r["size_bytes"]), "on_server": not r["purged_at"]})
                 rids = sorted({int(r["reply_to"]) for r in rows if int(r["reply_to"] or 0)})
                 if rids:
                     for r in c.execute("SELECT id,sender_id,body,kind,deleted_at FROM fc_messages WHERE conversation_id=? AND id IN (" + ",".join("?" for _ in rids) + ")", (conv_id,) + tuple(rids)).fetchall():
@@ -297,10 +302,15 @@ def handle_get(h, path):
         try: att_id = int(path.rsplit("/", 1)[1])
         except ValueError: return h.sendj({"error": "Invalid file."}, 400)
         with A.conn() as c:
-            a = c.execute("SELECT * FROM fc_attachments WHERE id=?", (att_id,)).fetchone()
+            a = c.execute("SELECT a.*,m.sender_id FROM fc_attachments a JOIN fc_messages m ON m.id=a.message_id WHERE a.id=?", (att_id,)).fetchone()
             if not a: return h.sendj({"error": "File not found."}, 404)
             _require_member(c, int(a["conversation_id"]), u)
+            if a["purged_at"] or not a["data_base64"]:
+                return h.sendj({"error": "This file is saved on the phones it was sent to.", "purged": True}, 410)
+            if uid != int(a["sender_id"]):
+                c.execute("INSERT INTO fc_fetches(attachment_id,user_id,created_at) VALUES(?,?,?) ON CONFLICT DO NOTHING", (att_id, uid, A.now()))
         payload = base64.b64decode(a["data_base64"])
+        threading.Thread(target=_maybe_purge, args=(att_id,), daemon=True).start()
         fname = str(a["filename"] or "file")
         safe = "".join(ch if ord(ch) < 128 and (ch.isalnum() or ch in "._-") else "_" for ch in fname)[:120] or "file"
         disp = "attachment" if q.get("download") else "inline"
@@ -332,6 +342,34 @@ def handle_get(h, path):
         return h.sendj({"phone": (r["phone_e164"] or r["phone"] or "") if r else "", "verified": bool(r and r["phone_verified_at"]),
                         "country": (r["country"] if r else "") or "ZA", "web_config": _web_config()})
     return h.sendj({"error": "Not found"}, 404)
+
+
+MEDIA_DAYS = 30
+
+
+def _maybe_purge(att_id):
+    """Delete a photo/video/file from the server once every recipient's phone has it."""
+    try:
+        with A.conn() as c:
+            a = c.execute("SELECT a.id,a.conversation_id,m.sender_id FROM fc_attachments a JOIN fc_messages m ON m.id=a.message_id WHERE a.id=? AND a.purged_at=''", (att_id,)).fetchone()
+            if not a: return
+            need = c.execute("SELECT COUNT(*) AS n FROM fc_members WHERE conversation_id=? AND user_id<>?", (a["conversation_id"], a["sender_id"])).fetchone()["n"]
+            got = c.execute("SELECT COUNT(*) AS n FROM fc_fetches f JOIN fc_members mb ON mb.user_id=f.user_id AND mb.conversation_id=? WHERE f.attachment_id=?", (a["conversation_id"], att_id)).fetchone()["n"]
+            if int(need or 0) > 0 and int(got or 0) >= int(need):
+                c.execute("UPDATE fc_attachments SET data_base64='',purged_at=? WHERE id=?", (A.now(), att_id))
+    except Exception as exc:
+        print("Future Chat purge skipped:", type(exc).__name__)
+
+
+def purge_old_media():
+    """Files nobody collected within MEDIA_DAYS are removed; phones keep their own copies."""
+    cutoff = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=MEDIA_DAYS)).isoformat()
+    try:
+        with A.conn() as c:
+            n = c.execute("UPDATE fc_attachments SET data_base64='',purged_at=? WHERE purged_at='' AND created_at<? RETURNING id", (A.now(), cutoff)).fetchall()
+        if n: print("Future Chat removed %d expired media files" % len(n))
+    except Exception as exc:
+        print("Future Chat media sweep skipped:", type(exc).__name__)
 
 
 def _phone_verified(uid):
@@ -425,15 +463,16 @@ def handle_post(h, path, d):
             if reply_to and not c.execute("SELECT 1 FROM fc_messages WHERE id=? AND conversation_id=?", (reply_to, conv_id)).fetchone(): reply_to = 0
             mid = c.execute("INSERT INTO fc_messages(conversation_id,sender_id,body,kind,meta,reply_to,created_at) VALUES(?,?,?,?,?,?,?) RETURNING id",
                             (conv_id, uid, body, kind, meta_s, reply_to, stamp)).fetchone()["id"]
+            att_ids = []
             for name, mime, size, b64 in decoded:
-                c.execute("INSERT INTO fc_attachments(message_id,conversation_id,filename,mime_type,size_bytes,data_base64,created_at) VALUES(?,?,?,?,?,?,?)",
-                          (mid, conv_id, name, mime, size, b64, stamp))
+                att_ids.append(int(c.execute("INSERT INTO fc_attachments(message_id,conversation_id,filename,mime_type,size_bytes,data_base64,created_at) VALUES(?,?,?,?,?,?,?) RETURNING id",
+                          (mid, conv_id, name, mime, size, b64, stamp)).fetchone()["id"]))
             c.execute("UPDATE fc_conversations SET last_message_id=?,updated_at=? WHERE id=?", (mid, stamp, conv_id))
             c.execute("UPDATE fc_members SET last_read_id=?,archived=0 WHERE conversation_id=? AND user_id=?", (mid, conv_id, uid))
             c.execute("UPDATE fc_members SET archived=0 WHERE conversation_id=?", (conv_id,))
             snippet = _snippet({"kind": kind, "body": body, "deleted_at": ""})
         _push(conv_id, u, snippet)
-        return h.sendj({"ok": True, "id": int(mid), "created_at": stamp})
+        return h.sendj({"ok": True, "id": int(mid), "created_at": stamp, "attachments": att_ids})
     if path in ("/api/fc/react", "/api/fc/star", "/api/fc/edit", "/api/fc/delete"):
         mid = int(d.get("m") or 0)
         with A.conn() as c:
