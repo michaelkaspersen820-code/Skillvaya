@@ -168,9 +168,13 @@ class AppShellCachingContract(unittest.TestCase):
 
     def test_service_worker_never_blocks_on_a_sleeping_server(self):
         for name, src in APPS.items():
-            self.assertIn("const CACHE='skillvaya-shell-v4-fast';", src, name)
+            # SV83-FRESH: v5 cache name wipes old saved pages; the saved copy waits 12 s so a slow phone
+            # connection gets the live app instead of an outdated saved screen.
+            self.assertIn("const CACHE='skillvaya-shell-v5-fresh';", src, name)
+            self.assertNotIn("skillvaya-shell-v4-fast", src, name)
             self.assertIn("'/terms','/workfinder'];", src, name)
-            self.assertIn("new Promise(res=>setTimeout(()=>res(cached),2500))", src, name)
+            self.assertIn("new Promise(res=>setTimeout(()=>res(cached),12000))", src, name)
+            self.assertNotIn("res(cached),2500)", src, name)
             self.assertIn("if(!cached)return net.catch(offline);", src, name)
             self.assertIn("fetch(e.request,{cache:'no-cache'})", src, name)
             self.assertNotIn("{cache:'no-store'}).catch(()=>new Response", src, name + ": old always-network handler is back")
