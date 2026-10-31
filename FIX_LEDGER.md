@@ -207,3 +207,23 @@ Not fixed (needs the owner): the free Render server sleeps after 15 idle minutes
   "Suspend listing" on each report.
 - Verified: owner_audit.py at 360/384/412 (all 11 areas), sv80_owner_e2e.py (Verify/Suspend/Restore/announce by tapping at phone size) PASS;
   SV79 26/26; two-way calls PASS; contract 75 OK; root suites OK (test_owner_terms.py needs a dev server on :8877 - run_terms_test.bat); PostgreSQL QA 41/41.
+
+
+## 2026-10-31 SV81 Worldwide foundation (7.1.7.8 / versionCode 81)
+- Owner goal: take Skillvaya worldwide (English-speaking countries first, then languages). Owner rule: every price must be worth the rand price.
+- Countries: users.country + businesses.country (existing = ZA). Country guessed from the phone's time zone (then language), changeable in
+  Settings > Country, on sign-up and on the provider form. Directory sends ?country=; shows that country's providers + online/worldwide ones;
+  "Show providers in all countries" when empty; Settings toggle. Town lookup (near me) searches in the right country (geo_cache key cc:town).
+- Money: listings/jobs carry the provider's currency (business_country); quotes, budgets, invoices, packages, offers shown/entered in it
+  (svMoney/svProvCur/svBizCur). Owner App totals stay in rand (accounting).
+- Prices: PLANS (rand) stays the source of truth. /api/prices?country=XX = same value at today's rate (open.er-api.com, 1h cache;
+  SKILLVAYA_FX_RATES_JSON overrides for tests). PayPal now charges local currency where PayPal supports it (GBP, EUR, AUD, CAD, NZD, USD...),
+  else USD; ZAR users still pay USD (PayPal has no ZAR). Refunds now use the charged currency + proportional amount (old code sent ZAR,
+  which PayPal rejects - latent bug fixed). Google Play: owner sets base price in ZAR and lets Play convert per country.
+- "Available today" uses the provider's own local date (zoneinfo, fixed-offset fallback).
+- Privacy: GET /api/account/export (Settings > Download my data); policies gain Terms 11A "Using Skillvaya outside South Africa" and
+  Privacy 8A "Your rights wherever you live" (GDPR/CCPA/PIPEDA/Australia/POPIA). Draft wording - owner to get legal review.
+- Gotcha: the first directory search runs before later <script> code executes, so the country tables are hoisted functions svW()/svT(),
+  not const (a const was in its dead zone and every phone searched ZA).
+- Tests: tests/test_sv81_world_contract.py; sv81_e2e.py (SQLite + PostgreSQL), sv81_browser.py (UK/ZA/US/AU phones at 384px), run_sv81.bat.
+  sv77 "replies within an hour" must run before other suites on a fresh server (10-min cache) - order issue, not a bug.
