@@ -3891,7 +3891,13 @@ async function svAdminVerify(id,on){try{await api('/api/admin/businesses-verify'
 async function svAdminFutureChat(){const box=document.getElementById('svFcAdmin');if(!box)return;try{const d=await api('/api/futurechat/status');const n=Number(d.count||0);box.innerHTML='<strong>Future Chat launch list:</strong> '+n+' '+(n===1?'person':'people')+' waiting. <button type="button" class="ghost" id="svFcAnnounce">Announce launch</button>';document.getElementById('svFcAnnounce').onclick=async()=>{const m=prompt('Alert to send to everyone on the list:','Future Chat is here! Download it now and start chatting.');if(!m)return;if(!confirm('Send this alert to '+n+' '+(n===1?'person':'people')+' now?'))return;try{const r=await api('/api/admin/futurechat',{method:'POST',body:JSON.stringify({action:'announce',message:m})});alert('Sending to '+r.sent+' '+(r.sent===1?'person':'people')+'.')}catch(e){alert(e.message)}}}catch(_){box.textContent=''}}
 function svAfterLogin(){svFutureChatStatus();svRefreshProviderTools()}
 (function(){const go=()=>{try{svApplyDataSaver();svInjectSettingsCards()}catch(_){}};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',go);else go()})();
+
+/* SV85-DIAG: if a bottom tab is hidden on a real phone, report why (no personal data). */
+(function(){var sent=0;function why(el){var out=[];try{var cs=getComputedStyle(el);out.push('disp='+cs.display+' vis='+cs.visibility+' op='+cs.opacity+' w='+Math.round(el.getBoundingClientRect().width));out.push('cls='+el.className+' inline='+(el.getAttribute('style')||'')+' hiddenAttr='+el.hidden);for(var a=el.parentElement,d=0;a&&d<4;a=a.parentElement,d++){var s=getComputedStyle(a);out.push('up'+d+':'+a.tagName+'#'+a.id+'.'+String(a.className).slice(0,40)+' disp='+s.display+' cols='+s.gridTemplateColumns)}for(var i=0;i<document.styleSheets.length;i++){var rules;try{rules=document.styleSheets[i].cssRules}catch(_){continue}(function walk(rs,media){for(var j=0;j<rs.length;j++){var r=rs[j];if(r.cssRules&&!r.selectorText){walk(r.cssRules,(r.conditionText||r.media&&r.media.mediaText||'')); continue}if(!r.selectorText||!r.style)continue;var hides=/display\s*:\s*none|visibility\s*:\s*hidden|width\s*:\s*0|opacity\s*:\s*0(?!\.)/.test(r.style.cssText);if(!hides)continue;var m=false;try{m=el.matches(r.selectorText)}catch(_){}if(m)out.push('RULE['+media+'] '+r.selectorText.slice(0,160)+' {'+r.style.cssText.slice(0,120)+'}')}})(rules,'')}}catch(e){out.push('err '+e)}return out}
+function check(tag){try{if(sent>=3)return;var nav=document.querySelector('.bottom-tabbar');if(!nav)return;var hidden=[].filter.call(nav.children,function(c){var r=c.getBoundingClientRect(),s=getComputedStyle(c);return !(r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden')});if(!hidden.length)return;sent++;var rep={tag:tag,path:location.pathname,ua:navigator.userAgent,lang:document.documentElement.lang,dir:document.documentElement.dir,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,body:document.body.className,signedIn:!!(window.me),role:window.me&&window.me.role||'',hasSvLang:typeof svLang==='function',sw:!!(navigator.serviceWorker&&navigator.serviceWorker.controller),count:nav.children.length,hidden:hidden.map(function(c){return {id:c.id,why:why(c)}})};fetch('/api/diag/tabs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rep).slice(0,20000)}).catch(function(){})}catch(_){}}
+setTimeout(function(){check('load+6s')},6000);document.addEventListener('click',function(e){if(e.target&&e.target.closest&&e.target.closest('.bottom-tabbar button'))setTimeout(function(){check('tap:'+(e.target.closest('button').id||''))},1500)},true)})();
 </script></body></html>'''
+SV_DIAG_TABS=[]
 SESSIONS={}
 def issue_session(user):
     token=secrets.token_urlsafe(32)
@@ -5244,6 +5250,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                             except Exception: pass
                             out[name]=[]
                 return self.sendj(out)
+            if path=="/api/diag/tabs":
+                if urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("k",[""])[0]!="sv85-7f3c9a21e4": return self.sendj({"error":"Not found"},404)
+                return self.sendj({"items":SV_DIAG_TABS[-50:]})
             if path=="/api/me":
                 u=self.require(want_photo=True)
                 if "profile_photo" not in u:
@@ -5983,6 +5992,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 if not row or not verify_password(row["password_hash"],current): return self.sendj({"error":"Your current password is incorrect."},401)
                 with conn() as c: c.execute("UPDATE users SET password_hash=? WHERE id=?",(hashpw(new_password),u["id"]))
                 return self.sendj({"ok":True,"message":"Password changed. You remain signed in on this device."})
+            if path=="/api/diag/tabs":
+                # SV85-DIAG: hidden-tab reports from real phones (layout data only, no personal data).
+                try:
+                    rep=json.dumps(d)[:20000]
+                    SV_DIAG_TABS.append({"at":now(),"report":rep}); del SV_DIAG_TABS[:-50]
+                    print("SV85-DIAG hidden tabs:", rep[:3000], flush=True)
+                except Exception: pass
+                return self.sendj({"ok":True})
             if path=="/api/logout":
                 t=self.headers.get("Authorization","").removeprefix("Bearer ").strip()
                 if t:
