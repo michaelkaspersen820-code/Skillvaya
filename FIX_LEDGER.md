@@ -154,3 +154,14 @@ Not fixed (needs the owner): the free Render server sleeps after 15 idle minutes
   (caller inbound 0 bytes, callee transceivers audio:recvonly). Fixed code: voice PASS, video PASS (sendrecv both sides, 640x480 remote video both sides).
   New contract test tests/test_call_media_direction_contract.py (fails on a21f4c4, passes now). 69 contract OK, 12 root suites OK, PostgreSQL QA 41/41.
 - Lesson: call tests must check media bytes both ways, not just connectionState=='connected' (the old call_e2e.py did only that).
+
+
+## 2026-10-31 SV77 features (7.1.7.4 / versionCode 77)
+- SV77-MISSED-CALL-01: a call nobody answers (caller hangs up while ringing, or the 5-minute sweep) is saved as status 'missed', writes
+  "Missed voice/video call" into the chat, and pushes "Missed call from X. Open Skillvaya to call back." (type missed_call) to the person called.
+  Answered calls still end as 'ended'; declined calls stay 'rejected'.
+- SV77-RESPONSE-01: provider cards/profiles show "Usually replies within an hour / a few hours / a day" from the median time the provider takes
+  to answer a customer's first unanswered message (last 90 days, at least 3 replies, cached 10 minutes, call notices excluded).
+- Reviews were already built (ratings + provider replies, shown on cards/profile); unread-message push already existed (sent instantly).
+- Verified: sv77_feature_e2e.py on SQLite AND real PostgreSQL (pg_sv77.py) 7/7; call_media_e2e.py two-way voice+video PASS; contract 70 OK;
+  12 root suites OK; PostgreSQL QA 41/41.
