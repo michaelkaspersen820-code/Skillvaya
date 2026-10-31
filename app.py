@@ -4775,17 +4775,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                       _h.escape(title),_h.escape(title),_h.escape(desc),_h.escape(base),_h.escape(desc),_h.escape(target),_h.escape(target),_h.escape(title),json.dumps(target))
                 b=page.encode("utf-8"); self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","public, max-age=300"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
             if path=="/sw.js":
-                # SV83-FRESH: network first; the saved copy is only used offline or after 12 s with no answer, and the v5 cache name wipes old saved pages.
-                worker=("const CACHE='skillvaya-shell-v5-fresh';"
-                "const ASSETS=['/manifest.json','/icon.svg','/icon-192.png','/icon-512.png','/sv-logo.jpeg'];"
-                "const HTML_ROUTES=['/','/index.html','/login','/customer','/customer-app','/website','/terms','/workfinder'];"
-                "self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));"
-                "self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));"
-                "self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||u.origin!==location.origin||u.pathname.startsWith('/api/'))return;"
-                "if(HTML_ROUTES.includes(u.pathname)){e.respondWith((async()=>{const cache=await caches.open(CACHE),key=u.pathname;const offline=()=>new Response('<!doctype html><meta name=viewport content=width=device-width,initial-scale=1><title>Skillvaya offline</title><main style=font:16px system-ui;margin:15vh auto;max-width:32rem;padding:1rem><h1>Skillvaya</h1><p>Connect to the internet to sign in and open your workspace.</p></main>',{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});"
-                "const net=fetch(e.request,{cache:'no-cache'}).then(r=>{if(r&&r.ok&&r.status===200)cache.put(key,r.clone());return r});const cached=await cache.match(key);if(!cached)return net.catch(offline);try{e.waitUntil(net.catch(()=>{}))}catch(_){}"
-                "return Promise.race([net.then(r=>r&&r.ok?r:cached),new Promise(res=>setTimeout(()=>res(cached),12000))]).catch(()=>cached);})());return;}"
-                "e.respondWith(fetch(e.request).then(r=>{if(r&&r.ok&&ASSETS.includes(u.pathname)){const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));}return r;}).catch(()=>caches.match(e.request)));});"
+                # SV84-NO-STALE: no saved pages at all. The worker only wipes every old cache on activate and handles push alerts.
+                worker=("const SV_SW_VERSION='skillvaya-sw-v6-live';"
+                "self.addEventListener('install',e=>{self.skipWaiting()});"
+                "self.addEventListener('activate',e=>e.waitUntil((async()=>{try{const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)))}catch(_){}"
+                "try{await self.clients.claim()}catch(_){}})()));"
                 # SV78-WEBPUSH-01: show pushed alerts and open the app when one is tapped.
                 "self.addEventListener('push',e=>{let d={};try{d=e.data?e.data.json():{}}catch(_){d={body:e.data?e.data.text():''}}const call=d.type==='incoming_call';"
                 "const tag=call?'sv-call-'+(d.call_id||''):(d.type==='missed_call'?'sv-missed':'sv-msg-'+(d.business_id||'')+'-'+(d.customer_id||''));"

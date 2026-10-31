@@ -168,16 +168,16 @@ class AppShellCachingContract(unittest.TestCase):
 
     def test_service_worker_never_blocks_on_a_sleeping_server(self):
         for name, src in APPS.items():
-            # SV83-FRESH: v5 cache name wipes old saved pages; the saved copy waits 12 s so a slow phone
-            # connection gets the live app instead of an outdated saved screen.
-            self.assertIn("const CACHE='skillvaya-shell-v5-fresh';", src, name)
-            self.assertNotIn("skillvaya-shell-v4-fast", src, name)
-            self.assertIn("'/terms','/workfinder'];", src, name)
-            self.assertIn("new Promise(res=>setTimeout(()=>res(cached),12000))", src, name)
-            self.assertNotIn("res(cached),2500)", src, name)
-            self.assertIn("if(!cached)return net.catch(offline);", src, name)
-            self.assertIn("fetch(e.request,{cache:'no-cache'})", src, name)
-            self.assertNotIn("{cache:'no-store'}).catch(()=>new Response", src, name + ": old always-network handler is back")
+            # SV84-NO-STALE: the worker never serves saved pages (an old saved screen showed on a fresh
+            # app start). It wipes every cache on activate and keeps push alerts.
+            i = src.find('if path=="/sw.js":'); worker = src[i:src.find("self.wfile.write(worker)", i)]
+            self.assertIn("skillvaya-sw-v6-live", worker, name)
+            self.assertNotIn("addEventListener('fetch'", worker, name + ": no saved-page fetch handler")
+            self.assertNotIn("caches.open", worker, name + ": nothing is saved")
+            self.assertIn("keys.map(k=>caches.delete(k))", worker, name)
+            self.assertNotIn("c.navigate(", worker, name + ": no forced reload (it can stall a loading page)")
+            self.assertIn("addEventListener('push'", worker, name)
+            self.assertIn("addEventListener('notificationclick'", worker, name)
 
 
 class WorkFinderSpeedContract(unittest.TestCase):
