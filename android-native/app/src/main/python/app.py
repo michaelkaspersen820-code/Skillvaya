@@ -624,10 +624,18 @@ CREATE TABLE IF NOT EXISTS subscriptions(id BIGSERIAL PRIMARY KEY, business_id I
         owner_password = os.environ.get("SKILLVAYA_OWNER_PASSWORD", "")
         if owner_email and owner_password and "@" in owner_email and len(owner_password) >= 14:
             existing = c.execute("SELECT id FROM users WHERE email=?", (owner_email,)).fetchone()
+            # SV86-OWNER-PW: never overwrite a password the owner changed in the app on an ordinary restart.
+            # The env password is applied again only when the env value itself is changed on the host.
+            env_fp = hashlib.sha256(("sv-owner-env|" + owner_password).encode("utf-8")).hexdigest()
+            fp_row = c.execute("SELECT value FROM settings WHERE key='owner_env_password_fp'").fetchone()
             if existing:
-                c.execute("UPDATE users SET name='Skillvaya Owner', role='admin', password_hash=? WHERE id=?", (hashpw(owner_password), existing["id"]))
+                if fp_row is not None and fp_row["value"] != env_fp:
+                    c.execute("UPDATE users SET name='Skillvaya Owner', role='admin', password_hash=? WHERE id=?", (hashpw(owner_password), existing["id"]))
+                else:
+                    c.execute("UPDATE users SET name='Skillvaya Owner', role='admin' WHERE id=?", (existing["id"],))
             else:
                 c.execute("INSERT INTO users(name,email,password_hash,role,created_at,phone,accepted_terms_version,accepted_terms_at) VALUES(?,?,?,?,?,?,?,?)", ("Skillvaya Owner", owner_email, hashpw(owner_password), "admin", now(), "", "owner", now()))
+            c.execute("INSERT INTO settings(key,value) VALUES('owner_env_password_fp',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (env_fp,))
         # Link legacy owner business promotions to their directory listing so Pause/Delete
         # applies to both records instead of leaving a supposedly paused listing public.
         admin_row=c.execute("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1").fetchone()
