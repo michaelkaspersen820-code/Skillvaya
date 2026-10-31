@@ -195,3 +195,15 @@ Not fixed (needs the owner): the free Render server sleeps after 15 idle minutes
 - Verified: sv79_e2e 26/26 on SQLite and real PostgreSQL; sv79_browser at 390x844 (screens checked by eye: profile, share sheet, Future Chat card, provider tools,
   data saver) incl. fix of the share sheet hidden under the profile screen (z-index 21000); SV77 7/7; SV78 web push 15/15; two-way calls PASS;
   contract 74 OK; root suites OK; PostgreSQL QA 41/41.
+
+
+## 2026-10-31 SV80 Owner App fits the phone + missing owner tools (7.1.7.7 / versionCode 80)
+- Owner report: owner control screen far too big for his Android (Galaxy A14, 384 CSS px). Cause: on phones the grid column was `1fr`, so the
+  non-wrapping scrolling nav (white-space:nowrap buttons) set the column min-content -> page 1840px wide; tables had min-width 680px.
+- Fix (SV80-OWNER-MOBILE, CSS only, same layout): grid minmax(0,1fr) + min-width:0; nav = swipe strip; Sign out compact top-right; compact headings/cards;
+  tables become labelled cards (table() adds data-label + .cell wrapper); smaller zoom pill. Measured: every area exactly 360/384/412 wide, 0 overflow.
+- New owner tools: Listings & Verification (requests first, Verify / Remove badge, Suspend / Restore), Future Chat Launch (waitlist count + launch alert),
+  dashboard growth cards (verification requests, verified providers, Future Chat waitlist, active listings) + shortcuts incl. View the customer app,
+  "Suspend listing" on each report.
+- Verified: owner_audit.py at 360/384/412 (all 11 areas), sv80_owner_e2e.py (Verify/Suspend/Restore/announce by tapping at phone size) PASS;
+  SV79 26/26; two-way calls PASS; contract 75 OK; root suites OK (test_owner_terms.py needs a dev server on :8877 - run_terms_test.bat); PostgreSQL QA 41/41.
