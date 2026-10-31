@@ -233,7 +233,8 @@ def skillvaya_matches_category(requested, business):
 def category_search_terms(stored):
     aliases = [name for name, targets in CATEGORY_ALIASES.items() if stored in targets]
     return " ".join([stored, *aliases])
-PLANS = {"local":{"name":"Local","monthly":105},"priority":{"name":"Priority","monthly":210},"plus":{"name":"Business Plus","monthly":500},"spotlight":{"name":"Business Spotlight","monthly":1000}}
+# SV88-SPOTLIGHT-YEAR: yearly = 11 x monthly, except Spotlight at R10,000 (Google Play price ceiling).
+PLANS = {"local":{"name":"Local","monthly":105,"yearly":1155},"priority":{"name":"Priority","monthly":210,"yearly":2310},"plus":{"name":"Business Plus","monthly":500,"yearly":5500},"spotlight":{"name":"Business Spotlight","monthly":1000,"yearly":10000}}
 PROVIDER_TIER_RANKS = {"local":0,"priority":1,"plus":2,"spotlight":3}
 def subscription_test_tier(user, query=None, data=None):
     """Resolve an explicit owner-only tier preview; public provider roles cannot override entitlements."""
@@ -5233,8 +5234,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 cc=sv_country(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("country",[""])[0]) or "ZA"
                 cur=sv_currency(cc)
                 try: rate=sv_zar_to(1.0,cur)
-                except Exception: return self.sendj({"country":cc,"currency":"ZAR","rate":1.0,"fallback":True,"plans":{k:{"name":v["name"],"monthly_zar":v["monthly"],"monthly":v["monthly"],"yearly":v["monthly"]*11} for k,v in PLANS.items()}})
-                return self.sendj({"country":cc,"currency":cur,"rate":rate,"plans":{k:{"name":v["name"],"monthly_zar":v["monthly"],"monthly":round(v["monthly"]*rate,2),"yearly":round(v["monthly"]*11*rate,2)} for k,v in PLANS.items()}})
+                except Exception: return self.sendj({"country":cc,"currency":"ZAR","rate":1.0,"fallback":True,"plans":{k:{"name":v["name"],"monthly_zar":v["monthly"],"monthly":v["monthly"],"yearly":v["yearly"]} for k,v in PLANS.items()}})
+                return self.sendj({"country":cc,"currency":cur,"rate":rate,"plans":{k:{"name":v["name"],"monthly_zar":v["monthly"],"monthly":round(v["monthly"]*rate,2),"yearly":round(v["yearly"]*rate,2)} for k,v in PLANS.items()}})
             if path=="/api/i18n":
                 ver,strings=sv_i18n(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("lang",[""])[0])
                 return self.sendj({"version":ver,"strings":strings})
@@ -5842,7 +5843,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 base_plan=str(offer.get("basePlanId", "")).strip()
                 if base_plan not in ("monthly","annual"): return self.sendj({"error":"The verified Google Play subscription has an unsupported base plan. No paid access was granted."},409)
                 billing="yearly" if base_plan=="annual" else "monthly"
-                amount=int(PLANS[plan]["monthly"]*(11 if billing=="yearly" else 1))
+                amount=int(PLANS[plan]["yearly"] if billing=="yearly" else PLANS[plan]["monthly"])
                 order_id=str(verified.get("latestOrderId", d.get("order_id", "")))[:160]
                 auto_renew=bool((line.get("autoRenewingPlan") or {}).get("autoRenewEnabled",False))
                 with conn() as c:
@@ -5879,7 +5880,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 cfg=paypal_config()
                 if not cfg["public_url"].startswith("https://"): return self.sendj({"error":"Set SKILLVAYA_PUBLIC_URL to the public HTTPS Skillvaya address in Render."},503)
                 if not cfg["client_id"] or not cfg["secret"]: return self.sendj({"error":"PayPal credentials are not configured in Render."},503)
-                amount=int(PLANS[plan]["monthly"]*(11 if billing=="yearly" else 1)); ref="SV-"+secrets.token_hex(4).upper()
+                amount=int(PLANS[plan]["yearly"] if billing=="yearly" else PLANS[plan]["monthly"]); ref="SV-"+secrets.token_hex(4).upper()
                 with conn() as c:
                     _bz=c.execute("SELECT country FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1",(u["id"],)).fetchone()
                 paypal_currency=sv_paypal_currency(sv_country(_bz["country"] if _bz else "") or sv_user_country(u["id"]) or "ZA")

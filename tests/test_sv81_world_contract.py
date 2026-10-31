@@ -26,8 +26,10 @@ class WorldwideFoundationContract(unittest.TestCase):
         for path in FILES:
             s = self.read(path)
             self.assertIn('"monthly":round(v["monthly"]*rate,2)', s)
-            self.assertIn('"yearly":round(v["monthly"]*11*rate,2)', s)
-            self.assertIn('PLANS = {"local":{"name":"Local","monthly":105}', s, "rand base prices must stay the source of truth")
+            self.assertIn('"yearly":round(v["yearly"]*rate,2)', s)
+            # SV88: rand prices stay the source of truth; yearly is 11 x monthly except Spotlight (R10,000, Play price ceiling)
+            self.assertIn('PLANS = {"local":{"name":"Local","monthly":105,"yearly":1155}', s, "rand base prices must stay the source of truth")
+            self.assertIn('"spotlight":{"name":"Business Spotlight","monthly":1000,"yearly":10000}', s)
 
     def test_paypal_charges_local_currency_and_refunds_in_charged_currency(self):
         for path in FILES:
