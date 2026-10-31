@@ -101,7 +101,8 @@ class InstantScreensContract(unittest.TestCase):
             self.assertNotIn("await sessionInfo()", init, name + ": start-up must not wait for the session before anything else")
             self.assertNotIn("1800", init, name + ": categories must not hold the splash screen")
             for needle in ("try{svPaintCachedDirectory()}catch(e){}", "const svSessionP=sessionInfo()", "const svDirectoryP=loadBusinesses();", "const svCategoriesP=api('/api/categories')",
-                           "if(!svDirectoryHadCache)await Promise.race([svDirectoryP,new Promise(r=>setTimeout(r,1500))]);"):
+                           # SV87-ONE-LOAD: one loading screen until session + directory are ready (max 6 s)
+                           "await Promise.race([Promise.allSettled([svSessionP,svDirectoryP]),new Promise(r=>setTimeout(r,6000))]);"):
                 self.assertIn(needle, init, "%s: %s" % (name, needle))
 
     def test_directory_paints_from_cache_and_fetches_favourites_in_parallel(self):
