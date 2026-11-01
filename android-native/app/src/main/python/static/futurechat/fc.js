@@ -645,7 +645,8 @@
   // ---------- phone verification (Firebase via the Skillvaya app, or the web)
   async function verifyPhone(afterSignup) {
     let st = {}; try { st = await api('/api/phone/status'); } catch (_) {}
-    if (st.verified && !afterSignup) { toast('Your number ' + st.phone + ' is verified'); return; }
+    if (st.verified && !afterSignup) { toast('Your number ' + st.phone + (st.method === 'email' ? ' is confirmed by email (not SMS-checked yet)' : ' is verified')); return; }
+    if (st.mode === 'email') return verifyPhoneByEmail(st, afterSignup);
     sheet('<h3>Verify your phone number</h3><p>' + (afterSignup ? 'One last step. ' : '') + 'We\'ll send a 6-digit code by SMS. Your number lets people find you on Future Chat and call you.</p>' +
       '<input id="fcPN" type="tel" autocomplete="tel" placeholder="Phone number, e.g. 082 123 4567" value="' + esc(st.phone || '') + '"><button class="fc-btn" id="fcPSend">Send code</button>' +
       '<div id="fcPStep2" style="display:none"><input id="fcPC" class="fc-codes" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••"><button class="fc-btn" id="fcPConfirm">Verify</button></div>' +
@@ -673,6 +674,28 @@
         msg('Checking…');
         if (n && n.confirmPhoneCode) { n.confirmPhoneCode(code); return; }
         try { const cred = await web.confirm(code); finish(await cred.user.getIdToken()); } catch (e) { msg('That code didn\'t work. Check it or send a new one.'); }
+      };
+    });
+  }
+  // SV93-EMAILPHONE: free check while SMS is off. The code goes to the account email; the number is marked "confirmed by email".
+  function verifyPhoneByEmail(st, afterSignup) {
+    sheet('<h3>Add your phone number</h3><p>' + (afterSignup ? 'One last step. ' : '') + 'Your number lets friends and family find you on Future Chat and call you. We\'ll email a 6-digit code to ' + esc(st.email_hint || 'your account email') + ' to confirm it\'s you.</p>' +
+      '<input id="fcPN" type="tel" autocomplete="tel" placeholder="Phone number, e.g. 082 123 4567" value="' + esc(st.phone || '') + '"><button class="fc-btn" id="fcPSend">Email me a code</button>' +
+      '<div id="fcPStep2" style="display:none"><input id="fcPC" class="fc-codes" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••"><button class="fc-btn" id="fcPConfirm">Confirm</button></div>' +
+      '<p id="fcPMsg" role="status"></p><p class="fc-muted" style="font-size:12px;opacity:.75">Your number is marked "confirmed by email" until SMS checks are switched on.</p>' + (afterSignup ? '<button class="fc-btn sec" id="fcPLater">Later</button>' : ''), (el, done) => {
+      const msg = t => { $('#fcPMsg', el).textContent = t; };
+      const later = $('#fcPLater', el); if (later) later.onclick = done;
+      $('#fcPSend', el).onclick = async () => {
+        const raw = $('#fcPN', el).value; if (raw.replace(/\D/g, '').length < 9) { msg('Enter your full phone number.'); return; }
+        msg('Sending…');
+        try { const r = await api('/api/phone/email-start', { phone: raw }); msg('Code sent to ' + r.sent_to + '. Check your inbox (and spam).'); $('#fcPStep2', el).style.display = 'block'; $('#fcPC', el).focus(); }
+        catch (e) { msg(e.message); }
+      };
+      $('#fcPConfirm', el).onclick = async () => {
+        const code = $('#fcPC', el).value.replace(/\D/g, ''); if (code.length !== 6) { msg('Enter the 6-digit code.'); return; }
+        msg('Checking…');
+        try { const r = await api('/api/phone/email-confirm', { code }); done(); S.verified = true; toast('Number ' + r.phone + ' added ✓'); if (S.open && !S.conv) loadList(); }
+        catch (e) { msg(e.message); }
       };
     });
   }

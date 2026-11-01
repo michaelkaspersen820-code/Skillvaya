@@ -63,6 +63,9 @@ def init(c):
     cols = _columns(c, "users")
     if "phone_e164" not in cols: c.execute("ALTER TABLE users ADD COLUMN phone_e164 TEXT DEFAULT ''")
     if "phone_verified_at" not in cols: c.execute("ALTER TABLE users ADD COLUMN phone_verified_at TEXT DEFAULT ''")
+    # SV93-EMAILPHONE: numbers can be confirmed with a code sent to the account email (free) until SMS is switched on.
+    if "phone_verify_method" not in cols: c.execute("ALTER TABLE users ADD COLUMN phone_verify_method TEXT DEFAULT ''")
+    c.execute("CREATE TABLE IF NOT EXISTS fc_phone_codes(user_id BIGINT PRIMARY KEY, phone TEXT NOT NULL, code_hash TEXT NOT NULL, expires_at TEXT NOT NULL, sent_at TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0)")
     try:
         vc_cols = _columns(c, "video_calls")
         if vc_cols and "conversation_id" not in vc_cols: c.execute("ALTER TABLE video_calls ADD COLUMN conversation_id BIGINT NOT NULL DEFAULT 0")
@@ -510,8 +513,10 @@ def handle_get(h, path):
             return h.sendj(_stokvel_state(c, conv_id, uid))
     if path == "/api/phone/status":
         with A.conn() as c:
-            r = c.execute("SELECT phone,phone_e164,phone_verified_at,country FROM users WHERE id=?", (uid,)).fetchone()
+            r = c.execute("SELECT phone,phone_e164,phone_verified_at,phone_verify_method,country,email FROM users WHERE id=?", (uid,)).fetchone()
         return h.sendj({"phone": (r["phone_e164"] or r["phone"] or "") if r else "", "verified": bool(r and r["phone_verified_at"]),
+                        "method": (r["phone_verify_method"] or "sms") if (r and r["phone_verified_at"]) else "",
+                        "mode": "sms" if _sms_enabled() else "email", "email_hint": _mask_email(r["email"] if r else ""),
                         "country": (r["country"] if r else "") or "ZA", "web_config": _web_config()})
     return h.sendj({"error": "Not found"}, 404)
 
@@ -751,6 +756,10 @@ def handle_post(h, path, d):
         return h.sendj({"ok": True})
     if path == "/api/phone/verify":
         return _verify_phone(h, u, d)
+    if path == "/api/phone/email-start":
+        return _email_phone_start(h, u, d)
+    if path == "/api/phone/email-confirm":
+        return _email_phone_confirm(h, u, d)
     return h.sendj({"error": "Not found"}, 404)
 
 
@@ -778,7 +787,80 @@ def _verify_phone(h, u, d):
     if not phone.startswith("+"): return h.sendj({"error": "That verification wasn't for a phone number."}, 400)
     uid = int(u["id"])
     with A.conn() as c:
+        other = c.execute("SELECT id,phone_verify_method FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>?", (phone, uid)).fetchone()
+        if other and str(other["phone_verify_method"] or "") == "email":
+            # An SMS check proves ownership, so it takes the number back from an email-only claim.
+            c.execute("UPDATE users SET phone_verified_at='',phone_verify_method='' WHERE id=?", (int(other["id"]),))
+        elif other: return h.sendj({"error": "This number is already linked to another Skillvaya account."}, 409)
+        c.execute("UPDATE users SET phone=?,phone_e164=?,phone_verified_at=?,phone_verify_method='sms' WHERE id=?", (phone, phone, A.now(), uid))
+    return h.sendj({"ok": True, "phone": phone, "verified": True})
+
+
+def _sms_enabled():
+    return os.environ.get("SKILLVAYA_PHONE_SMS", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _mask_email(e):
+    e = str(e or "")
+    if "@" not in e: return ""
+    name, dom = e.split("@", 1)
+    return (name[:2] + "***" if len(name) > 2 else name[:1] + "***") + "@" + dom
+
+
+def _code_hash(uid, code):
+    import hashlib
+    return hashlib.sha256(("sv-phone|%d|%s|%s" % (uid, code, os.environ.get("SKILLVAYA_SECRET_KEY", "sv"))).encode()).hexdigest()
+
+
+def _email_phone_start(h, u, d):
+    import secrets, datetime
+    uid = int(u["id"])
+    with A.conn() as c:
+        r = c.execute("SELECT email,name,country FROM users WHERE id=?", (uid,)).fetchone()
+        email = str(r["email"] or "") if r else ""
+        if "@" not in email: return h.sendj({"error": "Add an email address to your account first."}, 400)
+        phone = normalize_phone(d.get("phone"), (r["country"] if r else "") or "ZA")
+        if not phone: return h.sendj({"error": "Enter your full phone number, e.g. 082 123 4567."}, 400)
         other = c.execute("SELECT id FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>?", (phone, uid)).fetchone()
         if other: return h.sendj({"error": "This number is already linked to another Skillvaya account."}, 409)
-        c.execute("UPDATE users SET phone=?,phone_e164=?,phone_verified_at=? WHERE id=?", (phone, phone, A.now(), uid))
-    return h.sendj({"ok": True, "phone": phone, "verified": True})
+        now = datetime.datetime.now(datetime.timezone.utc)
+        last = c.execute("SELECT sent_at FROM fc_phone_codes WHERE user_id=?", (uid,)).fetchone()
+        if last:
+            try:
+                if now - datetime.datetime.fromisoformat(str(last["sent_at"])) < datetime.timedelta(seconds=60):
+                    return h.sendj({"error": "A code was just sent. Wait a minute before asking for another."}, 429)
+            except ValueError: pass
+        code = "%06d" % secrets.randbelow(1000000)
+        exp = (now + datetime.timedelta(minutes=15)).isoformat()
+        c.execute("DELETE FROM fc_phone_codes WHERE user_id=?", (uid,))
+        c.execute("INSERT INTO fc_phone_codes(user_id,phone,code_hash,expires_at,sent_at,tries) VALUES(?,?,?,?,?,0)", (uid, phone, _code_hash(uid, code), exp, now.isoformat()))
+    body = ("Hi %s,\n\nYour Skillvaya code to confirm the phone number %s is:\n\n    %s\n\n"
+            "It expires in 15 minutes. If you didn't ask for this, you can ignore this email.\n\nSkillvaya" % (str(r["name"] or "there"), phone, code))
+    if not A.send_owner_email("Your phone confirmation code: " + code, body, recipient=email):
+        with A.conn() as c: c.execute("DELETE FROM fc_phone_codes WHERE user_id=?", (uid,))
+        return h.sendj({"error": "We couldn't send the email right now. Please try again later."}, 503)
+    return h.sendj({"ok": True, "sent_to": _mask_email(email), "phone": phone})
+
+
+def _email_phone_confirm(h, u, d):
+    import datetime, hmac
+    uid = int(u["id"])
+    code = re.sub(r"\D", "", str(d.get("code") or ""))
+    if len(code) != 6: return h.sendj({"error": "Enter the 6-digit code from the email."}, 400)
+    with A.conn() as c:
+        row = c.execute("SELECT * FROM fc_phone_codes WHERE user_id=?", (uid,)).fetchone()
+        if not row: return h.sendj({"error": "Ask for a new code first."}, 400)
+        try: expired = datetime.datetime.fromisoformat(str(row["expires_at"])) < datetime.datetime.now(datetime.timezone.utc)
+        except ValueError: expired = True
+        if expired or int(row["tries"] or 0) >= 5:
+            c.execute("DELETE FROM fc_phone_codes WHERE user_id=?", (uid,))
+            return h.sendj({"error": "That code has expired. Ask for a new one."}, 400)
+        if not hmac.compare_digest(str(row["code_hash"]), _code_hash(uid, code)):
+            c.execute("UPDATE fc_phone_codes SET tries=tries+1 WHERE user_id=?", (uid,))
+            return h.sendj({"error": "That code doesn't match. Check the email and try again."}, 400)
+        phone = str(row["phone"])
+        if c.execute("SELECT id FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>?", (phone, uid)).fetchone():
+            return h.sendj({"error": "This number is already linked to another Skillvaya account."}, 409)
+        c.execute("UPDATE users SET phone=?,phone_e164=?,phone_verified_at=?,phone_verify_method='email' WHERE id=?", (phone, phone, A.now(), uid))
+        c.execute("DELETE FROM fc_phone_codes WHERE user_id=?", (uid,))
+    return h.sendj({"ok": True, "phone": phone, "verified": True, "method": "email"})
