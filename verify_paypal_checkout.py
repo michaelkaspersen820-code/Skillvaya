@@ -99,34 +99,13 @@ try:
     status = request("/api/admin/paypal/status", token=admin_token)
     check("Owner diagnostics successfully verify mocked Sandbox OAuth without exposing secrets", lambda: (_ for _ in ()).throw(AssertionError(status)) if not status.get("oauth_valid") or not status.get("checkout_ready") or status.get("provider") != "paypal" else None)
 
-    first = request("/api/paypal/create-order", "POST", {"plan":"priority","billing":"monthly"}, token=token)
-    pending = db_one("SELECT status,payment_gateway,paypal_order_id,paypal_currency,paypal_amount FROM payments WHERE reference=?", (first["reference"],))
-    check("Order creation converts ZAR to USD, returns an approval URL, and stays pending", lambda: (_ for _ in ()).throw(AssertionError((first, tuple(pending)))) if not first.get("checkout_ready") or "sandbox.paypal.com" not in first.get("approval_url","") or tuple(pending) != ("pending","paypal",first["order_id"],"USD","13.13") or first.get("paypal_currency")!="USD" or state["orders"][first["order_id"]]["currency"]!="USD" else None)
+    play_only = request("/api/paypal/create-order", "POST", {"plan":"priority","billing":"monthly"}, token=token, expected=410)
+    check("Website PayPal checkout is retired with the Google Play-only notice", lambda: (_ for _ in ()).throw(AssertionError(play_only)) if not play_only.get("play_only") or "Google Play" not in play_only.get("error","") else None)
 
-    captured = request("/api/paypal/capture", "POST", {"order_id":first["order_id"]}, token=token)
-    paid = db_one("SELECT status,payment_gateway,paypal_capture_id FROM payments WHERE reference=?", (first["reference"],))
-    check("A completed matching USD capture verifies the payment", lambda: (_ for _ in ()).throw(AssertionError((captured,tuple(paid)))) if captured.get("status") != "verified" or tuple(paid) != ("verified","paypal","MOCK-CAPTURE-"+first["order_id"]) else None)
-    check("Payment stays linked to the account until provider profile creation", lambda: (_ for _ in ()).throw(AssertionError(captured)) if not captured.get("profile_required") else None)
-    request("/api/businesses", "POST", {
-        "name":"PayPal QA Plumbing", "category":"Plumbers", "area":"Johannesburg",
-        "phone":"+27111111111", "description":"Temporary isolated QA listing."
-    }, token=token, expected=201)
-    business = db_one("SELECT status,payment_status,plan FROM businesses WHERE name=?", ("PayPal QA Plumbing",))
-    check("Verified USD payment unlocks provider profile and activates the correct plan", lambda: (_ for _ in ()).throw(AssertionError(tuple(business))) if tuple(business) != ("active","verified","priority") else None)
-    replay = request("/api/paypal/capture", "POST", {"order_id":first["order_id"]}, token=token)
-    check("Repeated capture returns already-verified without extending twice", lambda: (_ for _ in ()).throw(AssertionError(replay)) if not replay.get("already_verified") else None)
+    capture = request("/api/paypal/capture", "POST", {"order_id":"MOCK-ORDER-001"}, token=token, expected=404)
+    check("Capture without a matching Skillvaya payment is refused", lambda: (_ for _ in ()).throw(AssertionError(capture)) if "does not match" not in capture.get("error","") else None)
 
-    state["wrong_amount"] = True
-    second = request("/api/paypal/create-order", "POST", {"plan":"priority","billing":"monthly"}, token=token)
-    request("/api/paypal/capture", "POST", {"order_id":second["order_id"]}, token=token, expected=409)
-    second_row = db_one("SELECT status FROM payments WHERE reference=?", (second["reference"],))
-    check("Mismatched amount is rejected and remains pending", lambda: (_ for _ in ()).throw(AssertionError(tuple(second_row))) if second_row[0] != "pending" else None)
-    state["wrong_amount"] = False
-
-    payment_id = db_one("SELECT id FROM payments WHERE reference=?", (first["reference"],))[0]
-    refund = request("/api/admin/refunds/"+str(payment_id), "POST", {"amount":20000,"reason":"Sandbox partial refund QA"}, token=admin_token)
-    refund_row = db_one("SELECT refunded_amount,refund_status FROM payments WHERE reference=?", (first["reference"],))
-    check("PayPal partial refund is saved only after provider confirmation", lambda: (_ for _ in ()).throw(AssertionError((refund,tuple(refund_row)))) if refund.get("refund_status") != "partial" or tuple(refund_row) != (20000,"partial") else None)
+    check("Retired website checkout creates no payment record and calls no PayPal API", lambda: (_ for _ in ()).throw(AssertionError((db_one("SELECT count(*) FROM payments")[0], state))) if db_one("SELECT count(*) FROM payments")[0] != 0 or state["number"] != 0 or state["refund_calls"] != 0 else None)
 
     before = db_one("SELECT count(*) FROM payments")[0]
     retired_checkout = request("/api/payments", "POST", {"plan":"local","billing":"monthly"}, token=token, expected=410)
