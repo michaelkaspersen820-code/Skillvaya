@@ -688,7 +688,8 @@
       $('#fcPSend', el).onclick = async () => {
         const raw = $('#fcPN', el).value; if (raw.replace(/\D/g, '').length < 9) { msg('Enter your full phone number.'); return; }
         msg('Sending…');
-        try { const r = await api('/api/phone/email-start', { phone: raw }); if (r.saved) { done(); S.verified = true; toast('Number ' + r.phone + ' saved ✓'); if (S.open && !S.conv) loadList(); return; } /*SV93-SELFPHONE*/ msg('Code sent to ' + r.sent_to + '. Check your inbox (and spam).'); $('#fcPStep2', el).style.display = 'block'; $('#fcPC', el).focus(); }
+        try { const r = await api('/api/phone/email-start', { phone: raw }); if (r.saved) { done(); S.verified = true; toast('Number ' + r.phone + ' saved ✓'); if (S.open && !S.conv) loadList(); return; } /*SV93-SELFPHONE*/ msg('Code sent to ' + r.sent_to + '. Check your inbox (and spam).'); $('#fcPStep2', el).style.display = 'block'; $('#fcPC', el).focus();
+          /*SV93-SKIPMAIL*/ setTimeout(() => { if (!el.isConnected || $('#fcPSkip', el)) return; const b = document.createElement('button'); b.id = 'fcPSkip'; b.className = 'fc-btn sec'; b.textContent = "Didn't get the email? Save my number anyway"; b.onclick = async () => { try { const s = await api('/api/phone/email-start', { phone: raw, skip: true }); done(); S.verified = true; toast('Number ' + s.phone + ' saved ✓'); if (S.open && !S.conv) loadList(); } catch (e2) { msg(e2.message); } }; $('#fcPStep2', el).appendChild(b); }, 30000); }
         catch (e) { msg(e.message); }
       };
       $('#fcPConfirm', el).onclick = async () => {

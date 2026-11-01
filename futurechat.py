@@ -815,6 +815,16 @@ def _code_hash(uid, code):
 def _email_phone_start(h, u, d):
     import secrets, datetime
     uid = int(u["id"])
+    if d.get("skip"):  # SV93-SKIPMAIL: the email didn't arrive, so save the number now (marked unconfirmed).
+        with A.conn() as c:
+            r = c.execute("SELECT country FROM users WHERE id=?", (uid,)).fetchone()
+            phone = normalize_phone(d.get("phone"), (r["country"] if r else "") or "ZA")
+            if not phone: return h.sendj({"error": "Enter your full phone number, e.g. 082 123 4567."}, 400)
+            if c.execute("SELECT id FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>?", (phone, uid)).fetchone():
+                return h.sendj({"error": "This number is already linked to another Skillvaya account."}, 409)
+            c.execute("DELETE FROM fc_phone_codes WHERE user_id=?", (uid,))
+            c.execute("UPDATE users SET phone=?,phone_e164=?,phone_verified_at=?,phone_verify_method='self' WHERE id=?", (phone, phone, A.now(), uid))
+        return h.sendj({"ok": True, "saved": True, "phone": phone, "method": "self"})
     with A.conn() as c:
         r = c.execute("SELECT email,name,country FROM users WHERE id=?", (uid,)).fetchone()
         email = str(r["email"] or "") if r else ""
