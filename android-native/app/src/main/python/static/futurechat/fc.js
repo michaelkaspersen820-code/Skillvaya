@@ -179,9 +179,15 @@
       $('#fcCtAllow', el).onclick = async () => {
         done(); S.ctToast = true;
         if (n && n.readContacts) { n.readContacts(); return; }
-        try { const picked = await navigator.contacts.select(['name', 'tel'], { multiple: true }); const list = []; picked.forEach(p => (p.tel || []).forEach(t => list.push({ name: (p.name || [])[0] || '', phone: t }))); matchContacts(list); }
-        catch (_) { toast('No contacts were shared.'); }
+        try { const picked = await navigator.contacts.select(['name', 'tel'], { multiple: true }); const list = []; (picked || []).forEach(p => (p.tel || []).forEach(t => list.push({ name: (p.name || [])[0] || '', phone: t }))); if (list.length) matchContacts(list); else oldPickerHelp(); }
+        catch (_) { oldPickerHelp(); }
       };
+    });
+  }
+  // Older app versions only have the phone's own contact picker, which picks contacts one at a time.
+  function oldPickerHelp() {
+    sheet('<h3>Load all your contacts at once</h3><p>This version of Skillvaya can only pick contacts one at a time. The latest Skillvaya app loads <b>all</b> your contacts with one tap on <b>Allow</b> and shows everyone who is on Future Chat.</p><a class="fc-btn" style="display:block;text-align:center;text-decoration:none" href="https://play.google.com/store/apps/details?id=za.co.skillvaya.app">Update Skillvaya</a><button class="fc-btn sec" id="fcPickAgain">Pick contacts one by one for now</button>', (el, done) => {
+      $('#fcPickAgain', el).onclick = async () => { done(); try { const picked = await navigator.contacts.select(['name', 'tel'], { multiple: true }); const list = []; (picked || []).forEach(p => (p.tel || []).forEach(t => list.push({ name: (p.name || [])[0] || '', phone: t }))); if (list.length) { S.ctToast = true; matchContacts(list); } } catch (_) {} };
     });
   }
   function drawContacts(fab) {

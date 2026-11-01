@@ -33,6 +33,9 @@ public final class PlayBillingBridge implements PurchasesUpdatedListener {
     private String pendingAccountId = "";
     private String pendingAuthToken = "";
     private boolean restoreAfterConnect = false;
+    // SV92: homepage ads are one-time ("in-app") products, consumed after the server verifies them.
+    private static final List<String> AD_PRODUCTS = Arrays.asList("skillvaya_ad_word_week", "skillvaya_ad_word_month", "skillvaya_ad_video_week", "skillvaya_ad_video_month");
+    private final List<ProductDetails> adProducts = new ArrayList<>();
 
     public PlayBillingBridge(Activity activity, String baseUrl) {
         this.activity = activity;
@@ -204,19 +207,128 @@ public final class PlayBillingBridge implements PurchasesUpdatedListener {
                 emit("window.svPlayBillingError", "Could not restore purchases. Please try again.");
                 return;
             }
-            for (Purchase purchase : purchases) submitPurchaseForVerification(purchase);
+            for (Purchase purchase : purchases) if (!isAd(purchase)) submitPurchaseForVerification(purchase);
             if (purchases.isEmpty()) emit("window.svPlayBillingResult", "{\"ok\":true,\"restored\":false,\"message\":\"No active Google Play subscriptions were found.\"}");
         });
     }
 
+    private boolean adFlow = false;
+
+    private static boolean isAd(Purchase purchase) {
+        List<String> ids = purchase.getProducts();
+        return ids != null && !ids.isEmpty() && AD_PRODUCTS.contains(ids.get(0));
+    }
+
     @Override public void onPurchasesUpdated(BillingResult result, List<Purchase> purchases) {
         if (result.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
-            for (Purchase purchase : purchases) submitPurchaseForVerification(purchase);
+            for (Purchase purchase : purchases) {
+                if (isAd(purchase)) submitAdPurchase(purchase); else submitPurchaseForVerification(purchase);
+            }
         } else if (result.getResponseCode() == BillingClient.BillingResponseCode.USER_CANCELED) {
-            emit("window.svPlayBillingResult", "{\"ok\":false,\"cancelled\":true,\"message\":\"Purchase cancelled. No charge was made.\"}");
+            if (adFlow) emit("window.haAdResult", "{\"ok\":false,\"cancelled\":true}");
+            else emit("window.svPlayBillingResult", "{\"ok\":false,\"cancelled\":true,\"message\":\"Purchase cancelled. No charge was made.\"}");
         } else {
-            emit("window.svPlayBillingError", "Google Play purchase did not complete (code " + result.getResponseCode() + ").");
+            emit(adFlow ? "window.haAdError" : "window.svPlayBillingError", "Google Play purchase did not complete (code " + result.getResponseCode() + ").");
         }
+        adFlow = false;
+    }
+
+    // ---------------------------------------------------------------- homepage ads
+    @JavascriptInterface
+    public void queryAdProducts() {
+        if (!billingClient.isReady()) { connect(); return; }
+        List<QueryProductDetailsParams.Product> products = new ArrayList<>();
+        for (String id : AD_PRODUCTS) products.add(QueryProductDetailsParams.Product.newBuilder().setProductId(id).setProductType(BillingClient.ProductType.INAPP).build());
+        billingClient.queryProductDetailsAsync(QueryProductDetailsParams.newBuilder().setProductList(products).build(), (result, response) -> {
+            JSONArray out = new JSONArray();
+            synchronized (adProducts) {
+                adProducts.clear();
+                for (ProductDetails detail : response.getProductDetailsList()) {
+                    adProducts.add(detail);
+                    List<ProductDetails.OneTimePurchaseOfferDetails> offers = detail.getOneTimePurchaseOfferDetailsList();
+                    ProductDetails.OneTimePurchaseOfferDetails offer = offers == null || offers.isEmpty() ? null : offers.get(0);
+                    JSONObject p = new JSONObject();
+                    try { p.put("productId", detail.getProductId()); p.put("price", offer == null ? "" : offer.getFormattedPrice()); out.put(p); } catch (Exception ignored) {}
+                }
+            }
+            emit("window.haAdProducts", out.toString());
+        });
+    }
+
+    @JavascriptInterface
+    public void purchaseAd(String productId, String adId, String accountId, String authToken) {
+        if (productId == null || adId == null || accountId == null || authToken == null || authToken.trim().isEmpty()) {
+            emit("window.haAdError", "Please sign in before paying for an ad."); return;
+        }
+        pendingAccountId = accountId.trim(); pendingAuthToken = authToken.trim();
+        if (!billingClient.isReady()) { connect(); emit("window.haAdError", "Google Play is connecting. Please tap Pay again."); return; }
+        ProductDetails selected = null;
+        synchronized (adProducts) { for (ProductDetails p : adProducts) if (p.getProductId().equals(productId)) { selected = p; break; } }
+        if (selected == null) { queryAdProducts(); emit("window.haAdError", "Ad prices are still loading from Google Play. Please tap Pay again in a moment."); return; }
+        BillingFlowParams params = BillingFlowParams.newBuilder()
+            .setObfuscatedAccountId(obfuscatedId(pendingAccountId))
+            .setObfuscatedProfileId("ad-" + adId.replaceAll("[^0-9]", ""))
+            .setProductDetailsParamsList(Arrays.asList(adDetailParams(selected)))
+            .build();
+        adFlow = true;
+        activity.runOnUiThread(() -> billingClient.launchBillingFlow(activity, params));
+    }
+
+    private static BillingFlowParams.ProductDetailsParams adDetailParams(ProductDetails selected) {
+        BillingFlowParams.ProductDetailsParams.Builder b = BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(selected);
+        List<ProductDetails.OneTimePurchaseOfferDetails> offers = selected.getOneTimePurchaseOfferDetailsList();
+        if (offers != null && !offers.isEmpty() && offers.get(0).getOfferToken() != null) b.setOfferToken(offers.get(0).getOfferToken());
+        return b.build();
+    }
+
+    /** Re-sends any ad payment that was made but not yet confirmed (for example if the app closed). */
+    @JavascriptInterface
+    public void restoreAdPurchases(String accountId, String authToken) {
+        if (accountId == null || authToken == null || authToken.trim().isEmpty()) return;
+        pendingAccountId = accountId.trim(); pendingAuthToken = authToken.trim();
+        if (!billingClient.isReady()) { connect(); return; }
+        billingClient.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build(), (result, purchases) -> {
+            if (result.getResponseCode() != BillingClient.BillingResponseCode.OK) return;
+            for (Purchase purchase : purchases) if (isAd(purchase) && purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) submitAdPurchase(purchase);
+        });
+    }
+
+    private void submitAdPurchase(Purchase purchase) {
+        if (purchase.getPurchaseState() != Purchase.PurchaseState.PURCHASED) {
+            emit("window.haAdResult", "{\"ok\":false,\"message\":\"Your Google Play payment is pending. The ad will be sent for approval as soon as it completes.\"}");
+            return;
+        }
+        io.execute(() -> {
+            HttpURLConnection c = null;
+            try {
+                URL url = new URL(baseUrl + "/api/home-ads/verify");
+                c = (HttpURLConnection) url.openConnection();
+                c.setRequestMethod("POST"); c.setConnectTimeout(15000); c.setReadTimeout(20000);
+                c.setDoOutput(true); c.setRequestProperty("Content-Type", "application/json");
+                c.setRequestProperty("Authorization", "Bearer " + pendingAuthToken);
+                JSONObject body = new JSONObject();
+                body.put("purchase_token", purchase.getPurchaseToken());
+                body.put("product_id", purchase.getProducts().get(0));
+                body.put("order_id", purchase.getOrderId() == null ? "" : purchase.getOrderId());
+                try (OutputStream os = c.getOutputStream()) { os.write(body.toString().getBytes(StandardCharsets.UTF_8)); }
+                int status = c.getResponseCode();
+                java.io.InputStream stream = status >= 200 && status < 400 ? c.getInputStream() : c.getErrorStream();
+                java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+                if (stream != null) { byte[] chunk = new byte[4096]; int count; while ((count = stream.read(chunk)) != -1) buffer.write(chunk, 0, count); }
+                String response = new String(buffer.toByteArray(), StandardCharsets.UTF_8);
+                JSONObject data;
+                try { data = new JSONObject(response); } catch (Exception ignored) { data = new JSONObject(); }
+                if (status >= 200 && status < 300 && data.optBoolean("ok", false)) {
+                    // Consume so the same product can be bought again for the next ad.
+                    billingClient.consumeAsync(ConsumeParams.newBuilder().setPurchaseToken(purchase.getPurchaseToken()).build(), (r, t) -> {});
+                    emit("window.haAdResult", data.toString());
+                } else {
+                    emit("window.haAdError", data.optString("error", "Skillvaya couldn't confirm the ad payment yet (HTTP " + status + "). Reopen Advertise here to retry."));
+                }
+            } catch (Exception e) {
+                emit("window.haAdError", "The ad payment couldn't be confirmed yet. Reopen Advertise here to retry.");
+            } finally { if (c != null) c.disconnect(); }
+        });
     }
 
     private void submitPurchaseForVerification(Purchase purchase) {

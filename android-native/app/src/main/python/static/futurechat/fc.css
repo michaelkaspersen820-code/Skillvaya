@@ -20,6 +20,8 @@
 .fc-chips::-webkit-scrollbar{display:none}
 .fc-chip{height:34px;padding:0 14px;border-radius:999px;border:1px solid #ffffff33;background:transparent;color:#fff;font-size:13px;font-weight:600;white-space:nowrap}
 .fc-chip.on{background:#42d3d0;border-color:#42d3d0;color:#071426;font-weight:700}
+.fc-sheet .fc-chip,.fc-body .fc-chip,.fc-card .fc-chip{color:#0b1d33;border-color:#cfd9e6;background:#fff}
+.fc-sheet .fc-chip.on,.fc-body .fc-chip.on{background:#42d3d0;border-color:#42d3d0;color:#071426}
 .fc-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;position:relative}
 .fc-banner{margin:12px 14px 4px;padding:12px 14px;border-radius:16px;background:#e3f4f2;border:1px solid #b7e3de;display:flex;align-items:center;gap:12px;color:#0d4a45;font-size:13px;line-height:1.4}
 .fc-banner button{border:0;background:#0b766e;color:#fff;border-radius:10px;padding:9px 12px;font-weight:700;white-space:nowrap}
