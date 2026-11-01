@@ -54,7 +54,7 @@ try:
     check("Owner Control exposes PayPal payment/refund controls",lambda: (_ for _ in ()).throw(AssertionError("PayPal controls missing")) if "PayPal payment requests & refunds" not in owner_control else None)
     check("Searchable category directory is available",lambda: (_ for _ in ()).throw(AssertionError("category directory too small")) if len(request("/api/categories")["categories"])<30 else None)
     check("Terms acceptance is enforced",lambda: request("/api/signup","POST",{"name":"QA","email":"no-terms@example.invalid","password":"SafePass123","role":"customer","accept_terms":False},expected=400))
-    provider=request("/api/signup","POST",{"name":"QA Provider","email":"qa-provider@example.invalid","password":"SafePass123","role":"provider","accept_terms":True})
+    provider=request("/api/signup","POST",{"name":"QA Provider","email":"qa-provider@example.invalid","password":"SafePass123","phone":"+27821110001","role":"provider","accept_terms":True})
     pt=provider["token"]
     row=db_one("SELECT accepted_terms_version,password_hash,accepted_terms_at FROM users WHERE email=?",("qa-provider@example.invalid",))
     check("Signup stores accepted terms and PBKDF2 password hash",lambda: (_ for _ in ()).throw(AssertionError(str(row))) if not row or row[0]!="2026-10-21-v1.2" or not row[1].startswith("pbkdf2_sha256$") or not row[2] else None)
@@ -98,7 +98,7 @@ try:
     check("Owner diagnostics expose PayPal Sandbox readiness safely",lambda: (_ for _ in ()).throw(AssertionError(pay_status)) if pay_status.get("provider")!="paypal" or pay_status.get("mode")!="sandbox" else None)
     bid=db_one("SELECT id FROM businesses WHERE name=?",("QA Real Service",))[0]
     request("/api/admin/businesses/%s"%bid,"POST",{"status":"active"},token=at)
-    customer=request("/api/signup","POST",{"name":"QA Customer","email":"qa-customer@example.invalid","password":"SafePass456","role":"customer","accept_terms":True})
+    customer=request("/api/signup","POST",{"name":"QA Customer","email":"qa-customer@example.invalid","password":"SafePass456","phone":"+27821110002","role":"customer","accept_terms":True})
     check("Customer can send an enquiry",lambda: request("/api/enquiries","POST",{"business_id":bid,"message":"QA enquiry"},token=customer["token"],expected=201))
     photo=request("/api/account/profile","POST",{"name":"QA Customer","phone":"+27820000000","profile_photo":"data:image/png;base64,aGVsbG8="},token=customer["token"])
     check("Customer profile photo saves to the account",lambda: (_ for _ in ()).throw(AssertionError(str(photo))) if photo.get("user",{}).get("profile_photo")!="data:image/png;base64,aGVsbG8=" or db_one("SELECT profile_photo FROM users WHERE email=?",("qa-customer@example.invalid",))[0]!="data:image/png;base64,aGVsbG8=" else None)
@@ -114,7 +114,7 @@ try:
     customer_inbox=request("/api/messages",token=customer["token"])
     check("Provider can reply and customer receives the reply",lambda: (_ for _ in ()).throw(AssertionError(str(customer_inbox))) if not any(x.get("message")=="Provider reply" for x in customer_inbox.get("items",[])) else None)
     # WorkFinder private user-to-user messaging is independent of provider enquiries.
-    other=request("/api/signup","POST",{"name":"QA WorkFinder Peer","email":"qa-workfinder-peer@example.invalid","password":"SafePass789","role":"customer","accept_terms":True})
+    other=request("/api/signup","POST",{"name":"QA WorkFinder Peer","email":"qa-workfinder-peer@example.invalid","password":"SafePass789","phone":"+27821110003","role":"customer","accept_terms":True})
     wfconv=request("/api/workfinder/conversations","POST",{"recipient_email":"qa-workfinder-peer@example.invalid"},token=customer["token"],expected=201)
     wf_id=wfconv["conversation_id"]
     request("/api/workfinder/messages","POST",{"conversation_id":wf_id,"message":"Private WorkFinder message"},token=customer["token"],expected=201)
