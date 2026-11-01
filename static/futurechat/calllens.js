@@ -12,7 +12,7 @@
   var MODEL = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
   var MODEL_LM = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 
-  var S = window.svLens = { i: -1, det: null, mode: '', lm: null, bs: {}, loading: false, failed: false, face: null, seen: 0, frame: 0, imgs: {} };
+  var S = window.svLens = { i: -1, e: -1, det: null, mode: '', lm: null, bs: {}, loading: false, failed: false, face: null, seen: 0, frame: 0, imgs: {} };
   function names() { var c = (window.FC_CHATMOJI && window.FC_CHATMOJI.cats) || [], out = []; c.forEach(function (x) { out = out.concat(x[1]); }); return out; }
   function img(name) {
     if (S.imgs[name]) return S.imgs[name];
@@ -132,7 +132,7 @@
     push(P(mo, -.42, 0), -wd * .12, -cL * .22, .2); push(P(mo, .42, 0), wd * .12, -cR * .22, .2); push(P(mo, 0, -.02), 0, ((cL + cR) / 2) * .07, .18);
     push(P(mo, 0, .1), 0, op * .2, .22); push(P(mo, 0, -.08), 0, -op * .04, .16);
     var gc = warp(v, w, h, ctrl);
-    if (gc) { x.save(); x.filter = (typeof svFx !== 'undefined' && svFx.filter) || 'none'; x.drawImage(gc, 0, 0, w, h); x.restore(); }
+    if (gc) { x.drawImage(gc, 0, 0, w, h); }
     // skin takes the Chatmoji colour, keeping your own shading
     if (!S.off || S.off.width !== w || S.off.height !== h) { S.off = document.createElement('canvas'); S.off.width = w; S.off.height = h; }
     var o = S.off.getContext('2d'); o.clearRect(0, 0, w, h);
@@ -220,7 +220,7 @@
       var mw = Math.hypot(L[61].x - L[291].x, L[61].y - L[291].y) / d;
       push(L[14], 0, dopen * .13, mw * .24); push(L[17], 0, dopen * .1, mw * .28); }
     var gc = warp(v, w, h, ctrl);
-    if (gc) { x.save(); x.filter = (typeof svFx !== 'undefined' && svFx.filter) || 'none'; x.drawImage(gc, 0, 0, w, h); x.restore(); }
+    if (gc) { x.drawImage(gc, 0, 0, w, h); }
     shut.forEach(function (Z) { shutEye(x, L, Z[0], Z[1], d); });
     // Colour: exactly your face outline, stopping just above the eyebrows so hair and fringe stay natural.
     if (!S.off || S.off.width !== w || S.off.height !== h) { S.off = document.createElement('canvas'); S.off.width = w; S.off.height = h; }
@@ -329,40 +329,45 @@
     }
   }
 
-  /* Called by the call filter engine for every outgoing frame. */
+  /* Called by the call filter engine for every outgoing frame. Face lens (S.i) and effect (S.e) can be combined. SV99-COMBO */
   window.svLensDraw = function (x, v, w, h) {
-    if (S.i < 0) return;
-    var nm = names(); var name = nm[S.i]; if (!name) return;
+    if (S.i < 0 && S.e < 0) return;
+    var nm = names(); if (!nm.length) return;
     track(v, w, h);
     var fresh = S.face && (Date.now() - S.seen < 1500);
-    var f = fresh ? S.face : { cx: w / 2, cy: h * .42, s: Math.min(w, h) * .42, a: 0 };
-    var t = Date.now() / 1000, k = KIND[S.i];
-    if (k === 0 || k === 1) {
-      // Your face becomes the Chatmoji (full mask for 1, expression face for 0), with its effect around you.
-      var done = k === 0 && fresh && (S.mode === 'mesh' && S.lm ? faceMesh(x, name, w, h, v) : faceAs(x, name, f, w, h, v));
+    var f = fresh ? S.face : { cx: w / 2, cy: h * .42, s: Math.min(w, h) * .42, a: 0, bw: Math.min(w, h) * .4, bh: Math.min(w, h) * .5 };
+    var t = Date.now() / 1000, done = false, name = S.i >= 0 ? nm[S.i] : '';
+    if (name) {
+      var k = KIND[S.i];
+      done = k === 0 && fresh && (S.mode === 'mesh' && S.lm ? faceMesh(x, name, w, h, v) : faceAs(x, name, f, w, h, v));
       if (!done && (k === 1 || S.failed || !S.det)) sprite(x, name, f.cx, f.cy - f.s * .04, f.s * (k === 1 ? 1.75 : 1.5), f.a);
-      var fxk = FX[S.i]; if (k === 0 && (fxk === 'burst' || fxk === 'hat')) fxk = 'orbit';
-      S.avoid = (done && fresh) ? { x: f.cx, y: f.cy, rx: f.bw * .62, ry: f.bh * .62 } : null;
-      scene(x, fxk, SPRITE[S.i], w, h, f, t); S.avoid = null;
-    } else {
-      scene(x, FX[S.i], SPRITE[S.i], w, h, f, t);
     }
+    S.avoid = (done && fresh) ? { x: f.cx, y: f.cy, rx: f.bw * .62, ry: f.bh * .62 } : null;
+    if (name && S.e < 0) { var fxk = FX[S.i]; if (KIND[S.i] === 0 && (fxk === 'burst' || fxk === 'hat')) fxk = 'orbit'; scene(x, fxk, SPRITE[S.i], w, h, f, t); }
+    if (S.e >= 0) { var fe = FX[S.e]; if (done && fe === 'burst') fe = 'orbit'; scene(x, fe, SPRITE[S.e], w, h, f, t); }
+    S.avoid = null;
   };
 
+  function chip(i, on, fn) { var nm = names(); return '<button type="button" class="sv-lens-chip' + (on ? ' on' : '') + '" aria-label="' + nm[i].replace(/_/g, ' ') + '" onclick="' + fn + '(' + i + ')"><img alt="" src="' + img(nm[i]).src + '"></button>'; }
   window.svLensBarHTML = function () {
     var nm = names(); if (!nm.length) return '';
-    var order = []; nm.forEach(function (_, i) { if (KIND[i] < 2) order.push(i); }); nm.forEach(function (_, i) { if (KIND[i] === 2) order.push(i); });
-    return '<div class="sv-lens-title">Chatmoji Lenses' + (S.loading ? ' · starting face tracking…' : (S.failed ? ' · face tracking unavailable, lens shown centred' : (S.mode === 'mesh' ? ' · precise face tracking' : (S.mode === 'box' ? ' · basic face tracking' : '')))) + '</div><div class="sv-fx-bar sv-lens-bar">' +
+    var faces = [], fx = []; nm.forEach(function (_, i) { (KIND[i] < 2 ? faces : fx).push(i); });
+    var status = S.loading ? ' · starting face tracking…' : (S.failed ? ' · face tracking unavailable, lens shown centred' : (S.mode === 'mesh' ? ' · precise face tracking' : (S.mode === 'box' ? ' · basic face tracking' : '')));
+    return '<div class="sv-lens-title">Face lenses' + status + '</div><div class="sv-fx-bar sv-lens-bar">' +
       '<button type="button" class="sv-fx-chip' + (S.i < 0 ? ' on' : '') + '" onclick="svPickLens(-1)">No lens</button>' +
-      order.map(function (i) { return '<button type="button" class="sv-lens-chip' + (S.i === i ? ' on' : '') + '" aria-label="' + nm[i].replace(/_/g, ' ') + ' lens" onclick="svPickLens(' + i + ')"><img alt="" src="' + img(nm[i]).src + '"></button>'; }).join('') + '</div>';
+      faces.map(function (i) { return chip(i, S.i === i, 'svPickLens'); }).join('') + '</div>' +
+      '<div class="sv-lens-title">Effects · ' + fx.length + ' (rockets, fireworks, rain, hearts…) · add one on top of any lens</div><div class="sv-fx-bar sv-lens-bar">' +
+      '<button type="button" class="sv-fx-chip' + (S.e < 0 ? ' on' : '') + '" onclick="svPickEffect(-1)">No effect</button>' +
+      fx.map(function (i) { return chip(i, S.e === i, 'svPickEffect'); }).join('') + '</div>';
   };
 
-  window.svPickLens = async function (i) {
-    S.i = Number(i); S.face = null; S.lm = null;
-    if (S.i >= 0) loadDetector().then(function () { if (typeof svRenderFxBar === 'function') svRenderFxBar(); });
+  async function refresh() {
+    if (S.i >= 0 || S.e >= 0) loadDetector().then(function () { if (typeof svRenderFxBar === 'function') svRenderFxBar(); });
     try { if (typeof svApplyCallFx === 'function') await svApplyCallFx(typeof svFx !== 'undefined' ? svFx.id : 'none'); } catch (_) {}
     if (typeof svRenderFxBar === 'function') svRenderFxBar();
-  };
+  }
+  window.svPickLens = function (i) { i = Number(i); if (i >= 0 && KIND[i] === 2) { S.e = i; } else { S.i = i; S.face = null; S.lm = null; } return refresh(); };
+  window.svPickEffect = function (i) { S.e = Number(i); return refresh(); };
 
   try {
     var st = document.createElement('style');
