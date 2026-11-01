@@ -692,8 +692,13 @@ public class MainActivity extends Activity {
             byte[] buffer=new byte[8192];int n;while((n=in.read(buffer))>0)fos.write(buffer,0,n);
         }
     }
+    @Override protected void onPause() {
+        super.onPause();
+        SkillvayaMessagingService.appVisible = false; // SV93-ONETASK
+    }
     @Override protected void onResume() {
         super.onResume();
+        SkillvayaMessagingService.appVisible = true;
         // Refresh the device-token association whenever the user returns to Skillvaya.
         if (BuildConfig.PUBLIC_URL != null && BuildConfig.PUBLIC_URL.startsWith("https://")) {
             PushTokenRegistrar.register(this, BuildConfig.PUBLIC_URL);

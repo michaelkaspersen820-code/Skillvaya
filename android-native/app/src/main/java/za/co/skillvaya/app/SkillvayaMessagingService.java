@@ -17,6 +17,8 @@ import com.google.firebase.messaging.RemoteMessage;
 
 public final class SkillvayaMessagingService extends FirebaseMessagingService {
     private static final String CALL_CHANNEL_ID = "skillvaya_incoming_calls_v2";
+    /** True while Skillvaya is on screen (set by MainActivity). SV93-ONETASK */
+    public static volatile boolean appVisible = false;
     private static final String MESSAGE_CHANNEL_ID = "skillvaya_messages_v2";
 
     @Override public void onNewToken(String token) {
@@ -37,6 +39,7 @@ public final class SkillvayaMessagingService extends FirebaseMessagingService {
             if ("call_ended".equals(type)) return;
         }
         boolean call = "incoming_call".equals(type);
+        if (!call && appVisible) return; // the open app already shows the new message
         RemoteMessage.Notification remoteNotification = message.getNotification();
         String title = message.getData().get("title");
         if ((title == null || title.isEmpty()) && remoteNotification != null) title = remoteNotification.getTitle();
@@ -84,7 +87,9 @@ public final class SkillvayaMessagingService extends FirebaseMessagingService {
         }
         int notificationId = call
                 ? (message.getData().getOrDefault("call_id", "call").hashCode() & 0x7fffffff)
-                : (int) (System.currentTimeMillis() & 0x7fffffff);
+                : (message.getData().containsKey("conversation_id")
+                    ? (("fc-" + message.getData().get("conversation_id")).hashCode() & 0x7fffffff)
+                    : (int) (System.currentTimeMillis() & 0x7fffffff));
         try {
             Notification built = builder.build();
             // Keep ringing (like a normal phone call) until answered, declined or timed out.

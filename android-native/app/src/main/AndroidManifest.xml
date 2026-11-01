@@ -21,7 +21,7 @@
             <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" /></intent-filter>
         </service>
         <activity android:name=".LensActivity" android:exported="false" android:screenOrientation="portrait" android:theme="@android:style/Theme.Material.NoActionBar" />
-        <activity android:name=".MainActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="true">
+        <activity android:name=".MainActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="true" android:launchMode="singleTask"><!-- SV93-ONETASK -->
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
             <receiver android:name=".CallDismissReceiver" android:exported="false" />
