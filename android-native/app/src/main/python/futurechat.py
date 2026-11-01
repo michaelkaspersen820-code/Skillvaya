@@ -339,6 +339,9 @@ def _title_for(c, conv, uid):
     return (other["name"] if other else "Conversation"), "person"
 
 
+_VIEWING = {}  # (user_id, conversation_id) -> last time the open chat screen fetched messages
+
+
 def _push(conv_id, sender, text, kind="message", extra=None):
     def run():
         try:
@@ -346,6 +349,8 @@ def _push(conv_id, sender, text, kind="message", extra=None):
                 rows = c.execute("SELECT user_id,muted FROM fc_members WHERE conversation_id=? AND user_id<>?", (conv_id, int(sender["id"]))).fetchall()
             for r in rows:
                 if int(r["muted"] or 0): continue
+                # Someone already looking at this chat sees the message appear; no separate alert.
+                if time.time() - _VIEWING.get((int(r["user_id"]), int(conv_id)), 0) < 8: continue
                 data = {"type": kind, "conversation_id": str(conv_id), "url": "/customer-app?fc=%d" % conv_id}
                 data.update(extra or {})
                 send = getattr(A, "fcm_send_to_user", None)
@@ -421,6 +426,7 @@ def handle_get(h, path):
     if path == "/api/fc/messages":
         try: conv_id = int(q.get("c", ["0"])[0]); after = int(q.get("after", ["0"])[0]); before = int(q.get("before", ["0"])[0])
         except ValueError: return h.sendj({"error": "Invalid request."}, 400)
+        _VIEWING[(int(uid), conv_id)] = time.time()  # SV93-NODUPE
         with A.conn() as c:
             mem = _require_member(c, conv_id, u)
             conv = c.execute("SELECT * FROM fc_conversations WHERE id=?", (conv_id,)).fetchone()

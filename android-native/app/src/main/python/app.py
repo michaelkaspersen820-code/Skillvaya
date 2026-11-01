@@ -1,3 +1,4 @@
+# SV93-NODUPE
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import json, sqlite3, hashlib, hmac, secrets, os, datetime, threading, webbrowser, urllib.parse, urllib.request, urllib.error, base64, time
@@ -779,7 +780,11 @@ def webpush_send_to_user(user_id, title, body, data=None):
     if not vapid: return 0
     try:
         with conn() as c:
-            rows=c.execute("SELECT endpoint,p256dh,auth FROM webpush_subscriptions WHERE user_id=? AND enabled=1",(int(user_id),)).fetchall()
+            rows=c.execute("SELECT endpoint,p256dh,auth,user_agent FROM webpush_subscriptions WHERE user_id=? AND enabled=1",(int(user_id),)).fetchall()
+            try:
+                _has_app=c.execute("SELECT 1 FROM push_device_tokens WHERE user_id=? AND enabled=1 LIMIT 1",(int(user_id),)).fetchone()
+            except Exception: _has_app=None
+            if _has_app: rows=[r for r in rows if "android" not in str(r["user_agent"] or "").lower()]
     except Exception as exc:
         print("Web push lookup failed:", type(exc).__name__); return 0
     payload={str(k):str(v)[:500] for k,v in (data or {}).items() if v is not None}
@@ -3375,7 +3380,7 @@ function svSetCallState(text){const el=document.getElementById('svCallState');if
 let svIncomingAlertTimer=null,svIncomingAlertAudio=null,svIncomingAlertId='';
 function svPlayIncomingCallTone(){try{const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return;if(!svIncomingAlertAudio)svIncomingAlertAudio=new AudioCtx();if(svIncomingAlertAudio.state==='suspended')svIncomingAlertAudio.resume().catch(()=>{});const ctx=svIncomingAlertAudio,osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.value=760;gain.gain.setValueAtTime(0.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.055,ctx.currentTime+0.025);gain.gain.setValueAtTime(0.055,ctx.currentTime+0.22);gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.32);osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+0.34);}catch(_){}}
 function svStopIncomingCallAlert(){if(svIncomingAlertTimer){clearInterval(svIncomingAlertTimer);svIncomingAlertTimer=null;}try{if(window.SkillvayaCallRinger&&typeof window.SkillvayaCallRinger.stop==='function')window.SkillvayaCallRinger.stop()}catch(_){}try{if(navigator.vibrate)navigator.vibrate(0)}catch(_){}const p=document.getElementById('svIncomingVideoCall');if(p)p.classList.remove('sv-call-ringing');svIncomingAlertId='';}
-function svStartIncomingCallAlert(incoming){const id=String(incoming&&incoming.id||'');if(!id||svIncomingAlertId===id)return;svStopIncomingCallAlert();svIncomingAlertId=id;const p=document.getElementById('svIncomingVideoCall');if(p)p.classList.add('sv-call-ringing');let nativeRinger=false;try{if(window.SkillvayaCallRinger&&typeof window.SkillvayaCallRinger.start==='function'){window.SkillvayaCallRinger.start(String(incoming.caller_name||'Skillvaya contact'));nativeRinger=true;}}catch(_){}if(!nativeRinger)svPlayIncomingCallTone();try{if(!nativeRinger&&navigator.vibrate)navigator.vibrate([350,180,350,850])}catch(_){}if('Notification'in window&&Notification.permission==='granted'){try{const n=new Notification('Skillvaya calling',{body:(incoming.caller_name||'Your contact')+' is calling you.',tag:'skillvaya-call-'+id,requireInteraction:true});n.onclick=()=>{try{window.focus()}catch(_){}n.close()}}catch(_){}}svIncomingAlertTimer=setInterval(()=>{if(!svIncomingAlertId)return;if(!nativeRinger&&document.visibilityState==='visible')svPlayIncomingCallTone();try{if(!nativeRinger&&navigator.vibrate)navigator.vibrate([350,180,350,850])}catch(_){}},1900);}
+function svStartIncomingCallAlert(incoming){const id=String(incoming&&incoming.id||'');if(!id||svIncomingAlertId===id)return;try{if(window.SkillvayaCallRinger&&document.visibilityState==='visible')api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'seen',call_id:id})}).catch(()=>{})}catch(_){}svStopIncomingCallAlert();svIncomingAlertId=id;const p=document.getElementById('svIncomingVideoCall');if(p)p.classList.add('sv-call-ringing');let nativeRinger=false;try{if(window.SkillvayaCallRinger&&typeof window.SkillvayaCallRinger.start==='function'){window.SkillvayaCallRinger.start(String(incoming.caller_name||'Skillvaya contact'));nativeRinger=true;}}catch(_){}if(!nativeRinger)svPlayIncomingCallTone();try{if(!nativeRinger&&navigator.vibrate)navigator.vibrate([350,180,350,850])}catch(_){}if('Notification'in window&&Notification.permission==='granted'){try{const n=new Notification('Skillvaya calling',{body:(incoming.caller_name||'Your contact')+' is calling you.',tag:'skillvaya-call-'+id,requireInteraction:true});n.onclick=()=>{try{window.focus()}catch(_){}n.close()}}catch(_){}}svIncomingAlertTimer=setInterval(()=>{if(!svIncomingAlertId)return;if(!nativeRinger&&document.visibilityState==='visible')svPlayIncomingCallTone();try{if(!nativeRinger&&navigator.vibrate)navigator.vibrate([350,180,350,850])}catch(_){}},1900);}
 function svShowCallModal(title,state,mode){svEnsureCallOverlays();const modal=document.getElementById('svVideoCallModal');modal.classList.toggle('sv-call-voice-only',mode==='voice');modal.setAttribute('aria-label',mode==='voice'?'Skillvaya voice call':'Skillvaya video call');const camera=modal.querySelector('.sv-call-actions button[aria-label="Turn call camera on or off"]');if(camera)camera.hidden=mode==='voice';modal.classList.remove('hidden');const t=document.getElementById('svCallTitle');if(t)t.textContent=title||(mode==='voice'?'Skillvaya voice call':'Skillvaya video call');svSetCallState(state||'Connecting…');}
 function svSetLocalStream(stream){const v=document.getElementById('svCallLocalVideo');if(v){v.srcObject=stream;v.play().catch(()=>{});}}
 function svSetRemoteStream(stream){const v=document.getElementById('svCallRemoteVideo');if(v){v.srcObject=stream;v.play().catch(()=>{});}}
@@ -5791,7 +5796,15 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         except Exception: return self.sendj({"error":"A valid video call answer is required."},400)
                         if call["status"]!="ringing": return self.sendj({"error":"This call is no longer ringing."},409)
                         db_atomic(c,"UPDATE video_calls SET status='accepted',answer_sdp=?,updated_at=? WHERE id=?",(json.dumps(ans_obj),now(),call_id))
+                        try: threading.Thread(target=fcm_send_to_user,args=(int(call["callee_id"]),"Call answered","",{"type":"call_ended","call_id":call_id}),daemon=True).start()
+                        except Exception: pass
                         return self.sendj({"ok":True,"status":"accepted"})
+                    if action=="seen":
+                        # The app is open and showing this call, so it rings itself: silence the phone's separate ring.
+                        if int(u["id"])==int(call["callee_id"]) and call["status"]=="ringing":
+                            try: threading.Thread(target=fcm_send_to_user,args=(int(call["callee_id"]),"Call on screen","",{"type":"call_ended","call_id":call_id}),daemon=True).start()
+                            except Exception: pass
+                        return self.sendj({"ok":True})
                     if action=="candidate":
                         if call["status"] not in ("ringing","accepted"): return self.sendj({"error":"This call is no longer active."},409)
                         candidate=d.get("candidate")
@@ -5806,7 +5819,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         if action=="end" and call["status"]=="ringing" and int(u["id"])==int(call["caller_id"]): status="missed"
                         db_atomic(c,"UPDATE video_calls SET status=?,updated_at=?,ended_at=? WHERE id=?",(status,stamp,stamp,call_id))
                         if status=="missed": sv_missed_call_notice(c,dict(call))
-                        elif call["status"]=="ringing":
+                        if call["status"]=="ringing" or (action=="reject"):
                             try: threading.Thread(target=fcm_send_to_user,args=(int(call["callee_id"]),"Call ended","",{"type":"call_ended","call_id":call_id}),daemon=True).start()
                             except Exception: pass
                         return self.sendj({"ok":True,"status":status})
