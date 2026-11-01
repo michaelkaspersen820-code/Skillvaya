@@ -45,6 +45,7 @@ public final class SkillvayaMessagingService extends FirebaseMessagingService {
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         intent.putExtra("skillvaya_push_type", call ? "incoming_call" : "message");
         if (message.getData().containsKey("call_id")) intent.putExtra("skillvaya_call_id", message.getData().get("call_id"));
+        if (message.getData().containsKey("conversation_id")) intent.putExtra("skillvaya_fc", message.getData().get("conversation_id"));
         PendingIntent pending = PendingIntent.getActivity(this, (int) (System.currentTimeMillis() & 0x7fffffff),
                 intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
@@ -58,6 +59,11 @@ public final class SkillvayaMessagingService extends FirebaseMessagingService {
                 .setPriority(call ? NotificationCompat.PRIORITY_MAX : NotificationCompat.PRIORITY_HIGH)
                 .setCategory(call ? NotificationCompat.CATEGORY_CALL : NotificationCompat.CATEGORY_MESSAGE)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
+        if (call) {
+            // Ring like a phone call: show over the lock screen and keep ringing until answered or timed out.
+            builder.setFullScreenIntent(pending, true).setOngoing(true).setTimeoutAfter(45000)
+                   .addAction(0, "Answer", pending);
+        }
         // On Android O+, channel sound/vibration settings are authoritative.
         if (call && Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             builder.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))

@@ -306,6 +306,17 @@ public class MainActivity extends Activity {
     private PermissionRequest pendingWebPermission;
     private File cameraOutputFile;
     private static final int FILE_CHOOSER_REQUEST = 7341;
+    private FutureChatBridge futureChatBridge;
+    private String futureChatExtra(Intent intent) {
+        String id = intent == null ? null : intent.getStringExtra("skillvaya_fc");
+        return id != null && id.matches("\\d{1,12}") ? id : null;
+    }
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String fc = futureChatExtra(intent);
+        if (fc != null && webView != null) webView.evaluateJavascript("window.FutureChat&&window.FutureChat.open(" + fc + ")", null);
+    }
     private static final int WEB_RTC_PERMISSION_REQUEST = 7342;
     private boolean handleExternalNavigation(String rawUrl) {
         if (rawUrl == null || rawUrl.trim().isEmpty()) return true;
@@ -394,6 +405,8 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(notificationPermissionBridge, "SkillvayaNotifications");
         callRingerBridge = new CallRingerBridge();
         webView.addJavascriptInterface(callRingerBridge, "SkillvayaCallRinger");
+        futureChatBridge = new FutureChatBridge(this, webView);
+        webView.addJavascriptInterface(futureChatBridge, "FutureChatNative");
         if (BuildConfig.PUBLIC_URL != null && BuildConfig.PUBLIC_URL.trim().startsWith("https://")) {
             playBillingBridge = new PlayBillingBridge(this, BuildConfig.PUBLIC_URL.trim());
             webView.addJavascriptInterface(playBillingBridge, "SkillvayaBilling");
@@ -571,7 +584,8 @@ public class MainActivity extends Activity {
                 String baseUrl = BuildConfig.PUBLIC_URL.trim().replaceAll("/+$", "");
                 // Open the public directory first. The standalone /login gateway hides the
                 // customer category list, so account actions should be entered from the app UI.
-                webView.loadUrl(baseUrl + "/customer-app?native_refresh=" + System.currentTimeMillis());
+                String fcOpen = futureChatExtra(getIntent());
+                webView.loadUrl(baseUrl + "/customer-app?native_refresh=" + System.currentTimeMillis() + (fcOpen != null ? "&fc=" + fcOpen : ""));
                 return;
             }
             for (String name : new String[]{"website.html","icon-192.png","icon-512.png","sv-logo.jpeg"}) copyAsset(name);
@@ -639,6 +653,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == FutureChatBridge.LENS_REQUEST) { if (futureChatBridge != null) futureChatBridge.deliverLens(resultCode, data); return; }
         if (requestCode == FILE_CHOOSER_REQUEST) {
             if (filePathCallback == null) return;
             Uri[] results = null;

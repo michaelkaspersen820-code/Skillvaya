@@ -296,7 +296,7 @@ def handle_get(h, path):
             out.append(d)
         return h.sendj({"conversation": {"id": conv_id, "kind": conv["kind"], "title": title, "who": who, "business_id": int(conv["business_id"] or 0),
                                          "customer_id": int(conv["customer_id"] or 0), "muted": bool(mem["muted"]), "archived": bool(mem["archived"]),
-                                         "pinned": bool(mem["pinned"]), "members": [_public_user(m) for m in members], "dial": re.sub(r"[^\d+]", "", dial)},
+                                         "pinned": bool(mem["pinned"]), "members": [_public_user(m) for m in members], "dial": re.sub(r"[^\d+]", "", str(dial or ""))},
                         "items": out})
     if path.startswith("/api/fc/file/"):
         try: att_id = int(path.rsplit("/", 1)[1])
