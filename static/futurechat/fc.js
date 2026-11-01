@@ -725,6 +725,29 @@
     const p = new URLSearchParams(location.search); const fc = p.get('fc');
     if (fc && token()) setTimeout(() => open(Number(fc) || 0), 400);
     if (p.get('fc_verify') === '1' && token()) setTimeout(() => verifyPhone(true), 800);
+    // SV93-ASKPHONE: every signed-in customer and provider is asked to add and confirm their number once,
+    // with "Later" snoozing the ask for a day. Account also gets a Phone number card.
+    let asked = false;
+    const askPhone = async () => {
+      if (asked || !token() || S.open || document.querySelector('.fc-sheet')) return;
+      let snooze = 0; try { snooze = Number(localStorage.getItem('sv_phone_ask_snooze') || 0); } catch (_) {}
+      let st = {}; try { st = await api('/api/phone/status'); } catch (_) { return; }
+      phoneCard(st);
+      if (st.verified || Date.now() < snooze) { asked = true; return; }
+      asked = true;
+      try { localStorage.setItem('sv_phone_ask_snooze', String(Date.now() + 24 * 3600 * 1000)); } catch (_) {}
+      verifyPhone(true);
+    };
+    const phoneCard = st => {
+      const s = document.getElementById('settings'); if (!s) return;
+      let c = document.getElementById('svPhoneCard');
+      if (!c) { c = document.createElement('div'); c.id = 'svPhoneCard'; c.className = 'card'; c.style.cssText = 'margin:16px 0;border-radius:16px;padding:14px 16px!important;overflow:visible!important;box-sizing:border-box;background:#fff;border:1px solid #dce7f5;color:#122238'; const ref = document.getElementById('svDataSaverCard'); if (ref) s.insertBefore(c, ref); else s.appendChild(c); }
+      const label = st.verified ? (st.method === 'email' ? 'Confirmed by email' : st.method === 'self' ? 'Saved' : 'Verified') : 'Not added yet';
+      c.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span><strong>Phone number</strong><span class="muted tiny" style="display:block">' + esc(st.verified ? st.phone : 'Add your number so customers, providers, friends and family can reach you on Future Chat.') + ' · ' + label + '</span></span><button type="button" class="primary" style="flex:none;padding:8px 14px;border-radius:10px">' + (st.verified ? 'Change' : 'Add number') + '</button></div>';
+      c.querySelector('button').onclick = () => verifyPhone(true);
+    };
+    setTimeout(askPhone, 2500); setInterval(askPhone, 20000);
+    document.addEventListener('click', e => { const t = e.target && e.target.closest && e.target.closest('#nav-settings'); if (t) setTimeout(async () => { try { phoneCard(await api('/api/phone/status')); } catch (_) {} }, 600); }, true);
     setInterval(async () => { if (!token() || document.visibilityState === 'hidden' || S.open) return; try { const d = await api('/api/fc/pulse'); const btn = document.getElementById('nav-messages'); if (btn) { S.list = S.list || []; let b = btn.querySelector('.fc-navbadge'); if (!b) { updateBadge(); b = btn.querySelector('.fc-navbadge'); } if (b) { b.textContent = d.unread > 99 ? '99+' : String(d.unread); b.style.display = d.unread ? 'grid' : 'none'; } } } catch (_) {} }, 15000);
   }
   function share(text) { S.pendingShare = String(text || ''); open(); setTimeout(() => toast('Pick a chat to share with'), 300); }
