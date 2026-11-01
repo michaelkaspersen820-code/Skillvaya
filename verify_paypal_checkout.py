@@ -84,7 +84,8 @@ def check(name, fn):
 try:
     provider = request("/api/signup", "POST", {
         "name":"PayPal QA Provider", "email":"qa-paypal-provider@example.test",
-        "password":"SecureQApass123", "role":"provider", "accept_terms":True,
+        "password":"SecureQApass123", "phone":"+27821110009",
+        "role":"provider", "accept_terms":True,
     })
     token = provider["token"]
     admin = request("/api/login", "POST", {
