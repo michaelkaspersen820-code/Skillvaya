@@ -225,7 +225,7 @@
     // Colour: exactly your face outline, stopping just above the eyebrows so hair and fringe stay natural.
     if (!S.off || S.off.width !== w || S.off.height !== h) { S.off = document.createElement('canvas'); S.off.width = w; S.off.height = h; }
     var o = S.off.getContext('2d'); o.clearRect(0, 0, w, h);
-    var em = { x: (re.x + le.x) / 2, y: (re.y + le.y) / 2 }, topV = -.56 + browDown;
+    var em = { x: (re.x + le.x) / 2, y: (re.y + le.y) / 2 }, topV = -.84 + browDown;
     o.save(); o.filter = 'blur(' + Math.max(2, d * .09).toFixed(1) + 'px)'; o.fillStyle = col; o.beginPath();
     OVAL.forEach(function (i, n) {
       var p = L[i], au = (p.x - em.x) * ux + (p.y - em.y) * uy, av = (p.x - em.x) * vx + (p.y - em.y) * vy;
@@ -372,7 +372,8 @@
     x.moveTo(cx - size * .3, cy + ph / 2); x.lineTo(cx - size * .9, cy + ph / 2 + size * .7); x.lineTo(cx + size * .2, cy + ph / 2); x.fill(); x.stroke();
     x.fillStyle = '#0b2447'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, cx, cy + size * .05); x.restore();
   }
-  function hint(x, text, w, h) { var sz = Math.max(13, Math.min(w, h) * .04); x.save(); x.font = '800 ' + Math.round(sz) + 'px sans-serif'; var tw = x.measureText(text).width;
+  function hint() { return; }
+  function hint_unused(x, text, w, h) { var sz = Math.max(13, Math.min(w, h) * .04); x.save(); x.font = '800 ' + Math.round(sz) + 'px sans-serif'; var tw = x.measureText(text).width;
     x.globalAlpha = .75; x.fillStyle = '#000'; x.fillRect(w / 2 - tw / 2 - sz * .6, h - sz * 2.6, tw + sz * 1.2, sz * 1.8); x.globalAlpha = 1; x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, w / 2, h - sz * 1.7); x.restore(); }
   function drawOrig(x, id, w, h, f, t) {
     var now = performance.now(), dt = S.lastO ? clamp((now - S.lastO) / 1000, 0, .1) : 0; S.lastO = now;
@@ -412,7 +413,7 @@
       var say = react ? (smile > .5 ? 'Lekker!' : (frown > .35 ? 'Eish!' : '')) : ((t % 6) < 3 ? 'Lekker!' : 'Eish!');
       if (say) { S.say = say; S.sayT = 1.2; } S.sayT = (S.sayT || 0) - dt;
       if (S.sayT > 0) { var pop = 1 + Math.max(0, S.sayT - 1) * 2; bubble(x, S.say, top.x + d * 1.1, top.y - d * .1, Math.max(14, d * .34) * pop); }
-      else if (react) hint(x, 'Smile for Lekker! · frown for Eish!', w, h);
+      
     } else if (name === 'vuvuzela') {
       var ang = .3, len = d * 1.8, bell = d * .42, ux2 = Math.cos(ang), uy2 = Math.sin(ang), end = { x: mouth.x + ux2 * len, y: mouth.y + uy2 * len };
       x.save(); x.translate(mouth.x, mouth.y); x.rotate(ang);
@@ -479,11 +480,11 @@
     return '<div class="sv-lens-title">Face lenses' + status + '</div><div class="sv-fx-bar sv-lens-bar">' +
       '<button type="button" class="sv-fx-chip' + (S.i < 0 ? ' on' : '') + '" onclick="svPickLens(-1)">No lens</button>' +
       faces.map(function (i) { return chip(i, S.i === i, 'svPickLens'); }).join('') + '</div>' +
-      '<div class="sv-lens-title">Effects · ' + fx.length + ' (rockets, fireworks, rain, hearts…) · add one on top of any lens</div><div class="sv-fx-bar sv-lens-bar">' +
+      '<div class="sv-lens-title">Effects</div><div class="sv-fx-bar sv-lens-bar">' +
       '<button type="button" class="sv-fx-chip' + (S.e < 0 ? ' on' : '') + '" onclick="svPickEffect(-1)">No effect</button>' +
       fx.map(function (i) { return chip(i, S.e === i, 'svPickEffect'); }).join('') + '</div>' +
-      '<div class="sv-lens-title">Skillvaya originals · some react to your face</div><div class="sv-fx-bar sv-lens-bar">' +
-      ORIG.map(function (o, n) { return '<button type="button" class="sv-orig-chip' + (S.e === 200 + n ? ' on' : '') + '" aria-label="' + o[2] + '" onclick="svPickEffect(' + (200 + n) + ')"><span>' + o[1] + '</span><small>' + o[2] + '</small></button>'; }).join('') + '</div>';
+      '<div class="sv-lens-title">Skillvaya originals</div><div class="sv-fx-bar sv-lens-bar">' +
+      ORIG.map(function (o, n) { return '<button type="button" class="sv-orig-chip' + (S.e === 200 + n ? ' on' : '') + '" aria-label="' + o[2] + '" onclick="svPickEffect(' + (200 + n) + ')"><span>' + o[1] + '</span></button>'; }).join('') + '</div>';
   };
 
   async function refresh() {
@@ -496,7 +497,7 @@
 
   try {
     var st = document.createElement('style');
-    st.textContent = '.sv-lens-title{color:#fff;font-weight:800;font-size:13px;margin:10px 2px 0;opacity:.9}.sv-lens-chip{flex:none;width:52px;height:52px;border-radius:50%;border:2px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);padding:6px;display:grid;place-items:center}.sv-lens-chip img{width:36px;height:36px}.sv-lens-chip.on{border-color:#fff;background:rgba(255,255,255,.3)}.sv-orig-chip{flex:none;min-width:84px;border-radius:16px;border:2px solid rgba(255,215,0,.45);background:linear-gradient(180deg,rgba(0,119,73,.35),rgba(255,184,28,.18));color:#fff;padding:6px 8px;display:grid;justify-items:center;gap:2px}.sv-orig-chip span{font-size:26px;line-height:1}.sv-orig-chip small{font-size:10.5px;font-weight:800;white-space:nowrap}.sv-orig-chip.on{border-color:#FFB81C;background:rgba(255,184,28,.45)}';
+    st.textContent = '.sv-lens-title{color:#fff;font-weight:800;font-size:13px;margin:10px 2px 0;opacity:.9}.sv-lens-chip{flex:none;width:52px;height:52px;border-radius:50%;border:2px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);padding:6px;display:grid;place-items:center}.sv-lens-chip img{width:36px;height:36px}.sv-lens-chip.on{border-color:#fff;background:rgba(255,255,255,.3)}.sv-orig-chip{flex:none;min-width:52px;height:52px;align-content:center;border-radius:16px;border:2px solid rgba(255,215,0,.45);background:linear-gradient(180deg,rgba(0,119,73,.35),rgba(255,184,28,.18));color:#fff;padding:6px 8px;display:grid;justify-items:center;gap:2px}.sv-orig-chip span{font-size:26px;line-height:1}.sv-orig-chip small{font-size:10.5px;font-weight:800;white-space:nowrap}.sv-orig-chip.on{border-color:#FFB81C;background:rgba(255,184,28,.45)}';
     document.head.appendChild(st);
   } catch (_) {}
 })();
