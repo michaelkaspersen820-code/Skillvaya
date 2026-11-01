@@ -1083,8 +1083,21 @@ def send_owner_email(subject, body, recipient=None):
     try:
         import smtplib
         from email.message import EmailMessage
-        m=EmailMessage(); m["Subject"]="[Skillvaya] "+subject; m["From"]=sender; m["To"]=recipient
+        # SV93-MAILHDR: proper sender name, Date and Message-ID headers plus an HTML part, so Gmail and
+        # other providers treat these as normal mail instead of filtering them to Spam.
+        from email.utils import formataddr, formatdate, make_msgid, parseaddr
+        import html as _html
+        m=EmailMessage(); m["Subject"]="Skillvaya: "+subject
+        m["From"]=formataddr(("Skillvaya", parseaddr(sender)[1] or sender)); m["To"]=recipient
+        m["Reply-To"]=parseaddr(sender)[1] or sender
+        m["Date"]=formatdate(localtime=False); m["Message-ID"]=make_msgid(domain=(parseaddr(sender)[1].split("@")[-1] or "skillvaya.app"))
+        m["Auto-Submitted"]="auto-generated"
         m.set_content(body)
+        _paras="".join("<p style=\"margin:0 0 14px\">"+_html.escape(p).replace("\n","<br>")+"</p>" for p in str(body).split("\n\n") if p.strip())
+        m.add_alternative("<!doctype html><html><body style=\"margin:0;padding:24px;background:#f3f6fb;font-family:Arial,Helvetica,sans-serif;color:#142b4a\">"
+            "<div style=\"max-width:520px;margin:0 auto;background:#ffffff;border-radius:12px;padding:24px;border:1px solid #dce6f5\">"
+            "<div style=\"font-size:20px;font-weight:bold;color:#102f5a;margin-bottom:16px\">Skillvaya</div>"+_paras+
+            "</div><div style=\"max-width:520px;margin:12px auto 0;font-size:12px;color:#6b7c93;text-align:center\">Sent by Skillvaya because of activity on your account.</div></body></html>", subtype="html")
         with smtplib.SMTP(host,port,timeout=12) as server:
             server.starttls(); server.login(user,password); server.send_message(m)
         return True

@@ -836,7 +836,7 @@ def _email_phone_start(h, u, d):
         c.execute("INSERT INTO fc_phone_codes(user_id,phone,code_hash,expires_at,sent_at,tries) VALUES(?,?,?,?,?,0)", (uid, phone, _code_hash(uid, code), exp, now.isoformat()))
     body = ("Hi %s,\n\nYour Skillvaya code to confirm the phone number %s is:\n\n    %s\n\n"
             "It expires in 15 minutes. If you didn't ask for this, you can ignore this email.\n\nSkillvaya" % (str(r["name"] or "there"), phone, code))
-    if not A.send_owner_email("Your phone confirmation code: " + code, body, recipient=email):
+    if not A.send_owner_email("Your phone confirmation code", body, recipient=email):
         # SV93-SELFPHONE: email isn't set up on the server yet, so save the number now (marked unconfirmed)
         # rather than blocking the person. A later email or SMS check can take the number back.
         with A.conn() as c:
