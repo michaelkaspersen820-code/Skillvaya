@@ -177,8 +177,9 @@ def db_batch(c, statements):
 def fcm_send_to_user(user_id, title, body, data=None):
     """Send a visible high-priority Android call notification; never block call signalling."""
     # SV78-WEBPUSH-01: browsers (iPhone home-screen app, computers, other phones) get the same alert.
-    try: webpush_send_async(user_id, title, body, data)
-    except Exception as exc: print("Web push scheduling failed:", type(exc).__name__)
+    if (data or {}).get("type") != "call_ended":
+        try: webpush_send_async(user_id, title, body, data)
+        except Exception as exc: print("Web push scheduling failed:", type(exc).__name__)
     raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
     if not raw:
         print("FCM unavailable: FIREBASE_SERVICE_ACCOUNT_JSON is not configured")
@@ -219,21 +220,13 @@ def fcm_send_to_user(user_id, title, body, data=None):
                 # Combined notification + data is intentional: when Skillvaya is backgrounded,
                 # Android itself places the call alert in the system tray even if the app
                 # process is sleeping. The dedicated native channel supplies the ringtone.
+                # SV91-RING: data-only + high priority wakes the app even when it is closed, so the
+                # native service can show the full-screen ringing call screen (a notification
+                # message would be shown by Android itself as a plain tray alert instead).
                 message = messaging.Message(
                     token=token,
-                    notification=messaging.Notification(title=str(title)[:100], body=str(body)[:220]),
                     data=payload,
-                    android=messaging.AndroidConfig(
-                        priority="high",
-                        ttl=datetime.timedelta(seconds=30),
-                        notification=messaging.AndroidNotification(
-                            channel_id="skillvaya_incoming_calls_v2",
-                            priority="max",
-                            default_sound=True,
-                            default_vibrate_timings=True,
-                            visibility="public",
-                        ),
-                    ),
+                    android=messaging.AndroidConfig(priority="high", ttl=datetime.timedelta(seconds=40)),
                 )
             else:
                 # Preserve the existing chat-push behavior.
@@ -427,6 +420,14 @@ def delete_account_data(c, user_id, request_id=None):
     delete_where("platform_ratings", "rater_id=?", [user_id])
     delete_where("webpush_subscriptions", "user_id=?", [user_id])
     delete_where("futurechat_waitlist", "user_id=?", [user_id])
+    # Future Chat: the account's own messages, media, reactions, stokvel records and memberships.
+    delete_where("fc_attachments", "message_id IN (SELECT id FROM fc_messages WHERE sender_id=?)", [user_id])
+    delete_where("fc_reactions", "user_id=? OR message_id IN (SELECT id FROM fc_messages WHERE sender_id=?)", [user_id, user_id])
+    delete_where("fc_stars", "user_id=?", [user_id])
+    delete_where("fc_fetches", "user_id=?", [user_id])
+    delete_where("fc_stokvel_payments", "user_id=?", [user_id])
+    delete_where("fc_messages", "sender_id=?", [user_id])
+    delete_where("fc_members", "user_id=?", [user_id])
     delete_where("favorites", "customer_id=?", [user_id])
     delete_where("contacts", "customer_id=?", [user_id])
     delete_where("ratings", "rater_id=? OR target_user_id=?", [user_id, user_id])
@@ -817,12 +818,16 @@ def sv_missed_call_notice(c, call):
         kind="video" if "m=video" in str(call.get("offer_sdp") or "") else "voice"
         caller=c.execute("SELECT name FROM users WHERE id=?",(int(call["caller_id"]),)).fetchone()
         name=(caller["name"] if caller else "") or "Your contact"
-        q="INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)"
-        p=(int(call["business_id"]),int(call["customer_id"]),int(call["caller_id"]),"Missed %s call"%kind,now())
-        if "db_atomic" in globals(): db_atomic(c,q,p)
-        else: c.execute(q,p)
+        fc_conv=int(call.get("conversation_id") or 0)
+        if fc_conv:
+            FC.call_event(c,fc_conv,int(call["caller_id"]),"Missed %s call"%kind)
+        else:
+            q="INSERT INTO messages(business_id,customer_id,sender_id,message,created_at) VALUES(?,?,?,?,?)"
+            p=(int(call["business_id"]),int(call["customer_id"]),int(call["caller_id"]),"Missed %s call"%kind,now())
+            if "db_atomic" in globals(): db_atomic(c,q,p)
+            else: c.execute(q,p)
         push=globals().get("fcm_send_async")
-        if push: push(int(call["callee_id"]),"Missed call","Missed %s call from %s. Open Skillvaya to call back."%(kind,name),{"type":"missed_call","business_id":int(call["business_id"]),"customer_id":int(call["customer_id"])})
+        if push: push(int(call["callee_id"]),"Missed call","Missed %s call from %s. Open Skillvaya to call back."%(kind,name),{"type":"missed_call","call_id":str(call.get("id") or ""),"business_id":int(call["business_id"]),"customer_id":int(call["customer_id"]),"conversation_id":str(fc_conv),"url":("/customer-app?fc=%d"%fc_conv) if fc_conv else "/customer-app"})
     except Exception as exc:
         print("Missed-call notice failed:", type(exc).__name__)
 # SV78-WEBPUSH-01: browser push (iPhone home-screen app, computers, other phones) next to Firebase for the Android app.
@@ -2586,7 +2591,7 @@ header.top:not(#z):not(#z) .studio-header-subtitle{font-size:12px!important;line
 <div class="design-section-heading"><div><span class="design-eyebrow">EXPLORE SKILLVAYA</span><h2 id="designCategoryTitle">Service categories</h2><p class="muted">Find the right specialist for your next project.</p></div><button type="button" class="ghost" id="toggleDesignCategories" onclick="toggleDesignCategories()">View all</button></div>
 <div id="designCategoryTiles" class="design-category-tiles" aria-live="polite"><div class="design-category-loading">Loading service categories…</div></div>
 </section>
-<section id="customer" class="layout"><aside class="panel"><h3>All service categories</h3><select id="categories" aria-label="Choose a service category" style="width:100%;margin-top:12px"><option value="All categories">All categories</option></select></aside><section><div class="sectionhead"><div><h2 id="resTitle">Find a service</h2><span class="muted tiny" id="count"></span></div><select id="sort" style="max-width:180px" onchange="loadBusinesses()"><option value="featured">Featured first</option><option value="near">Near me</option><option value="available">Available today</option><option value="rating">Highest rated</option><option value="name">Name A–Z</option></select></div><div id="results" class="results hidden" aria-hidden="true"></div><div class="card" id="svFutureChatCard" style="margin-top:18px;border:1px solid #1d4f7c;background:linear-gradient(135deg,#0d2440,#14406b);color:#eef6ff"><div style="display:flex;gap:14px;align-items:flex-start"><div style="font-size:34px;line-height:1" aria-hidden="true">💬</div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:800;letter-spacing:.08em;color:#7fe3f0;text-transform:uppercase">Coming soon</div><h2 style="margin:2px 0 6px;color:#fff">Future Chat</h2><p style="margin:0 0 12px;color:#cfe0f5">Skillvaya's own messenger. Chat, call and share with family, friends and the providers you use, all in one place.</p><button type="button" id="svFcNotifyBtn" onclick="svFutureChatNotify()" style="background:#19c3d6;color:#04202a;border:0;border-radius:12px;padding:10px 16px;font-weight:800;cursor:pointer">Notify me when it launches</button><div id="svFcState" class="tiny" style="margin-top:8px;color:#a9f0f8"></div></div></div></div><div class="card" id="platformRatingCard" style="margin-top:18px;border:1px solid #d7e5f7;background:linear-gradient(135deg,#fff,#f1f7ff)"><h2 style="margin:0 0 4px">Rate Skillvaya</h2><p class="muted" style="margin:0 0 8px">Tell us how we're doing. Your rating is for the Skillvaya website and service, not an individual provider.</p><div id="platformRatingSummary" class="muted tiny">Loading Skillvaya ratings…</div><div id="platformRatingStars" aria-label="Rate Skillvaya from one to five stars" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px"></div><div id="platformRatingMsg" class="muted tiny" aria-live="polite"></div></div></section></section>
+<section id="customer" class="layout"><aside class="panel"><h3>All service categories</h3><select id="categories" aria-label="Choose a service category" style="width:100%;margin-top:12px"><option value="All categories">All categories</option></select></aside><section><div class="sectionhead"><div><h2 id="resTitle">Find a service</h2><span class="muted tiny" id="count"></span></div><select id="sort" style="max-width:180px" onchange="loadBusinesses()"><option value="featured">Featured first</option><option value="near">Near me</option><option value="available">Available today</option><option value="rating">Highest rated</option><option value="name">Name A–Z</option></select></div><div id="results" class="results hidden" aria-hidden="true"></div><div class="card" id="svFutureChatCard" style="margin-top:18px;border:1px solid #1d4f7c;background:linear-gradient(135deg,#0d2440,#14406b);color:#eef6ff"><div style="display:flex;gap:14px;align-items:flex-start"><div style="font-size:34px;line-height:1" aria-hidden="true">💬</div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:800;letter-spacing:.08em;color:#7fe3f0;text-transform:uppercase">New · Live now</div><h2 style="margin:2px 0 6px;color:#fff">Future Chat</h2><p style="margin:0 0 12px;color:#cfe0f5">Skillvaya's own messenger. Free chats and data calls with family, friends and the providers you use, plus Chatmoji, Lenses and stokvels, all in one place.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="svFcNotifyBtn" onclick="window.FutureChat&&window.FutureChat.open()" style="background:#19c3d6;color:#04202a;border:0;border-radius:12px;padding:10px 16px;font-weight:800;cursor:pointer">Open Future Chat</button><button type="button" onclick="window.FutureChat&&window.FutureChat.inviteFriends()" style="background:transparent;color:#eef6ff;border:1px solid #7fe3f0;border-radius:12px;padding:10px 16px;font-weight:700;cursor:pointer">Invite friends</button></div><div id="svFcState" class="tiny" style="margin-top:8px;color:#a9f0f8"></div></div></div></div><div class="card" id="platformRatingCard" style="margin-top:18px;border:1px solid #d7e5f7;background:linear-gradient(135deg,#fff,#f1f7ff)"><h2 style="margin:0 0 4px">Rate Skillvaya</h2><p class="muted" style="margin:0 0 8px">Tell us how we're doing. Your rating is for the Skillvaya website and service, not an individual provider.</p><div id="platformRatingSummary" class="muted tiny">Loading Skillvaya ratings…</div><div id="platformRatingStars" aria-label="Rate Skillvaya from one to five stars" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px"></div><div id="platformRatingMsg" class="muted tiny" aria-live="polite"></div></div></section></section>
 
 <section id="categoryScreen" class="category-screen hidden"><div class="category-screen-head"><button type="button" class="category-back" onclick="backToCategories()">← Back to all service providers</button><div><h2 id="categoryScreenTitle" style="margin:0">Service providers</h2><span class="muted tiny" id="categoryScreenCount"></span></div><select id="categoryScreenSort" style="max-width:180px;margin-left:auto" onchange="document.getElementById('sort').value=this.value;loadBusinesses()"><option value="featured">Featured first</option><option value="near">Near me</option><option value="available">Available today</option><option value="rating">Highest rated</option><option value="name">Name A–Z</option></select></div><div id="categoryScreenResults" class="category-results"></div></section>
 <section id="servicesTabScreen" class="hidden app-destination">
@@ -3498,11 +3503,11 @@ async function svSyncVideoCall(call){
   }
  }finally{call.syncing=false;}
 }
-async function startSkillvayaVideoCall(businessId,customerId,mode='video'){
+async function startSkillvayaVideoCall(businessId,customerId,mode='video',fcOpts){const fcConv=Number(fcOpts&&fcOpts.conversationId||0),fcCallee=Number(fcOpts&&fcOpts.calleeId||0);
   // Preserve the existing background incoming-call notification permission flow.
   try { if (window.SkillvayaNotifications && typeof window.SkillvayaNotifications.ensureForCall === 'function') window.SkillvayaNotifications.ensureForCall(); } catch (e) { console.warn('Notification permission prompt unavailable', e); }
   mode=mode==='voice'?'voice':'video';
-  if(me&&me.role==='customer')customerId=Number(me.id);businessId=Number(businessId);customerId=Number(customerId);if(!businessId||!customerId){alert('Open the existing contact conversation before starting a call.');return;}
+  if(!fcConv){if(me&&me.role==='customer')customerId=Number(me.id);businessId=Number(businessId);customerId=Number(customerId);if(!businessId||!customerId){alert('Open the existing contact conversation before starting a call.');return;}}
   if(svActiveVideoCall){alert('A call is already open. End that call before starting another.');return;}
   if(!me){view('settings');profileAuthMode('signin');alert('Sign in before starting a call.');return;}
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof RTCPeerConnection==='undefined'){alert('This browser or WebView does not support Skillvaya calls. Update your browser/app and try again.');return;}
@@ -3511,10 +3516,10 @@ async function startSkillvayaVideoCall(businessId,customerId,mode='video'){
   try{
     svShowCallModal(mode==='voice'?'Skillvaya voice call':'Skillvaya video call','Requesting microphone permission…',mode);
     mediaPromise=navigator.mediaDevices.getUserMedia(constraints).then(stream=>({stream}),error=>({error}));
-    call={callId:'',businessId:Number(businessId),customerId:Number(customerId),mediaMode:mode,isCaller:true,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
+    call={callId:'',businessId:Number(businessId)||0,customerId:Number(customerId)||0,conversationId:fcConv,mediaMode:mode,isCaller:true,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
     await svCreatePeer(call);
     const offer=await call.pc.createOffer();await call.pc.setLocalDescription(offer);
-    const created=await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'start',business_id:call.businessId,customer_id:call.customerId,offer_sdp:JSON.stringify(call.pc.localDescription)})});
+    const created=await api('/api/video-calls',{method:'POST',body:JSON.stringify(fcConv?{action:'start',conversation_id:fcConv,callee_id:fcCallee||undefined,offer_sdp:JSON.stringify(call.pc.localDescription)}:{action:'start',business_id:call.businessId,customer_id:call.customerId,offer_sdp:JSON.stringify(call.pc.localDescription)})});
     call.callId=created.call_id;svActiveVideoCall=call;svStartCallPolling(call);svSetCallState('Calling… waiting for the other participant to answer.');
     svSendPendingCandidates(call).catch(err=>svSetCallState('Call started; network setup is retrying: '+err.message));
     const mediaResult=await mediaPromise;if(mediaResult.error)throw mediaResult.error;
@@ -3539,7 +3544,7 @@ async function acceptSkillvayaVideoCall(){
   try{
     svShowCallModal(mode==='voice'?'Skillvaya voice call':'Skillvaya video call','Preparing microphone and connection…',mode);
     mediaPromise=navigator.mediaDevices.getUserMedia(constraints).then(stream=>({stream}),error=>({error}));
-    view('messages');showMessagesScreen(false);openMessageConversation(Number(incoming.business_id),Number(incoming.customer_id)).catch(e=>console.warn('Call contact view refresh was delayed:',e&&e.message||e));
+    if(Number(incoming.conversation_id||0)&&window.FutureChat){try{window.FutureChat.open(Number(incoming.conversation_id))}catch(_){}}else{view('messages');showMessagesScreen(false);openMessageConversation(Number(incoming.business_id),Number(incoming.customer_id)).catch(e=>console.warn('Call contact view refresh was delayed:',e&&e.message||e));}
     call={callId:String(incoming.id),businessId:Number(incoming.business_id),customerId:Number(incoming.customer_id),mediaMode:mode,isCaller:false,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
     svActiveVideoCall=call;
     await svCreatePeer(call);
@@ -3998,11 +4003,11 @@ function svGetPosition(){return new Promise(res=>{if(svPosCache&&Date.now()-svPo
 let svPendingProvider=(()=>{try{return Number(new URLSearchParams(location.search).get('provider'))||0}catch(_){return 0}})();
 function svOpenPendingProvider(){if(!svPendingProvider)return;const id=svPendingProvider;if(typeof allBusinesses==='undefined'||!allBusinesses||!allBusinesses.some(x=>Number(x.id)===id))return;svPendingProvider=0;try{const u=new URL(location.href);u.searchParams.delete('provider');history.replaceState(null,'',u.pathname+u.search+u.hash)}catch(_){}setTimeout(()=>openProvider(id),60)}
 function svProviderLink(id){return location.origin+'/p/'+Number(id)}
-function svShareSheet(title,text,url){const old=document.getElementById('svShareSheet');if(old)old.remove();const w=document.createElement('div');w.id='svShareSheet';w.style.cssText='position:fixed;inset:0;z-index:21000;background:#0008;display:flex;align-items:flex-end;justify-content:center';w.addEventListener('click',e=>{if(e.target===w)w.remove()});const btn='display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:14px 16px;border:1px solid #dce7f5;border-radius:14px;background:#fff;color:#122238;font-size:15px;font-weight:600;cursor:pointer;margin-top:10px';w.innerHTML='<div role="dialog" aria-label="Share" style="background:#f4f8ff;width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 40px #0004"><div style="display:flex;justify-content:space-between;align-items:center"><strong style="font-size:17px;color:#10233f">Share</strong><button type="button" id="svShareX" aria-label="Close" style="background:transparent;border:0;font-size:24px;color:#5b6b80;cursor:pointer">\u00d7</button></div><button type="button" id="svShareFC" style="'+btn+';border:2px solid #19c3d6"><span style="font-size:24px">💬</span><span><span style="display:block">Future Chat</span><small style="font-weight:500;color:#5b6b80">Skillvaya\'s own messenger, coming soon. Tap to be notified at launch.</small></span></button><button type="button" id="svShareOther" style="'+btn+'"><span style="font-size:22px">↗</span><span>Share another way</span></button><button type="button" id="svShareCopy" style="'+btn+'"><span style="font-size:22px">⧉</span><span>Copy link</span></button></div>';document.body.appendChild(w);const close=()=>{try{w.remove()}catch(_){}};const copy=()=>{const done=()=>{close();svNote('Link copied. Paste it anywhere to share.')};try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(url).then(done,()=>{close();window.prompt('Copy this link:',url)});return}}catch(_){}close();window.prompt('Copy this link:',url)};document.getElementById('svShareX').onclick=close;document.getElementById('svShareCopy').onclick=copy;document.getElementById('svShareFC').onclick=()=>{close();svFutureChatNotify()};document.getElementById('svShareOther').onclick=()=>{if(navigator.share){navigator.share({title:title,text:text,url:url}).then(close,()=>{})}else copy()}}
+function svShareSheet(title,text,url){const old=document.getElementById('svShareSheet');if(old)old.remove();const w=document.createElement('div');w.id='svShareSheet';w.style.cssText='position:fixed;inset:0;z-index:21000;background:#0008;display:flex;align-items:flex-end;justify-content:center';w.addEventListener('click',e=>{if(e.target===w)w.remove()});const btn='display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:14px 16px;border:1px solid #dce7f5;border-radius:14px;background:#fff;color:#122238;font-size:15px;font-weight:600;cursor:pointer;margin-top:10px';w.innerHTML='<div role="dialog" aria-label="Share" style="background:#f4f8ff;width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 40px #0004"><div style="display:flex;justify-content:space-between;align-items:center"><strong style="font-size:17px;color:#10233f">Share</strong><button type="button" id="svShareX" aria-label="Close" style="background:transparent;border:0;font-size:24px;color:#5b6b80;cursor:pointer">\u00d7</button></div><button type="button" id="svShareFC" style="'+btn+';border:2px solid #19c3d6"><span style="font-size:24px">💬</span><span><span style="display:block">Future Chat</span><small style="font-weight:500;color:#5b6b80">Send it to a friend, family member or group in Skillvaya\'s own messenger.</small></span></button><button type="button" id="svShareOther" style="'+btn+'"><span style="font-size:22px">↗</span><span>Share another way</span></button><button type="button" id="svShareCopy" style="'+btn+'"><span style="font-size:22px">⧉</span><span>Copy link</span></button></div>';document.body.appendChild(w);const close=()=>{try{w.remove()}catch(_){}};const copy=()=>{const done=()=>{close();svNote('Link copied. Paste it anywhere to share.')};try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(url).then(done,()=>{close();window.prompt('Copy this link:',url)});return}}catch(_){}close();window.prompt('Copy this link:',url)};document.getElementById('svShareX').onclick=close;document.getElementById('svShareCopy').onclick=copy;document.getElementById('svShareFC').onclick=()=>{close();if(window.FutureChat&&window.FutureChat.share)window.FutureChat.share(text+(url?' '+url:''));else svFutureChatNotify()};document.getElementById('svShareOther').onclick=()=>{if(navigator.share){navigator.share({title:title,text:text,url:url}).then(close,()=>{})}else copy()}}
 function svShareProvider(id){const b=(typeof allBusinesses!=='undefined'&&allBusinesses||[]).find(x=>Number(x.id)===Number(id));const name=b?b.name:'This provider';svShareSheet(name+' on Skillvaya','Have a look at '+name+(b?' ('+b.category+', '+b.area+')':'')+' on Skillvaya:',svProviderLink(id))}
 function svLoadPortfolio(id,has){const slot=document.getElementById('svPortfolioSlot');if(!slot||!has)return;const go=()=>{slot.innerHTML='<p class="muted tiny">Loading work photos…</p>';fetch('/api/businesses/'+Number(id)+'/photos').then(r=>r.ok?r.json():{photos:''}).then(d=>{const s=document.getElementById('svPortfolioSlot');if(s)s.innerHTML=portfolioMarkup(d.photos||'')}).catch(()=>{const s=document.getElementById('svPortfolioSlot');if(s)s.innerHTML=''})};if(svDataSaver()){slot.innerHTML='<button type="button" class="ghost" style="margin:8px 0">📷 Show work photos (uses data)</button>';slot.firstChild.onclick=go}else go()}
-async function svFutureChatStatus(){const st=document.getElementById('svFcState'),btn=document.getElementById('svFcNotifyBtn');if(!st)return;if(typeof me==='undefined'||!me){st.textContent='';return}try{const d=await api('/api/futurechat/status');if(d.joined){st.textContent="You're on the launch list. We'll alert you the moment Future Chat is out.";if(btn){btn.disabled=true;btn.textContent='On the launch list ✓';btn.style.opacity='.85'}}}catch(_){}}
-async function svFutureChatNotify(){if(typeof me==='undefined'||!me){try{view('settings');profileAuthMode('signin')}catch(_){}alert("Sign in (it's free) so we can alert you the moment Future Chat launches.");return}try{await api('/api/futurechat/notify',{method:'POST',body:'{}'});svNote("You're on the Future Chat launch list ✓");svFutureChatStatus();try{if(svWebPushSupported()&&Notification.permission==='default')svMaybeShowPushBanner()}catch(_){}}catch(e){alert(e.message||e)}}
+async function svFutureChatStatus(){return;const st=document.getElementById('svFcState'),btn=document.getElementById('svFcNotifyBtn');if(!st)return;if(typeof me==='undefined'||!me){st.textContent='';return}try{const d=await api('/api/futurechat/status');if(d.joined){st.textContent="You're on the launch list. We'll alert you the moment Future Chat is out.";if(btn){btn.disabled=true;btn.textContent='On the launch list ✓';btn.style.opacity='.85'}}}catch(_){}}
+async function svFutureChatNotify(){if(window.FutureChat){window.FutureChat.open();return}if(typeof me==='undefined'||!me){try{view('settings');profileAuthMode('signin')}catch(_){}alert("Sign in (it's free) so we can alert you the moment Future Chat launches.");return}try{await api('/api/futurechat/notify',{method:'POST',body:'{}'});svNote("You're on the Future Chat launch list ✓");svFutureChatStatus();try{if(svWebPushSupported()&&Notification.permission==='default')svMaybeShowPushBanner()}catch(_){}}catch(e){alert(e.message||e)}}
 async function svRefreshProviderTools(){if(typeof me==='undefined'||!me||me.role!=='provider')return;const form=document.getElementById('bizForm');if(!form||!form.parentNode)return;let d;try{d=await api('/api/provider/tools')}catch(_){return}let box=document.getElementById('svProviderTools');if(!d||!d.business_id){if(box)box.remove();return}if(!box){box=document.createElement('div');box.id='svProviderTools';box.style.cssText='margin:0 0 16px;border:1px solid #d7e5f7;border-radius:16px;padding:16px;background:#f7fbff;color:#122238';form.parentNode.insertBefore(box,form)}const row='display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid #e3ecf7;flex-wrap:wrap';const b2='background:#10233f;color:#fff;border:0;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer;white-space:nowrap';box.innerHTML='<h3 style="margin:0 0 4px">Grow your business</h3><p class="muted tiny" style="margin:0 0 4px">These show on your profile and help customers choose you.</p><div style="'+row+';border-top:0"><div style="flex:1;min-width:200px"><strong>Available today</strong><div class="muted tiny">Customers searching today see a blue "Available today" badge.</div></div><button type="button" id="svAvailBtn" style="'+b2+'">'+(d.available_today?'✓ On (tap to switch off)':'Switch on for today')+'</button></div><div style="'+row+'"><div style="flex:1;min-width:200px"><strong>Verified by Skillvaya</strong><div class="muted tiny">'+(d.verified?'Your profile shows the verified badge.':(d.verify_requested?'Request received. Skillvaya will contact you to confirm your identity and business.':'Ask Skillvaya to confirm your identity and business. Verified providers win more customers.'))+'</div></div>'+(d.verified?'<span style="color:#11683d;font-weight:800">✔ Verified</span>':(d.verify_requested?'<span class="muted">Requested</span>':'<button type="button" id="svVerifyBtn" style="'+b2+'">Get verified</button>'))+'</div><div style="'+row+'"><div style="flex:1;min-width:200px"><strong>Share your profile</strong><div class="muted tiny">Post your Skillvaya link on your status, social media and business cards.</div></div><button type="button" id="svShareMeBtn" style="'+b2+'">Share my profile</button></div><div style="'+row+'"><div style="flex:1;min-width:200px"><strong>Near me searches</strong><div class="muted tiny">'+(d.has_location?'Nearby customers see roughly how far away you are, worked out from your town (never your exact address).':'Keep your town / service area up to date below so nearby customers can find you.')+'</div></div></div>';document.getElementById('svAvailBtn').onclick=async()=>{try{await api('/api/provider/presence',{method:'POST',body:JSON.stringify({available_today:!d.available_today})});svNote(d.available_today?'Available today switched off':'You show as available today ✓');svRefreshProviderTools()}catch(e){alert(e.message)}};const vb=document.getElementById('svVerifyBtn');if(vb)vb.onclick=async()=>{try{await api('/api/provider/verification-request',{method:'POST',body:'{}'});svNote('Verification requested ✓');svRefreshProviderTools()}catch(e){alert(e.message)}};document.getElementById('svShareMeBtn').onclick=()=>svShareSheet((d.name||'My business')+' on Skillvaya','Find '+(d.name||'me')+(d.category?' ('+d.category+')':'')+' on Skillvaya:',svProviderLink(d.business_id))}
 function svInjectSettingsCards(){const s=document.getElementById('settings');if(!s||document.getElementById('svDataSaverCard'))return;const c=document.createElement('div');c.id='svDataSaverCard';c.className='card';c.style.cssText='margin:16px 0;border-radius:16px;padding:14px 16px;background:#fff;border:1px solid #dce7f5;color:#122238';c.innerHTML='<label style="display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer"><span><strong>Data saver</strong><span id="svDataSaverState" class="muted tiny" style="display:block"></span></span><input type="checkbox" id="svDataSaverToggle" style="width:22px;height:22px;flex:none"></label>';s.appendChild(c);const t=document.getElementById('svDataSaverToggle');t.checked=svDataSaver();t.onchange=()=>svSetDataSaver(t.checked);svDataSaverText();svInjectCountryCard(s)}
 async function svAdminVerify(id,on){try{await api('/api/admin/businesses-verify',{method:'POST',body:JSON.stringify({business_id:id,verified:!!on})});adminTab('businesses')}catch(e){alert(e.message)}}
@@ -4014,7 +4019,7 @@ function svAfterLogin(){svFutureChatStatus();svRefreshProviderTools()}
 (function(){var sent=0;function why(el){var out=[];try{var cs=getComputedStyle(el);out.push('disp='+cs.display+' vis='+cs.visibility+' op='+cs.opacity+' w='+Math.round(el.getBoundingClientRect().width));out.push('cls='+el.className+' inline='+(el.getAttribute('style')||'')+' hiddenAttr='+el.hidden);for(var a=el.parentElement,d=0;a&&d<4;a=a.parentElement,d++){var s=getComputedStyle(a);out.push('up'+d+':'+a.tagName+'#'+a.id+'.'+String(a.className).slice(0,40)+' disp='+s.display+' cols='+s.gridTemplateColumns)}for(var i=0;i<document.styleSheets.length;i++){var rules;try{rules=document.styleSheets[i].cssRules}catch(_){continue}(function walk(rs,media){for(var j=0;j<rs.length;j++){var r=rs[j];if(r.cssRules&&!r.selectorText){walk(r.cssRules,(r.conditionText||r.media&&r.media.mediaText||'')); continue}if(!r.selectorText||!r.style)continue;var hides=/display\s*:\s*none|visibility\s*:\s*hidden|width\s*:\s*0|opacity\s*:\s*0(?!\.)/.test(r.style.cssText);if(!hides)continue;var m=false;try{m=el.matches(r.selectorText)}catch(_){}if(m)out.push('RULE['+media+'] '+r.selectorText.slice(0,160)+' {'+r.style.cssText.slice(0,120)+'}')}})(rules,'')}}catch(e){out.push('err '+e)}return out}
 function check(tag){try{if(sent>=3)return;var nav=document.querySelector('.bottom-tabbar');if(!nav)return;var hidden=[].filter.call(nav.children,function(c){var r=c.getBoundingClientRect(),s=getComputedStyle(c);return !(r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden')});if(!hidden.length)return;sent++;var rep={tag:tag,path:location.pathname,ua:navigator.userAgent,lang:document.documentElement.lang,dir:document.documentElement.dir,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,body:document.body.className,signedIn:!!(window.me),role:window.me&&window.me.role||'',hasSvLang:typeof svLang==='function',sw:!!(navigator.serviceWorker&&navigator.serviceWorker.controller),count:nav.children.length,hidden:hidden.map(function(c){return {id:c.id,why:why(c)}})};fetch('/api/diag/tabs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rep).slice(0,20000)}).catch(function(){})}catch(_){}}
 setTimeout(function(){check('load+6s')},6000);document.addEventListener('click',function(e){if(e.target&&e.target.closest&&e.target.closest('.bottom-tabbar button'))setTimeout(function(){check('tap:'+(e.target.closest('button').id||''))},1500)},true)})();
-</script><script src="/futurechat/chatmoji.js?v=1" defer></script><script src="/futurechat/fc.js?v=1" defer></script></body></html>'''
+</script><script src="/futurechat/chatmoji.js?v=2" defer></script><script src="/futurechat/fc.js?v=2" defer></script></body></html>'''
 SV_DIAG_TABS=[]
 SESSIONS={}
 def issue_session(user):
@@ -5059,11 +5064,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 stamp=now()
                 with conn() as c:
                     if _sweep_due("video_calls_missed",15):
-                        swept=c.execute("UPDATE video_calls SET status='missed',updated_at=?,ended_at=? WHERE status='ringing' AND created_at<? RETURNING id,business_id,customer_id,caller_id,callee_id,offer_sdp",(stamp,stamp,cutoff)).fetchall()
+                        swept=c.execute("UPDATE video_calls SET status='missed',updated_at=?,ended_at=? WHERE status='ringing' AND created_at<? RETURNING id,business_id,customer_id,caller_id,callee_id,offer_sdp,conversation_id",(stamp,stamp,cutoff)).fetchall()
                         for row in swept: sv_missed_call_notice(c,dict(row))
-                    base_query="""SELECT vc.id,vc.business_id,vc.customer_id,vc.caller_id,vc.callee_id,vc.status,CASE WHEN vc.offer_sdp LIKE '%%m=video%%' THEN 'video' ELSE 'voice' END AS media_type,vc.created_at,vc.updated_at,
-                        b.name business_name,cu.name customer_name,caller.name caller_name,callee.name callee_name
-                        FROM video_calls vc JOIN businesses b ON b.id=vc.business_id
+                    base_query="""SELECT vc.id,vc.business_id,vc.customer_id,vc.caller_id,vc.callee_id,vc.status,CASE WHEN vc.offer_sdp LIKE '%%m=video%%' THEN 'video' ELSE 'voice' END AS media_type,vc.created_at,vc.updated_at,vc.conversation_id,
+                        COALESCE(b.name,'Future Chat') business_name,cu.name customer_name,caller.name caller_name,callee.name callee_name
+                        FROM video_calls vc LEFT JOIN businesses b ON b.id=vc.business_id
                         JOIN users cu ON cu.id=vc.customer_id JOIN users caller ON caller.id=vc.caller_id
                         JOIN users callee ON callee.id=vc.callee_id """
                     if u["role"]=="provider":
@@ -5083,7 +5088,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 try: after=max(0,int(query.get("after",["0"])[0]))
                 except (TypeError,ValueError): after=0
                 with conn() as c:
-                    call_rows,signals=db_batch(c,[("SELECT vc.*,b.user_id AS provider_owner_id,b.name business_name,cu.name customer_name,caller.name caller_name,callee.name callee_name FROM video_calls vc JOIN businesses b ON b.id=vc.business_id JOIN users cu ON cu.id=vc.customer_id JOIN users caller ON caller.id=vc.caller_id JOIN users callee ON callee.id=vc.callee_id WHERE vc.id=?",(call_id,)),("SELECT id,sender_id,kind,payload,created_at FROM video_call_signals WHERE call_id=? AND id>? ORDER BY id ASC LIMIT 300",(call_id,after))])
+                    call_rows,signals=db_batch(c,[("SELECT vc.*,COALESCE(b.user_id,0) AS provider_owner_id,COALESCE(b.name,'Future Chat') business_name,cu.name customer_name,caller.name caller_name,callee.name callee_name FROM video_calls vc LEFT JOIN businesses b ON b.id=vc.business_id JOIN users cu ON cu.id=vc.customer_id JOIN users caller ON caller.id=vc.caller_id JOIN users callee ON callee.id=vc.callee_id WHERE vc.id=?",(call_id,)),("SELECT id,sender_id,kind,payload,created_at FROM video_call_signals WHERE call_id=? AND id>? ORDER BY id ASC LIMIT 300",(call_id,after))])
                     call=call_rows[0] if call_rows else None
                     if not call: return self.sendj({"error":"Video call not found."},404)
                     allowed=(u["role"]=="admin" or int(u["id"]) in (int(call["caller_id"]),int(call["callee_id"])) or (u["role"]=="provider" and int(u["id"])==int(call["provider_owner_id"])))
@@ -5762,6 +5767,31 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
             if path=="/api/video-calls":
                 u=self.require()
                 action=str(d.get("action","")).strip().lower()
+                if action=="start" and d.get("conversation_id"):
+                    # SV91-FC-CALLS: free data calls between any two people in a Future Chat conversation.
+                    offer=d.get("offer_sdp","")
+                    if isinstance(offer,dict): offer=json.dumps(offer)
+                    if not isinstance(offer,str) or len(offer)>100000: return self.sendj({"error":"Call offer was too large."},413)
+                    try:
+                        offer_obj=json.loads(offer)
+                        if offer_obj.get("type")!="offer" or not offer_obj.get("sdp"): raise ValueError()
+                    except Exception: return self.sendj({"error":"A valid camera/microphone call offer is required."},400)
+                    try: conv_id=int(d.get("conversation_id") or 0)
+                    except (TypeError,ValueError): conv_id=0
+                    with conn() as c:
+                        try: callee_id,bid,customer_id=FC.call_target(c,conv_id,u,d.get("callee_id"))
+                        except PermissionError as exc: return self.sendj({"error":str(exc)},403)
+                        except LookupError as exc: return self.sendj({"error":str(exc)},404)
+                        call_id=secrets.token_urlsafe(18);stamp=now()
+                        c.execute("INSERT INTO video_calls(id,business_id,customer_id,caller_id,callee_id,status,offer_sdp,answer_sdp,created_at,updated_at,ended_at,conversation_id) VALUES(?,?,?,?,?,'ringing',?,'',?,?,'',?)",(call_id,bid,customer_id,u["id"],callee_id,json.dumps(offer_obj),stamp,stamp,conv_id))
+                        FC.call_event(c,conv_id,int(u["id"]),("Video call" if "m=video" in offer_obj.get("sdp","") else "Voice call"))
+                    try:
+                        threading.Thread(target=fcm_send_to_user,args=(callee_id,"Skillvaya calling",(u.get("name") or "Your contact")+" is calling you",
+                            {"type":"incoming_call","call_id":call_id,"business_id":bid,"customer_id":customer_id,"conversation_id":str(conv_id),"url":"/customer-app?fc=%d"%conv_id}),
+                            name="SkillvayaIncomingCallPush",daemon=True).start()
+                    except Exception as exc:
+                        print("FCM call-push scheduling failed:", type(exc).__name__)
+                    return self.sendj({"ok":True,"call_id":call_id,"status":"ringing"},201)
                 if action=="start":
                     if u["role"] not in ("customer","provider","admin"): return self.sendj({"error":"Sign in to start a video call."},401)
                     try: bid=int(d.get("business_id",0)); customer_id=int(d.get("customer_id",0))
@@ -5825,7 +5855,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 except Exception: call_id=""
                 if not call_id or len(call_id)>100: return self.sendj({"error":"Choose a valid call."},400)
                 with conn() as c:
-                    call=c.execute("SELECT vc.*,b.user_id AS provider_owner_id FROM video_calls vc JOIN businesses b ON b.id=vc.business_id WHERE vc.id=?",(call_id,)).fetchone()
+                    call=c.execute("SELECT vc.*,COALESCE(b.user_id,0) AS provider_owner_id FROM video_calls vc LEFT JOIN businesses b ON b.id=vc.business_id WHERE vc.id=?",(call_id,)).fetchone()
                     if not call: return self.sendj({"error":"Video call not found."},404)
                     allowed=(u["role"]=="admin" or int(u["id"]) in (int(call["caller_id"]),int(call["callee_id"])) or (u["role"]=="provider" and int(u["id"])==int(call["provider_owner_id"])))
                     if not allowed: return self.sendj({"error":"You cannot control this video call."},403)
@@ -5854,6 +5884,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         if action=="end" and call["status"]=="ringing" and int(u["id"])==int(call["caller_id"]): status="missed"
                         db_atomic(c,"UPDATE video_calls SET status=?,updated_at=?,ended_at=? WHERE id=?",(status,stamp,stamp,call_id))
                         if status=="missed": sv_missed_call_notice(c,dict(call))
+                        elif call["status"]=="ringing":
+                            try: threading.Thread(target=fcm_send_to_user,args=(int(call["callee_id"]),"Call ended","",{"type":"call_ended","call_id":call_id}),daemon=True).start()
+                            except Exception: pass
                         return self.sendj({"ok":True,"status":status})
                 return self.sendj({"error":"Unsupported video call action."},400)
             if path in ("/api/provider/quote-templates","/api/provider/campaigns"):

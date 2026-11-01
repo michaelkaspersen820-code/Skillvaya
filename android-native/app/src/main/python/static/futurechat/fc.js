@@ -88,7 +88,7 @@
     root.innerHTML = '<header class="fc-hdr"><div class="fc-hrow"><div class="fc-logo" aria-hidden="true">' + cmSvg('bubble') + '</div><div class="fc-ttl"><b>Future Chat</b><small>Chats, calls and Chatmoji in Skillvaya</small></div>' +
       '<button class="fc-ib" id="fcNew" aria-label="New chat">' + ICON.plus + '</button></div>' +
       '<label class="fc-search">' + ICON.search.replace('<svg', '<svg width="18" height="18" stroke="#a9c8e7" fill="none" stroke-width="2"') + '<input id="fcQ" placeholder="Search chats, providers, groups" aria-label="Search chats" value="' + esc(S.q) + '"></label>' +
-      '<div class="fc-chips" role="tablist">' + [['all', 'All'], ['unread', 'Unread'], ['business', 'Providers'], ['person', 'People'], ['group', 'Groups']].map(([k, l]) =>
+      '<div class="fc-chips" role="tablist">' + [['all', 'All'], ['unread', 'Unread'], ['contacts', 'Contacts'], ['business', 'Providers'], ['person', 'People'], ['group', 'Groups']].map(([k, l]) =>
         '<button class="fc-chip' + (S.filter === k ? ' on' : '') + '" data-f="' + k + '">' + l + '</button>').join('') + '</div></header>' +
       '<div class="fc-body" id="fcBody"><div class="fc-empty">Loading your chats…</div></div>';
     bodyEl = $('#fcBody', root);
@@ -97,6 +97,7 @@
     $('#fcQ', root).oninput = e => { S.q = e.target.value; drawList(); };
     root.querySelectorAll('.fc-chip').forEach(b => b.onclick = () => { S.filter = b.dataset.f; root.querySelectorAll('.fc-chip').forEach(x => x.classList.toggle('on', x === b)); drawList(); });
     if (load) await loadList(); else drawList();
+    autoSyncContacts();
     S.timer = setInterval(async () => { if (!S.open || S.conv || document.visibilityState === 'hidden') return; try { const p = await api('/api/fc/pulse'); if (p.latest !== S.latestSeen) { S.latestSeen = p.latest; await loadList(); } } catch (_) {} }, 4000);
   }
   async function loadList() {
@@ -106,6 +107,7 @@
   function drawList() {
     if (!bodyEl || S.conv) return;
     const fab = $('.fc-fab', bodyEl);
+    if (S.filter === 'contacts') { drawContacts(fab); return; }
     const q = S.q.trim().toLowerCase();
     let items = S.list.filter(c => !!c.archived === S.archivedView);
     if (S.filter === 'unread') items = items.filter(c => c.unread > 0);
@@ -116,6 +118,7 @@
     items.sort((a, b) => (b.pinned - a.pinned) || String(b.updated_at).localeCompare(String(a.updated_at)));
     let html = '';
     if (!S.verified && !S.archivedView) html += '<div class="fc-banner"><div style="flex:1"><b>Verify your number</b><br>Let friends and family find you on Future Chat and call you.</div><button id="fcVerifyBtn">Verify</button></div>';
+    if (!S.archivedView && !contactsState().synced && !lsGet('fc_contacts_dismissed')) html += '<div class="fc-banner"><div style="flex:1"><b>Find your friends</b><br>See which of your phone contacts are on Future Chat.</div><button id="fcCtBtn">Allow</button><button id="fcCtNo" style="background:none;color:#a9c8e7;margin-left:4px" aria-label="Not now">✕</button></div>';
     if (S.archivedView) html += '<div class="fc-filterbar"><span>Archived chats</span><button id="fcArchBack">Back</button></div>';
     if (!items.length) html += '<div class="fc-empty">' + cmSvg('bubble').replace('<svg', '<svg width="56" height="56"') + '<b>' + (S.list.length ? 'No chats here' : 'Your conversations start here') + '</b>' +
       (S.list.length ? 'Try another filter.' : 'Tap the chat button to message a provider, a friend by phone number, or start a group.') + '</div>';
@@ -131,6 +134,8 @@
     bodyEl.innerHTML = html; if (fab) bodyEl.appendChild(fab);
     bodyEl.querySelectorAll('.fc-row').forEach(r => r.onclick = () => openConv(Number(r.dataset.c)));
     const vb = $('#fcVerifyBtn', bodyEl); if (vb) vb.onclick = () => verifyPhone(false);
+    const cb = $('#fcCtBtn', bodyEl); if (cb) cb.onclick = () => askContacts();
+    const cn = $('#fcCtNo', bodyEl); if (cn) cn.onclick = () => { lsSet('fc_contacts_dismissed', '1'); drawList(); };
     const ab = $('#fcArch', bodyEl); if (ab) ab.onclick = () => { S.archivedView = true; drawList(); };
     const bb = $('#fcArchBack', bodyEl); if (bb) bb.onclick = () => { S.archivedView = false; drawList(); };
   }
@@ -142,15 +147,77 @@
     b.textContent = n > 99 ? '99+' : String(n); b.style.display = n ? 'grid' : 'none';
   }
 
+  // ---------- phone contacts (SV91)
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+  function contactsState() {
+    if (!S.ct) { try { S.ct = JSON.parse(lsGet('fc_contacts_v1') || 'null'); } catch (_) { S.ct = null; } }
+    return S.ct || { synced: 0, on: [], invite: [] };
+  }
+  async function matchContacts(list) {
+    if (!list || !list.length) { toast('No phone numbers found in your contacts'); return; }
+    try {
+      const d = await api('/api/fc/contacts', { contacts: list.slice(0, 5000) });
+      S.ct = { synced: Date.now(), on: d.on_future_chat || [], invite: d.invite || [] }; lsSet('fc_contacts_v1', JSON.stringify(S.ct));
+      if (S.open && !S.conv) drawList();
+      if (S.ctToast) { S.ctToast = false; toast(S.ct.on.length ? S.ct.on.length + (S.ct.on.length === 1 ? ' contact is' : ' contacts are') + ' on Future Chat' : 'None of your contacts are on Future Chat yet — invite them!'); }
+    } catch (e) { toast(e.message); }
+  }
+  window.fcContacts = json => { let list = []; try { list = JSON.parse(json || '[]'); } catch (_) {} matchContacts(list); };
+  window.fcContactsDenied = () => { toast('Contacts permission was not given. You can still add people by phone number.'); };
+  function contactsPermission() { const n = native(); try { return n && n.contactsPermission ? String(n.contactsPermission()) : ''; } catch (_) { return ''; } }
+  function autoSyncContacts() {
+    const st = contactsState();
+    if (contactsPermission() === 'granted' && Date.now() - (st.synced || 0) > 6 * 3600e3) { try { native().readContacts(); } catch (_) {} }
+  }
+  function askContacts() {
+    const n = native(), webPicker = 'contacts' in navigator && navigator.contacts && navigator.contacts.select;
+    if (n && n.readContacts && contactsPermission() === 'granted') { S.ctToast = true; n.readContacts(); return; }
+    if (!(n && n.readContacts) && !webPicker) { toast('Update the Skillvaya app to find friends from your contacts. You can still add people by phone number.'); return; }
+    sheet('<h3>Find friends from your contacts</h3><p>Skillvaya will read the <b>names and phone numbers</b> in your contacts and send the numbers securely to our server <b>only to check which of them use Future Chat</b>. Numbers that aren\'t on Future Chat are not saved, sold or shared, and nobody is contacted unless you choose to invite them.</p><p style="font-size:12px;color:#55667d">You can turn this off anytime in your phone\'s app settings. See the Privacy Policy for details.</p><div class="fc-acts"><button class="fc-btn" id="fcCtAllow">Allow and find friends</button><button class="fc-act" id="fcCtLater"><i>⏭️</i>Not now</button></div>', (el, done) => {
+      $('#fcCtLater', el).onclick = () => { lsSet('fc_contacts_dismissed', '1'); done(); drawList(); };
+      $('#fcCtAllow', el).onclick = async () => {
+        done(); S.ctToast = true;
+        if (n && n.readContacts) { n.readContacts(); return; }
+        try { const picked = await navigator.contacts.select(['name', 'tel'], { multiple: true }); const list = []; picked.forEach(p => (p.tel || []).forEach(t => list.push({ name: (p.name || [])[0] || '', phone: t }))); matchContacts(list); }
+        catch (_) { toast('No contacts were shared.'); }
+      };
+    });
+  }
+  function drawContacts(fab) {
+    const st = contactsState(), q = S.q.trim().toLowerCase();
+    const match = x => !q || ((x.contact_name || x.name || '') + ' ' + x.phone).toLowerCase().includes(q);
+    let html = '';
+    if (!st.synced) html += '<div class="fc-empty">' + cmSvg('bubble').replace('<svg', '<svg width="56" height="56"') + '<b>See who\'s on Future Chat</b>Allow contacts to find friends and family who already use Skillvaya.<br><br><button class="fc-btn" id="fcCtBtn2">Find friends</button></div>';
+    else {
+      const on = st.on.filter(match), inv = st.invite.filter(match);
+      html += '<div class="fc-filterbar"><span>' + st.on.length + ' on Future Chat</span><button id="fcCtRe">Refresh</button></div>';
+      for (const p of on) html += '<button class="fc-row" data-u="' + p.id + '"><div class="fc-av" style="background:' + color(p.contact_name || p.name) + '">' + esc(initials(p.contact_name || p.name)) + '</div><div class="fc-mid"><div class="fc-name"><span>' + esc(p.contact_name || p.name) + '</span></div><div class="fc-last">' + esc(p.phone) + ' · on Future Chat</div></div><div class="fc-end"><span class="fc-time">💬</span></div></button>';
+      if (inv.length) html += '<div class="fc-filterbar"><span>Invite to Future Chat</span></div>';
+      for (const p of inv.slice(0, 150)) html += '<div class="fc-row" style="cursor:default"><div class="fc-av" style="background:#33415a">' + esc(initials(p.name || '#')) + '</div><div class="fc-mid"><div class="fc-name"><span>' + esc(p.name || p.phone) + '</span></div><div class="fc-last">' + esc(p.phone) + '</div></div><div class="fc-end"><button class="fc-chip" data-inv="' + esc(p.phone) + '">Invite</button></div></div>';
+      if (!on.length && !inv.length) html += '<div class="fc-empty"><b>No matches</b>Try another search.</div>';
+    }
+    html += '<div style="height:90px"></div>';
+    bodyEl.innerHTML = html; if (fab) bodyEl.appendChild(fab);
+    bodyEl.querySelectorAll('[data-u]').forEach(b => b.onclick = () => start({ user_id: Number(b.dataset.u) }));
+    bodyEl.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => invite(b.dataset.inv));
+    const f = $('#fcCtBtn2', bodyEl); if (f) f.onclick = () => askContacts();
+    const r = $('#fcCtRe', bodyEl); if (r) r.onclick = () => askContacts();
+  }
+
   // ---------- new chat
   function newChat() {
     sheet('<h3>New chat</h3><p>Message anyone on Skillvaya by phone number, or find a service provider.</p>' +
       '<input id="fcNQ" type="text" inputmode="text" placeholder="Phone number or business name" autocomplete="off"><div id="fcNRes"></div>' +
       '<div class="fc-acts" style="margin-top:6px"><button class="fc-act" id="fcNGroup"><i>👥</i>New group</button><button class="fc-act" id="fcNInvite"><i>✉️</i>Invite friends to Future Chat</button></div>', (el, done) => {
       const inp = $('#fcNQ', el), res = $('#fcNRes', el); let t;
+      const showContacts = () => { const st = contactsState(); if (!st.synced) { res.innerHTML = '<button class="fc-act" id="fcNCt"><i>📇</i>Find friends from your contacts</button>'; $('#fcNCt', el).onclick = () => { done(); askContacts(); }; return; }
+        res.innerHTML = st.on.length ? '<p style="margin:8px 0 4px;font-size:12px;color:#55667d">CONTACTS ON FUTURE CHAT</p>' + st.on.slice(0, 40).map(p => '<button class="fc-act" data-u="' + p.id + '"><i>💬</i>' + esc(p.contact_name || p.name) + '<small style="color:#55667d;margin-left:auto">' + esc(p.phone) + '</small></button>').join('') : '<p>None of your contacts are on Future Chat yet — invite them below.</p>';
+        res.querySelectorAll('[data-u]').forEach(b => b.onclick = () => start({ user_id: Number(b.dataset.u) }, done)); };
+      showContacts();
       inp.focus();
       inp.oninput = () => { clearTimeout(t); t = setTimeout(async () => {
-        const q = inp.value.trim(); if (q.length < 2) { res.innerHTML = ''; return; }
+        const q = inp.value.trim(); if (q.length < 2) { showContacts(); return; }
         try {
           const d = await api('/api/fc/search-people?q=' + encodeURIComponent(q)); let h = '';
           for (const p of d.people || []) h += '<button class="fc-act" data-u="' + p.id + '"><i>💬</i>' + esc(p.name) + '<small style="color:#55667d;margin-left:auto">' + esc(d.phone) + '</small></button>';
@@ -201,6 +268,7 @@
     const ta = $('#fcText', root), sendBtn = $('#fcSend', root);
     const sync = () => { ta.style.height = 'auto'; ta.style.height = Math.min(120, ta.scrollHeight) + 'px'; const has = !!ta.value.trim(); sendBtn.innerHTML = has ? ICON.send : (S.rec ? ICON.stop : ICON.mic); sendBtn.setAttribute('aria-label', has ? 'Send' : (S.rec ? 'Stop and send voice note' : 'Record voice note')); };
     ta.oninput = sync;
+    if (S.pendingShare) { ta.value = S.pendingShare; S.pendingShare = ''; setTimeout(() => { try { sync(); ta.focus(); } catch (_) {} }, 0); toast('Choose Send to share it'); }
     ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(pointer:fine)').matches) { e.preventDefault(); sendText(); } };
     sendBtn.onclick = () => { if (ta.value.trim()) sendText(); else voiceNote(sync); };
     $('#fcEmoji', root).onclick = () => picker(name => { insertAt(ta, ':' + name + ': '); sync(); });
@@ -236,6 +304,8 @@
   }
   function bubble(m, prev) {
     if (m.kind === 'system') return '<div class="fc-sys">' + rich(m.body) + '</div>';
+    if (m.kind === 'stokvel') return '<div class="fc-sys" style="cursor:pointer" onclick="window.FutureChat&&window.FutureChat.stokvel()">💰 ' + esc(m.body) + ' · ' + esc(clock(m.created_at)) + '</div>';
+    if (m.kind === 'call') return '<div class="fc-sys">' + (/missed/i.test(m.body) ? '📵 ' : '📞 ') + esc((m.mine ? 'You · ' : '') + (m.body || 'Call')) + ' · ' + esc(clock(m.created_at)) + '</div>';
     const big = !m.deleted && m.kind === 'text' && !m.reply && onlyCm(m.body);
     const showName = S.conv.kind === 'group' && !m.mine && (!prev || prev.sender_id !== m.sender_id || prev.kind === 'system');
     const sender = (S.conv.members || []).find(x => x.id === m.sender_id);
@@ -385,6 +455,7 @@
       ['📄', 'Document', '#1d4ed8', () => pickFiles('*/*', '', true)], ['📍', 'Location', '#16a34a', shareLocation],
       ['👤', 'Contact', '#0369a1', shareContact], ['🎤', 'Voice note', '#e5484d', () => voiceNote(() => { const ta = $('#fcText', root); ta && ta.dispatchEvent(new Event('input')); })],
       ['🧾', 'Quote', '#c2410c', makeQuote], ['😀', 'Chatmoji', '#ca8a04', () => picker(n => sendRaw({ c: S.conv.id, body: ':' + n + ':', kind: 'text', reply_to: S.reply ? S.reply.id : 0 }))]];
+    if (S.conv && S.conv.kind === 'group') tiles.push(['💰', 'Stokvel', '#15803d', stokvel]);
     sheet('<h3>Share</h3><div class="fc-grid">' + tiles.map((t, i) => '<button class="fc-tile" data-i="' + i + '"><i style="background:' + t[2] + '">' + t[0] + '</i>' + t[1] + '</button>').join('') + '</div>', (el, done) => {
       el.querySelectorAll('.fc-tile').forEach(b => b.onclick = () => { done(); tiles[Number(b.dataset.i)][3](); });
     });
@@ -464,7 +535,7 @@
       [c.pinned ? '📌' : '📌', c.pinned ? 'Unpin chat' : 'Pin chat', () => setConv({ pinned: !c.pinned })],
       ['🔕', c.muted ? 'Unmute notifications' : 'Mute notifications', () => setConv({ muted: !c.muted })],
       ['🗂️', c.archived ? 'Unarchive chat' : 'Archive chat', () => setConv({ archived: !c.archived }, true)]];
-    if (c.kind === 'group') { acts.push(['➕', 'Add people', addPeople]); acts.push(['✏️', 'Rename group', () => { const t = prompt('Group name', c.title); if (t) setConv({ title: t }); }]); acts.push(['🚪', 'Leave group', () => { if (confirm('Leave this group?')) setConv({ leave: true }, true); }, 'danger']); }
+    if (c.kind === 'group') { acts.unshift(['💰', 'Stokvel', stokvel]); acts.push(['➕', 'Add people', addPeople]); acts.push(['✏️', 'Rename group', () => { const t = prompt('Group name', c.title); if (t) setConv({ title: t }); }]); acts.push(['🚪', 'Leave group', () => { if (confirm('Leave this group?')) setConv({ leave: true }, true); }, 'danger']); }
     if (c.kind === 'business' && c.who === 'business') acts.push(['✦', 'View provider profile', () => { close(); try { window.openProvider && window.openProvider(c.business_id); } catch (_) {} }]);
     acts.push(['⚑', 'Report', report, 'danger']);
     sheet('<h3>' + esc(c.title) + '</h3><div class="fc-acts">' + acts.map((a, i) => '<button class="fc-act' + (a[3] ? ' ' + a[3] : '') + '" data-a="' + i + '"><i>' + a[0] + '</i>' + a[1] + '</button>').join('') + '</div>', (el, done) => {
@@ -488,15 +559,64 @@
     });
   }
 
+  // ---------- stokvels (SV91): the group's shared record of contributions and whose turn it is to be paid
+  async function stokvel() {
+    const c = S.conv; if (!c || c.kind !== 'group') { toast('Stokvels live in group chats'); return; }
+    let d; try { d = await api('/api/fc/stokvel?c=' + c.id); } catch (e) { toast(e.message); return; }
+    const st = d.stokvel;
+    if (!st) {
+      if (!d.can_manage) { sheet('<h3>💰 Stokvel</h3><p>This group doesn\'t have a stokvel yet. Ask the group admin to start one from the group menu.</p>'); return; }
+      return stokvelForm(d, null);
+    }
+    const rows = st.rows.map(r => '<div class="ln" style="align-items:center;padding:6px 0;border-top:1px solid #eef2f7"><span>' + esc(r.name) + (r.role === 'admin' ? ' <small style="color:#55667d">admin</small>' : '') + '<br><small style="color:#55667d">Saved ' + esc(r.total_confirmed) + '</small></span><span>' +
+      (r.confirmed ? '✅ Confirmed' : r.paid ? '🕓 Paid' + (d.can_manage ? ' <button class="fc-chip" data-ok="' + r.id + '">Confirm</button>' : '') : '— Not yet' + (d.can_manage ? ' <button class="fc-chip" data-ok="' + r.id + '">Mark paid</button>' : '')) + '</span></div>').join('');
+    sheet('<h3>💰 ' + esc(st.name) + '</h3><div class="fc-card" style="min-width:0"><div class="ln"><span>Contribution</span><b>' + esc(st.amount) + ' ' + esc(st.frequency) + '</b></div><div class="ln"><span>This ' + (st.frequency === 'weekly' ? 'week' : 'month') + ' (' + esc(st.period) + ')</span><b>' + st.paid_count + ' of ' + st.rows.length + ' paid</b></div>' +
+      '<div class="ln"><span>Payout this round</span><b>' + esc(st.pot) + ' → ' + esc(st.payout_to || '—') + '</b></div><div class="ln"><span>Next in line</span><b>' + esc(st.next_payout_to || '—') + '</b></div><div class="ln"><span>Saved together (confirmed)</span><b>' + esc(st.total_saved) + '</b></div></div>' +
+      (st.rules ? '<p style="white-space:pre-wrap;font-size:13px;color:#33475f"><b>Rules:</b> ' + esc(st.rules) + '</p>' : '') +
+      '<div style="margin-top:8px">' + rows + '</div>' +
+      (!st.me_paid ? '<button class="fc-btn" id="fcSkPay">I\'ve paid my ' + esc(st.amount) + '</button>' : '') +
+      (d.can_manage ? '<button class="fc-btn sec" id="fcSkEdit">Edit stokvel</button>' : '') +
+      '<p style="font-size:11px;color:#55667d;margin-top:10px">Skillvaya keeps your group\'s record of payments and payout turns. Money is paid between members directly (e.g. EFT or cash); Skillvaya never holds stokvel money.</p>', (el, done) => {
+      const pay = $('#fcSkPay', el); if (pay) pay.onclick = async () => { try { await api('/api/fc/stokvel', { c: c.id, action: 'pay' }); done(); toast('Marked as paid'); loadMsgs(true, true); } catch (e) { toast(e.message); } };
+      const ed = $('#fcSkEdit', el); if (ed) ed.onclick = () => { done(); stokvelForm(d, st); };
+      el.querySelectorAll('[data-ok]').forEach(b => b.onclick = async () => { try { await api('/api/fc/stokvel', { c: c.id, action: 'confirm', user_id: Number(b.dataset.ok) }); done(); stokvel(); loadMsgs(true, true); } catch (e) { toast(e.message); } });
+    });
+  }
+  function stokvelForm(d, st) {
+    const c = S.conv;
+    sheet('<h3>' + (st ? 'Edit stokvel' : 'Start a stokvel') + '</h3><p>Everyone in this group contributes the same amount each round, and one member receives the full pot in turn.</p>' +
+      '<input id="fcSkN" maxlength="60" placeholder="Stokvel name" value="' + esc(st ? st.name : c.title) + '">' +
+      '<input id="fcSkA" inputmode="decimal" placeholder="Contribution per member, e.g. 500" value="' + (st ? (st.amount_cents / 100) : '') + '">' +
+      '<div class="fc-chips" style="margin:6px 0"><button class="fc-chip' + (!st || st.frequency === 'monthly' ? ' on' : '') + '" data-fq="monthly">Monthly</button><button class="fc-chip' + (st && st.frequency === 'weekly' ? ' on' : '') + '" data-fq="weekly">Weekly</button></div>' +
+      '<p style="margin:8px 0 2px;font-size:13px"><b>Payout order</b> (tap to move someone up)</p><div id="fcSkO"></div>' +
+      '<textarea id="fcSkR" rows="3" maxlength="1000" placeholder="Group rules (optional), e.g. pay by the 5th; R50 late fee">' + esc(st ? st.rules : '') + '</textarea>' +
+      '<button class="fc-btn" id="fcSkGo">' + (st ? 'Save' : 'Start stokvel') + '</button>' + (st ? '<button class="fc-btn danger" id="fcSkClose">Close stokvel</button>' : ''), (el, done) => {
+      let freq = st ? st.frequency : 'monthly';
+      let order = d.members.slice();
+      if (st && st.order) order.sort((a, b) => st.order.indexOf(a.name) - st.order.indexOf(b.name));
+      const drawO = () => { $('#fcSkO', el).innerHTML = order.map((m, i) => '<button class="fc-act" data-up="' + i + '"><i>' + (i + 1) + '</i>' + esc(m.name) + '</button>').join(''); el.querySelectorAll('[data-up]').forEach(b => b.onclick = () => { const i = Number(b.dataset.up); if (i > 0) { [order[i - 1], order[i]] = [order[i], order[i - 1]]; drawO(); } }); };
+      drawO();
+      el.querySelectorAll('[data-fq]').forEach(b => b.onclick = () => { freq = b.dataset.fq; el.querySelectorAll('[data-fq]').forEach(x => x.classList.toggle('on', x === b)); });
+      $('#fcSkGo', el).onclick = async () => {
+        try { await api('/api/fc/stokvel', { c: c.id, action: st ? 'update' : 'create', name: $('#fcSkN', el).value, amount: $('#fcSkA', el).value, frequency: freq, rules: $('#fcSkR', el).value, order: order.map(m => m.id) }); done(); toast(st ? 'Stokvel saved' : 'Stokvel started'); loadMsgs(true, true); stokvel(); }
+        catch (e) { toast(e.message); }
+      };
+      const cl = $('#fcSkClose', el); if (cl) cl.onclick = async () => { if (!confirm('Close this stokvel? Its history stays in the chat.')) return; try { await api('/api/fc/stokvel', { c: c.id, action: 'close' }); done(); toast('Stokvel closed'); loadMsgs(true, true); } catch (e) { toast(e.message); } };
+    });
+  }
+
   // ---------- calls
   function call(mode) {
     const c = S.conv; if (!c) return;
-    const canData = c.kind === 'business' && typeof window.startSkillvayaVideoCall === 'function';
+    const canData = typeof window.startSkillvayaVideoCall === 'function';
+    const label = (mode === 'video' ? 'Video call' : 'Voice call') + ' over data', note = 'Free · uses your data or Wi-Fi';
+    const dataCall = calleeId => { close(); try { window.startSkillvayaVideoCall(c.business_id || 0, c.customer_id || 0, mode, { conversationId: c.id, calleeId: calleeId || 0 }); } catch (e) { toast(e.message); } };
     const acts = [];
-    if (canData) acts.push([mode === 'video' ? '🎥' : '📞', (mode === 'video' ? 'Video call' : 'Voice call') + ' over data', 'Free · uses your data or Wi-Fi', () => { close(); try { window.startSkillvayaVideoCall(c.business_id, c.customer_id, mode); } catch (e) { toast(e.message); } }]);
-    if (c.dial && mode !== 'video') acts.push(['📱', 'Call with airtime', 'Normal phone call · ' + c.dial, () => { location.href = 'tel:' + c.dial; }]);
-    if (!acts.length) { toast(c.kind === 'group' ? 'Group calls are coming soon to Future Chat.' : 'Data calls with friends and family are coming in the next Skillvaya update.'); return; }
-    if (acts.length === 1 && mode === 'video') { acts[0][3](); return; }
+    if (canData && c.kind === 'group') {
+      (c.members || []).filter(x => x.id !== (S.me && S.me.id)).slice(0, 12).forEach(x => acts.push([mode === 'video' ? '🎥' : '📞', label + ' · ' + x.name, note, () => dataCall(x.id)]));
+    } else if (canData) acts.push([mode === 'video' ? '🎥' : '📞', label, note, () => dataCall(0)]);
+    if (!acts.length) { toast('Calls need the latest Skillvaya app or a browser with camera and microphone support.'); return; }
+    if (acts.length === 1) { acts[0][3](); return; }
     sheet('<h3>' + esc(c.title) + '</h3><div class="fc-acts">' + acts.map((a, i) => '<button class="fc-act" data-a="' + i + '"><i>' + a[0] + '</i><span>' + a[1] + '<br><small style="color:#55667d">' + esc(a[2]) + '</small></span></button>').join('') + '</div>', (el, done) => {
       el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { done(); acts[Number(b.dataset.a)][3](); });
     });
@@ -578,7 +698,9 @@
     if (p.get('fc_verify') === '1' && token()) setTimeout(() => verifyPhone(true), 800);
     setInterval(async () => { if (!token() || document.visibilityState === 'hidden' || S.open) return; try { const d = await api('/api/fc/pulse'); const btn = document.getElementById('nav-messages'); if (btn) { S.list = S.list || []; let b = btn.querySelector('.fc-navbadge'); if (!b) { updateBadge(); b = btn.querySelector('.fc-navbadge'); } if (b) { b.textContent = d.unread > 99 ? '99+' : String(d.unread); b.style.display = d.unread ? 'grid' : 'none'; } } } catch (_) {} }, 15000);
   }
-  window.FutureChat = { open, close, verifyPhone, newChat };
+  function share(text) { S.pendingShare = String(text || ''); open(); setTimeout(() => toast('Pick a chat to share with'), 300); }
+  function inviteFriends() { invite(''); }
+  window.FutureChat = { open, close, verifyPhone, newChat, share, stokvel, inviteFriends, findFriends: () => { open(); setTimeout(askContacts, 300); } };
   window.fcVerifyPhone = verifyPhone;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
 })();

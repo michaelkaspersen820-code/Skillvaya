@@ -610,6 +610,10 @@ public class MainActivity extends Activity {
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == FutureChatBridge.CONTACTS_REQUEST) {
+            if (futureChatBridge != null) futureChatBridge.onContactsPermission(grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED);
+            return;
+        }
         if (requestCode == PUSH_NOTIFICATION_PERMISSION_REQUEST) {
             boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
             if (!granted && notificationPermissionRequestedFromCall) {

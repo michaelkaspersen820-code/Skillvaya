@@ -30,6 +30,12 @@ public final class SkillvayaMessagingService extends FirebaseMessagingService {
 
     @Override public void onMessageReceived(RemoteMessage message) {
         String type = message.getData().get("type");
+        String endedCallId = message.getData().get("call_id");
+        if (("call_ended".equals(type) || "missed_call".equals(type)) && endedCallId != null) {
+            // Stop the ringing screen on this phone as soon as the caller hangs up.
+            try { NotificationManagerCompat.from(this).cancel(endedCallId.hashCode() & 0x7fffffff); } catch (Exception ignored) {}
+            if ("call_ended".equals(type)) return;
+        }
         boolean call = "incoming_call".equals(type);
         RemoteMessage.Notification remoteNotification = message.getNotification();
         String title = message.getData().get("title");
@@ -61,7 +67,12 @@ public final class SkillvayaMessagingService extends FirebaseMessagingService {
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
         if (call) {
             // Ring like a phone call: show over the lock screen and keep ringing until answered or timed out.
+            Intent decline = new Intent(this, CallDismissReceiver.class);
+            decline.putExtra("notification_id", message.getData().getOrDefault("call_id", "call").hashCode() & 0x7fffffff);
+            PendingIntent declinePending = PendingIntent.getBroadcast(this, (int) (System.nanoTime() & 0x7fffffff), decline,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             builder.setFullScreenIntent(pending, true).setOngoing(true).setTimeoutAfter(45000)
+                   .addAction(0, "Decline", declinePending)
                    .addAction(0, "Answer", pending);
         }
         // On Android O+, channel sound/vibration settings are authoritative.
@@ -75,7 +86,10 @@ public final class SkillvayaMessagingService extends FirebaseMessagingService {
                 ? (message.getData().getOrDefault("call_id", "call").hashCode() & 0x7fffffff)
                 : (int) (System.currentTimeMillis() & 0x7fffffff);
         try {
-            NotificationManagerCompat.from(this).notify(notificationId, builder.build());
+            Notification built = builder.build();
+            // Keep ringing (like a normal phone call) until answered, declined or timed out.
+            if (call) built.flags |= Notification.FLAG_INSISTENT;
+            NotificationManagerCompat.from(this).notify(notificationId, built);
         } catch (SecurityException ignored) {
             // Android notification permission can be disabled by the user; the OS owns that setting.
         }

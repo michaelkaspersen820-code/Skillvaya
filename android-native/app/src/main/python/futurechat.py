@@ -49,12 +49,24 @@ def init(c):
         CREATE TABLE IF NOT EXISTS fc_attachments(id %(pk)s, message_id BIGINT NOT NULL, conversation_id BIGINT NOT NULL, filename TEXT NOT NULL,
             mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, data_base64 TEXT NOT NULL, created_at TEXT NOT NULL, legacy_id BIGINT NOT NULL DEFAULT 0);
         CREATE INDEX IF NOT EXISTS idx_fc_attachments_msg ON fc_attachments(message_id);
+        CREATE TABLE IF NOT EXISTS fc_stokvels(id %(pk)s, conversation_id BIGINT NOT NULL, name TEXT NOT NULL, amount_cents BIGINT NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'ZAR', frequency TEXT NOT NULL DEFAULT 'monthly', payout_order TEXT NOT NULL DEFAULT '[]',
+            start_period TEXT NOT NULL, rules TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', created_by BIGINT NOT NULL,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_fc_stokvel_conv ON fc_stokvels(conversation_id);
+        CREATE TABLE IF NOT EXISTS fc_stokvel_payments(id %(pk)s, stokvel_id BIGINT NOT NULL, user_id BIGINT NOT NULL, period TEXT NOT NULL,
+            amount_cents BIGINT NOT NULL, note TEXT NOT NULL DEFAULT '', marked_at TEXT NOT NULL, confirmed_by BIGINT NOT NULL DEFAULT 0, confirmed_at TEXT NOT NULL DEFAULT '');
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_fc_stokvel_pay ON fc_stokvel_payments(stokvel_id, user_id, period);
         CREATE TABLE IF NOT EXISTS fc_fetches(attachment_id BIGINT NOT NULL, user_id BIGINT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(attachment_id, user_id));
     """ % {"pk": pk})
     if "purged_at" not in _columns(c, "fc_attachments"): c.execute("ALTER TABLE fc_attachments ADD COLUMN purged_at TEXT NOT NULL DEFAULT ''")
     cols = _columns(c, "users")
     if "phone_e164" not in cols: c.execute("ALTER TABLE users ADD COLUMN phone_e164 TEXT DEFAULT ''")
     if "phone_verified_at" not in cols: c.execute("ALTER TABLE users ADD COLUMN phone_verified_at TEXT DEFAULT ''")
+    try:
+        vc_cols = _columns(c, "video_calls")
+        if vc_cols and "conversation_id" not in vc_cols: c.execute("ALTER TABLE video_calls ADD COLUMN conversation_id BIGINT NOT NULL DEFAULT 0")
+    except Exception as exc: print("Future Chat call column skipped:", type(exc).__name__)
     try: c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_verified ON users(phone_e164) WHERE phone_verified_at<>''")
     except Exception as exc: print("Future Chat phone index skipped:", type(exc).__name__)
 
@@ -146,6 +158,160 @@ def _require_member(c, conv_id, u):
     m = _member(c, conv_id, int(u["id"]))
     if not m: raise PermissionError("You are not part of this conversation.")
     return m
+
+
+def call_target(c, conv_id, u, callee_id=None):
+    """Who a data call in this conversation rings. Returns (callee_id, business_id, customer_id)."""
+    uid = int(u["id"])
+    conv = c.execute("SELECT * FROM fc_conversations WHERE id=?", (conv_id,)).fetchone()
+    if not conv: raise LookupError("Conversation not found.")
+    if not _member(c, conv_id, uid): raise PermissionError("You are not part of this conversation.")
+    others = [int(r["user_id"]) for r in c.execute("SELECT user_id FROM fc_members WHERE conversation_id=? AND user_id<>?", (conv_id, uid)).fetchall()]
+    if not others: raise LookupError("There is nobody else in this chat to call.")
+    try: want = int(callee_id or 0)
+    except (TypeError, ValueError): want = 0
+    if want:
+        if want not in others: raise PermissionError("That person is not in this chat.")
+        target = want
+    elif len(others) == 1: target = others[0]
+    else: raise LookupError("Choose who in the group to call.")
+    return target, int(conv["business_id"] or 0), int(conv["customer_id"] or 0) or uid
+
+
+def call_event(c, conv_id, sender_id, text):
+    """Record a call (or missed call) in the chat history."""
+    stamp = A.now()
+    mid = c.execute("INSERT INTO fc_messages(conversation_id,sender_id,body,kind,created_at) VALUES(?,?,?,?,?) RETURNING id",
+                    (conv_id, sender_id, text, "call", stamp)).fetchone()["id"]
+    c.execute("UPDATE fc_conversations SET last_message_id=?,updated_at=? WHERE id=?", (mid, stamp, conv_id))
+    return mid
+
+
+# ---------------------------------------------------------------- stokvels (SV91)
+# Skillvaya only keeps the group's record of who has paid; money moves between members outside the app.
+def _period(freq, d=None):
+    d = d or datetime.date.today()
+    if freq == "weekly":
+        y, w, _ = d.isocalendar(); return "%d-W%02d" % (y, w)
+    return "%d-%02d" % (d.year, d.month)
+
+
+def _period_index(freq, start, cur):
+    try:
+        if freq == "weekly":
+            ys, ws = start.split("-W"); yc, wc = cur.split("-W")
+            a = datetime.date.fromisocalendar(int(ys), int(ws), 1); b = datetime.date.fromisocalendar(int(yc), int(wc), 1)
+            return max(0, (b - a).days // 7)
+        ys, ms = start.split("-"); yc, mc = cur.split("-")
+        return max(0, (int(yc) - int(ys)) * 12 + int(mc) - int(ms))
+    except Exception:
+        return 0
+
+
+def _money(cents, cur="ZAR"):
+    sym = "R" if cur == "ZAR" else cur + " "
+    return sym + ("{:,.2f}".format(int(cents) / 100.0)).replace(",", " ").replace(".00", "")
+
+
+def _stokvel_state(c, conv_id, uid):
+    st = c.execute("SELECT * FROM fc_stokvels WHERE conversation_id=? AND status='active'", (conv_id,)).fetchone()
+    members = [{"id": int(r["id"]), "name": r["name"], "role": r["role"]} for r in
+               c.execute("SELECT u.id,u.name,m.role FROM fc_members m JOIN users u ON u.id=m.user_id WHERE m.conversation_id=? ORDER BY m.joined_at", (conv_id,)).fetchall()]
+    me = next((m for m in members if m["id"] == uid), None)
+    out = {"stokvel": None, "members": members, "can_manage": bool(me and me["role"] == "admin")}
+    if not st: return out
+    period = _period(st["frequency"])
+    try: order = [int(x) for x in json.loads(st["payout_order"] or "[]")]
+    except Exception: order = []
+    ids = [m["id"] for m in members]
+    order = [x for x in order if x in ids] + [x for x in ids if x not in order]
+    idx = _period_index(st["frequency"], st["start_period"], period)
+    pays = {int(r["user_id"]): r for r in c.execute("SELECT * FROM fc_stokvel_payments WHERE stokvel_id=? AND period=?", (st["id"], period)).fetchall()}
+    totals = {int(r["user_id"]): int(r["t"] or 0) for r in c.execute("SELECT user_id, SUM(amount_cents) AS t FROM fc_stokvel_payments WHERE stokvel_id=? AND confirmed_at<>'' GROUP BY user_id", (st["id"],)).fetchall()}
+    rows = []
+    for m in members:
+        p = pays.get(m["id"])
+        rows.append({"id": m["id"], "name": m["name"], "role": m["role"], "paid": bool(p), "confirmed": bool(p and p["confirmed_at"]),
+                     "total_confirmed": _money(totals.get(m["id"], 0), st["currency"])})
+    pot = int(st["amount_cents"]) * len(members)
+    out["stokvel"] = {"id": int(st["id"]), "name": st["name"], "amount": _money(st["amount_cents"], st["currency"]), "amount_cents": int(st["amount_cents"]),
+                      "frequency": st["frequency"], "period": period, "rules": st["rules"], "pot": _money(pot, st["currency"]),
+                      "payout_to": next((m["name"] for m in members if order and m["id"] == order[idx % len(order)]), ""),
+                      "next_payout_to": next((m["name"] for m in members if order and m["id"] == order[(idx + 1) % len(order)]), ""),
+                      "order": [next((m["name"] for m in members if m["id"] == x), "") for x in order],
+                      "paid_count": sum(1 for r in rows if r["paid"]), "confirmed_count": sum(1 for r in rows if r["confirmed"]),
+                      "total_saved": _money(sum(totals.values()), st["currency"]), "rows": rows, "me_paid": bool(pays.get(uid))}
+    return out
+
+
+def _stokvel_post(h, u, d):
+    uid = int(u["id"])
+    try: conv_id = int(d.get("c") or 0)
+    except (TypeError, ValueError): conv_id = 0
+    action = str(d.get("action") or "")
+    stamp = A.now()
+    with A.conn() as c:
+        conv = c.execute("SELECT * FROM fc_conversations WHERE id=?", (conv_id,)).fetchone()
+        mem = _member(c, conv_id, uid)
+        if not conv or not mem: return h.sendj({"error": "You are not part of this group."}, 403)
+        if conv["kind"] != "group": return h.sendj({"error": "Stokvels live in group chats. Start a group first."}, 400)
+        admin = mem["role"] == "admin"
+        st = c.execute("SELECT * FROM fc_stokvels WHERE conversation_id=? AND status='active'", (conv_id,)).fetchone()
+        note = None
+        if action in ("create", "update"):
+            if not admin: return h.sendj({"error": "Only the group admin can set up the stokvel."}, 403)
+            name = str(d.get("name") or conv["title"] or "Stokvel").strip()[:60]
+            try: cents = int(round(float(str(d.get("amount") or "0").replace(",", ".").replace(" ", "")) * 100))
+            except ValueError: cents = 0
+            if cents <= 0 or cents > 100000000: return h.sendj({"error": "Enter the contribution amount, e.g. 500."}, 400)
+            freq = "weekly" if d.get("frequency") == "weekly" else "monthly"
+            rules = str(d.get("rules") or "")[:1000]
+            order = d.get("order") if isinstance(d.get("order"), list) else []
+            order = json.dumps([int(x) for x in order if str(x).isdigit()][:200])
+            if st:
+                c.execute("UPDATE fc_stokvels SET name=?,amount_cents=?,frequency=?,rules=?,payout_order=?,updated_at=? WHERE id=?", (name, cents, freq, rules, order, stamp, st["id"]))
+                note = "updated the stokvel: %s %s" % (_money(cents), freq)
+            else:
+                c.execute("INSERT INTO fc_stokvels(conversation_id,name,amount_cents,frequency,payout_order,start_period,rules,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                          (conv_id, name, cents, freq, order, _period(freq), rules, uid, stamp, stamp))
+                note = "started the stokvel “%s”: %s %s per member" % (name, _money(cents), freq)
+        elif not st:
+            return h.sendj({"error": "This group has no stokvel yet."}, 404)
+        elif action == "pay":
+            period = _period(st["frequency"])
+            if c.execute("SELECT 1 FROM fc_stokvel_payments WHERE stokvel_id=? AND user_id=? AND period=?", (st["id"], uid, period)).fetchone():
+                return h.sendj({"error": "You've already marked this contribution as paid."}, 409)
+            c.execute("INSERT INTO fc_stokvel_payments(stokvel_id,user_id,period,amount_cents,note,marked_at) VALUES(?,?,?,?,?,?)",
+                      (st["id"], uid, period, st["amount_cents"], str(d.get("note") or "")[:200], stamp))
+            note = "paid %s for %s" % (_money(st["amount_cents"], st["currency"]), period)
+        elif action in ("confirm", "unconfirm", "remove"):
+            if not admin: return h.sendj({"error": "Only the group admin can confirm payments."}, 403)
+            try: who = int(d.get("user_id") or 0)
+            except (TypeError, ValueError): who = 0
+            period = _period(st["frequency"])
+            if action == "confirm":
+                row = c.execute("SELECT id FROM fc_stokvel_payments WHERE stokvel_id=? AND user_id=? AND period=?", (st["id"], who, period)).fetchone()
+                if row: c.execute("UPDATE fc_stokvel_payments SET confirmed_by=?,confirmed_at=? WHERE id=?", (uid, stamp, row["id"]))
+                else: c.execute("INSERT INTO fc_stokvel_payments(stokvel_id,user_id,period,amount_cents,marked_at,confirmed_by,confirmed_at) VALUES(?,?,?,?,?,?,?)", (st["id"], who, period, st["amount_cents"], stamp, uid, stamp))
+                n = c.execute("SELECT name FROM users WHERE id=?", (who,)).fetchone()
+                note = "confirmed %s’s payment for %s" % ((n["name"] if n else "a member"), period)
+            elif action == "unconfirm":
+                c.execute("UPDATE fc_stokvel_payments SET confirmed_by=0,confirmed_at='' WHERE stokvel_id=? AND user_id=? AND period=?", (st["id"], who, period))
+            else:
+                c.execute("DELETE FROM fc_stokvel_payments WHERE stokvel_id=? AND user_id=? AND period=?", (st["id"], who, period))
+        elif action == "close":
+            if not admin: return h.sendj({"error": "Only the group admin can close the stokvel."}, 403)
+            c.execute("UPDATE fc_stokvels SET status='closed',updated_at=? WHERE id=?", (stamp, st["id"]))
+            note = "closed the stokvel"
+        else:
+            return h.sendj({"error": "Unknown stokvel action."}, 400)
+        if note:
+            body = (u["name"] or "A member") + " " + note
+            mid = c.execute("INSERT INTO fc_messages(conversation_id,sender_id,body,kind,created_at) VALUES(?,?,?,?,?) RETURNING id", (conv_id, uid, body, "stokvel", stamp)).fetchone()["id"]
+            c.execute("UPDATE fc_conversations SET last_message_id=?,updated_at=? WHERE id=?", (mid, stamp, conv_id))
+        state = _stokvel_state(c, conv_id, uid)
+    if note: _push(conv_id, u, "💰 " + note)
+    return h.sendj(state)
 
 
 def _snippet(row):
@@ -336,6 +502,12 @@ def handle_get(h, path):
                 biz = [{"business_id": int(b["id"]), "name": b["name"], "category": b["category"], "area": b["area"]} for b in
                        c.execute("SELECT id,name,category,area FROM businesses WHERE status='approved' AND LOWER(name) LIKE ? ORDER BY name LIMIT 12", (like,)).fetchall()]
         return h.sendj({"phone": phone, "people": people, "businesses": biz})
+    if path == "/api/fc/stokvel":
+        try: conv_id = int(q.get("c", ["0"])[0])
+        except (TypeError, ValueError): conv_id = 0
+        with A.conn() as c:
+            if not _member(c, conv_id, uid): return h.sendj({"error": "You are not part of this group."}, 403)
+            return h.sendj(_stokvel_state(c, conv_id, uid))
     if path == "/api/phone/status":
         with A.conn() as c:
             r = c.execute("SELECT phone,phone_e164,phone_verified_at,country FROM users WHERE id=?", (uid,)).fetchone()
@@ -393,6 +565,35 @@ def handle_post(h, path, d):
     u = h.require()
     uid = int(u["id"])
     stamp = A.now()
+    if path == "/api/fc/stokvel": return _stokvel_post(h, u, d)
+    if path == "/api/fc/contacts":
+        # SV91-CONTACTS: match the phone's address book against verified Future Chat numbers.
+        # Numbers are compared in memory for this request only and are never stored.
+        raw = d.get("contacts") or []
+        if not isinstance(raw, list): return h.sendj({"error": "Send a list of contacts."}, 400)
+        raw = raw[:5000]
+        with A.conn() as c:
+            mine = c.execute("SELECT country,phone_e164 FROM users WHERE id=?", (uid,)).fetchone()
+            country = (mine["country"] if mine else "") or "ZA"
+            own = (mine["phone_e164"] if mine else "") or ""
+            book = {}
+            for item in raw:
+                if isinstance(item, dict): num, name = item.get("phone"), str(item.get("name") or "")[:80]
+                else: num, name = item, ""
+                ph = normalize_phone(num, country)
+                if ph and ph != own and ph not in book: book[ph] = name
+            found = []
+            keys = list(book)
+            for i in range(0, len(keys), 400):
+                part = keys[i:i + 400]
+                marks = ",".join("?" * len(part))
+                for r in c.execute("SELECT id,name,role,phone_e164 FROM users WHERE phone_verified_at<>'' AND phone_e164 IN (" + marks + ")", tuple(part)).fetchall():
+                    if int(r["id"]) == uid: continue
+                    found.append({"id": int(r["id"]), "name": r["name"], "contact_name": book.get(r["phone_e164"]) or r["name"], "phone": r["phone_e164"]})
+        found.sort(key=lambda x: (x["contact_name"] or "").lower())
+        others = [{"phone": k, "name": v} for k, v in book.items() if k not in {f["phone"] for f in found}]
+        others.sort(key=lambda x: (x["name"] or "~").lower())
+        return h.sendj({"on_future_chat": found, "invite": others[:400], "checked": len(book)})
     if path == "/api/fc/start":
         with A.conn() as c:
             if d.get("business_id"):

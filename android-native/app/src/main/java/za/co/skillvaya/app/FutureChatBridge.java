@@ -1,7 +1,11 @@
 package za.co.skillvaya.app;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.provider.ContactsContract;
 import android.net.Uri;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
@@ -17,11 +21,13 @@ import com.google.firebase.auth.PhoneAuthProvider;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 /** Native helpers for Future Chat inside Skillvaya: SMS phone verification and the Chatmoji Lens camera. */
 public final class FutureChatBridge {
     static final int LENS_REQUEST = 7402;
+    static final int CONTACTS_REQUEST = 7403;
     private final Activity activity;
     private final WebView web;
     private String verificationId;
@@ -62,6 +68,47 @@ public final class FutureChatBridge {
                 activity.runOnUiThread(() -> Toast.makeText(activity, "The photo couldn't be added", Toast.LENGTH_LONG).show());
             }
         }, "fc-lens-result").start();
+    }
+
+    // ---- phone contacts: the in-app disclosure is shown by Future Chat before readContacts() is called.
+    @JavascriptInterface public String contactsPermission() {
+        if (android.os.Build.VERSION.SDK_INT < 23) return "granted";
+        return activity.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED ? "granted" : "ask";
+    }
+
+    @JavascriptInterface public void readContacts() {
+        activity.runOnUiThread(() -> {
+            if ("granted".equals(contactsPermission())) { readContactsNow(); return; }
+            activity.requestPermissions(new String[]{Manifest.permission.READ_CONTACTS}, CONTACTS_REQUEST);
+        });
+    }
+
+    /** Called from MainActivity.onRequestPermissionsResult. */
+    void onContactsPermission(boolean granted) {
+        if (granted) readContactsNow(); else js("fcContactsDenied");
+    }
+
+    private void readContactsNow() {
+        new Thread(() -> {
+            JSONArray out = new JSONArray();
+            String[] cols = {ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER};
+            try (Cursor cur = activity.getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, cols, null, null, null)) {
+                if (cur != null) {
+                    while (cur.moveToNext() && out.length() < 5000) {
+                        String num = cur.getString(1);
+                        if (num == null || num.trim().isEmpty()) continue;
+                        JSONObject o = new JSONObject();
+                        o.put("name", cur.getString(0) == null ? "" : cur.getString(0));
+                        o.put("phone", num);
+                        out.put(o);
+                    }
+                }
+            } catch (Exception e) {
+                js("fcContactsDenied");
+                return;
+            }
+            js("fcContacts", out.toString());
+        }, "fc-contacts").start();
     }
 
     @JavascriptInterface public void startPhoneVerification(String phone) {
