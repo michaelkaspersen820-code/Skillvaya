@@ -196,35 +196,36 @@
     var push = function (pt, du, dv, sig) { if (Math.abs(du) < 1e-3 && Math.abs(dv) < 1e-3) return; ctrl.push({ x: pt.x, y: pt.y, dx: (ux * du + vx * dv) * d, dy: (uy * du + vy * dv) * d, s: sig * d }); };
     var bsv = function (k) { return +B[k] || 0; };
     // Your own expression right now, so the lens only adds what is missing (no double smile, no over-closing).
-    var have = { bi: bsv('browInnerUp') - (bsv('browDownLeft') + bsv('browDownRight')) / 2 }, shut = [];
+    var have = { bi: bsv('browInnerUp') - (bsv('browDownLeft') + bsv('browDownRight')) / 2 }, shut = [], browDown = 0;
     [['L', imgLeftIsR ? SIDE.r : SIDE.l, -1], ['R', imgLeftIsR ? SIDE.l : SIDE.r, 1]].forEach(function (Q) {
       var sd = Q[0], K = Q[1], out = Q[2], bs = K.bs;
       var bi = pick(E, 'bi', sd), bo = pick(E, 'bo', sd), eo = pick(E, 'e', sd), k = E.k;
       var eyeH = Math.hypot(L[K.up].x - L[K.lo].x, L[K.up].y - L[K.lo].y) / d;  // how open this eye is now
-      if (bi !== null) { var db = clamp(bi - have.bi, -1.4, 1.4);
-        push(L[K.bi], out * (db < 0 ? -db * .07 : 0), -db * .15, .16); push(L[K.bm], 0, -db * .07, .14); }
-      if (bo !== null) { var dbo = clamp(bo - bsv('browOuterUp' + bs), -1, 1.2); push(L[K.bo], 0, -dbo * .1, .15); }
+      if (bi !== null) { var db = clamp(bi - have.bi, -1.4, 1.4); if (db < 0) browDown = Math.max(browDown, -db * .3);
+        push(L[K.bi], db < 0 ? out * db * .13 : 0, -db * .3, .22); push(L[K.bm], 0, -db * .15, .2); push(L[K.bo], 0, db < 0 ? db * .06 : 0, .18); }
+      if (bo !== null) { var dbo = clamp(bo - bsv('browOuterUp' + bs), -1, 1.2); push(L[K.bo], 0, -dbo * .2, .2); }
       if (eo !== null) {
         var want = clamp(1 - eo, -.5, 1) - bsv('eyeBlink' + bs);                 // + close, - widen
         if (want > .55) { shut.push([K, clamp((want - .45) * 2, 0, 1)]); push(L[K.up], 0, eyeH * .3, .1); }
         else if (want > 0) { push(L[K.up], 0, want * eyeH * .95, .1); push(L[K.lo], 0, -want * eyeH * .12, .07); }
-        else if (want < 0) { push(L[K.up], 0, want * .07, .1); push(L[K.lo], 0, -want * .02, .07); }
+        else if (want < 0) { push(L[K.up], 0, want * .15, .13); push(L[K.lo], 0, -want * .05, .09); }
       }
-      if (k !== undefined) { var dk = clamp(k - bsv('cheekSquint' + bs), -1, 1); push(L[K.ck], 0, -dk * .07, .22); }
+      if (k !== undefined) { var dk = clamp(k - bsv('cheekSquint' + bs), -1, 1); push(L[K.ck], 0, -dk * .12, .26); }
       var c = pick(E, 'c', sd);
       if (c !== null) { var dc = clamp(c - (bsv('mouthSmile' + bs) - bsv('mouthFrown' + bs)), -1.1, 1.2);
-        push(L[K.mc], 0, -dc * (dc < 0 ? .13 : .17), .2); }
-      if (E.w) push(L[K.mc], out * E.w * .12, 0, .18);
+        push(L[K.mc], 0, -dc * (dc < 0 ? .24 : .26), .27); }
+      if (E.w) push(L[K.mc], out * E.w * .2, 0, .24);
     });
     if (E.o !== undefined) { var dopen = clamp(E.o - bsv('jawOpen'), -.25, 1.2);
-      push(L[14], 0, dopen * .17, .2); push(L[17], 0, dopen * .12, .26); push(L[13], 0, -dopen * .03, .14); }
+      var mw = Math.hypot(L[61].x - L[291].x, L[61].y - L[291].y) / d;
+      push(L[14], 0, dopen * .13, mw * .24); push(L[17], 0, dopen * .1, mw * .28); }
     var gc = warp(v, w, h, ctrl);
     if (gc) { x.save(); x.filter = (typeof svFx !== 'undefined' && svFx.filter) || 'none'; x.drawImage(gc, 0, 0, w, h); x.restore(); }
     shut.forEach(function (Z) { shutEye(x, L, Z[0], Z[1], d); });
     // Colour: exactly your face outline, stopping just above the eyebrows so hair and fringe stay natural.
     if (!S.off || S.off.width !== w || S.off.height !== h) { S.off = document.createElement('canvas'); S.off.width = w; S.off.height = h; }
     var o = S.off.getContext('2d'); o.clearRect(0, 0, w, h);
-    var em = { x: (re.x + le.x) / 2, y: (re.y + le.y) / 2 }, topV = -.62;
+    var em = { x: (re.x + le.x) / 2, y: (re.y + le.y) / 2 }, topV = -.56 + browDown;
     o.save(); o.filter = 'blur(' + Math.max(2, d * .09).toFixed(1) + 'px)'; o.fillStyle = col; o.beginPath();
     OVAL.forEach(function (i, n) {
       var p = L[i], au = (p.x - em.x) * ux + (p.y - em.y) * uy, av = (p.x - em.x) * vx + (p.y - em.y) * vy;
@@ -351,7 +352,7 @@
   window.svLensBarHTML = function () {
     var nm = names(); if (!nm.length) return '';
     var order = []; nm.forEach(function (_, i) { if (KIND[i] < 2) order.push(i); }); nm.forEach(function (_, i) { if (KIND[i] === 2) order.push(i); });
-    return '<div class="sv-lens-title">Chatmoji Lenses' + (S.loading ? ' · starting face tracking…' : (S.failed ? ' · face tracking unavailable, lens shown centred' : '')) + '</div><div class="sv-fx-bar sv-lens-bar">' +
+    return '<div class="sv-lens-title">Chatmoji Lenses' + (S.loading ? ' · starting face tracking…' : (S.failed ? ' · face tracking unavailable, lens shown centred' : (S.mode === 'mesh' ? ' · precise face tracking' : (S.mode === 'box' ? ' · basic face tracking' : '')))) + '</div><div class="sv-fx-bar sv-lens-bar">' +
       '<button type="button" class="sv-fx-chip' + (S.i < 0 ? ' on' : '') + '" onclick="svPickLens(-1)">No lens</button>' +
       order.map(function (i) { return '<button type="button" class="sv-lens-chip' + (S.i === i ? ' on' : '') + '" aria-label="' + nm[i].replace(/_/g, ' ') + ' lens" onclick="svPickLens(' + i + ')"><img alt="" src="' + img(nm[i]).src + '"></button>'; }).join('') + '</div>';
   };
