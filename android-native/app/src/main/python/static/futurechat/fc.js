@@ -645,7 +645,7 @@
   // ---------- phone verification (Firebase via the Skillvaya app, or the web)
   async function verifyPhone(afterSignup) {
     let st = {}; try { st = await api('/api/phone/status'); } catch (_) {}
-    if (st.verified && !afterSignup) { toast('Your number ' + st.phone + (st.method === 'email' ? ' is confirmed by email (not SMS-checked yet)' : ' is verified')); return; }
+    if (st.verified && !afterSignup) { toast('Your number ' + st.phone + (st.method === 'email' ? ' is confirmed by email (not SMS-checked yet)' : st.method === 'self' ? ' is saved' : ' is verified')); return; }
     if (st.mode === 'email') return verifyPhoneByEmail(st, afterSignup);
     sheet('<h3>Verify your phone number</h3><p>' + (afterSignup ? 'One last step. ' : '') + 'We\'ll send a 6-digit code by SMS. Your number lets people find you on Future Chat and call you.</p>' +
       '<input id="fcPN" type="tel" autocomplete="tel" placeholder="Phone number, e.g. 082 123 4567" value="' + esc(st.phone || '') + '"><button class="fc-btn" id="fcPSend">Send code</button>' +
@@ -688,7 +688,7 @@
       $('#fcPSend', el).onclick = async () => {
         const raw = $('#fcPN', el).value; if (raw.replace(/\D/g, '').length < 9) { msg('Enter your full phone number.'); return; }
         msg('Sending…');
-        try { const r = await api('/api/phone/email-start', { phone: raw }); msg('Code sent to ' + r.sent_to + '. Check your inbox (and spam).'); $('#fcPStep2', el).style.display = 'block'; $('#fcPC', el).focus(); }
+        try { const r = await api('/api/phone/email-start', { phone: raw }); if (r.saved) { done(); S.verified = true; toast('Number ' + r.phone + ' saved ✓'); if (S.open && !S.conv) loadList(); return; } /*SV93-SELFPHONE*/ msg('Code sent to ' + r.sent_to + '. Check your inbox (and spam).'); $('#fcPStep2', el).style.display = 'block'; $('#fcPC', el).focus(); }
         catch (e) { msg(e.message); }
       };
       $('#fcPConfirm', el).onclick = async () => {

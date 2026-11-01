@@ -788,7 +788,7 @@ def _verify_phone(h, u, d):
     uid = int(u["id"])
     with A.conn() as c:
         other = c.execute("SELECT id,phone_verify_method FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>?", (phone, uid)).fetchone()
-        if other and str(other["phone_verify_method"] or "") == "email":
+        if other and str(other["phone_verify_method"] or "") in ("email", "self"):
             # An SMS check proves ownership, so it takes the number back from an email-only claim.
             c.execute("UPDATE users SET phone_verified_at='',phone_verify_method='' WHERE id=?", (int(other["id"]),))
         elif other: return h.sendj({"error": "This number is already linked to another Skillvaya account."}, 409)
@@ -821,7 +821,7 @@ def _email_phone_start(h, u, d):
         if "@" not in email: return h.sendj({"error": "Add an email address to your account first."}, 400)
         phone = normalize_phone(d.get("phone"), (r["country"] if r else "") or "ZA")
         if not phone: return h.sendj({"error": "Enter your full phone number, e.g. 082 123 4567."}, 400)
-        other = c.execute("SELECT id FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>?", (phone, uid)).fetchone()
+        other = c.execute("SELECT id FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>? AND COALESCE(phone_verify_method,'')<>'self'", (phone, uid)).fetchone()
         if other: return h.sendj({"error": "This number is already linked to another Skillvaya account."}, 409)
         now = datetime.datetime.now(datetime.timezone.utc)
         last = c.execute("SELECT sent_at FROM fc_phone_codes WHERE user_id=?", (uid,)).fetchone()
@@ -837,8 +837,14 @@ def _email_phone_start(h, u, d):
     body = ("Hi %s,\n\nYour Skillvaya code to confirm the phone number %s is:\n\n    %s\n\n"
             "It expires in 15 minutes. If you didn't ask for this, you can ignore this email.\n\nSkillvaya" % (str(r["name"] or "there"), phone, code))
     if not A.send_owner_email("Your phone confirmation code: " + code, body, recipient=email):
-        with A.conn() as c: c.execute("DELETE FROM fc_phone_codes WHERE user_id=?", (uid,))
-        return h.sendj({"error": "We couldn't send the email right now. Please try again later."}, 503)
+        # SV93-SELFPHONE: email isn't set up on the server yet, so save the number now (marked unconfirmed)
+        # rather than blocking the person. A later email or SMS check can take the number back.
+        with A.conn() as c:
+            c.execute("DELETE FROM fc_phone_codes WHERE user_id=?", (uid,))
+            if c.execute("SELECT id FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>?", (phone, uid)).fetchone():
+                return h.sendj({"error": "This number is already linked to another Skillvaya account."}, 409)
+            c.execute("UPDATE users SET phone=?,phone_e164=?,phone_verified_at=?,phone_verify_method='self' WHERE id=?", (phone, phone, A.now(), uid))
+        return h.sendj({"ok": True, "saved": True, "phone": phone, "method": "self"})
     return h.sendj({"ok": True, "sent_to": _mask_email(email), "phone": phone})
 
 
@@ -859,8 +865,9 @@ def _email_phone_confirm(h, u, d):
             c.execute("UPDATE fc_phone_codes SET tries=tries+1 WHERE user_id=?", (uid,))
             return h.sendj({"error": "That code doesn't match. Check the email and try again."}, 400)
         phone = str(row["phone"])
-        if c.execute("SELECT id FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>?", (phone, uid)).fetchone():
+        if c.execute("SELECT id FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>? AND COALESCE(phone_verify_method,'')<>'self'", (phone, uid)).fetchone():
             return h.sendj({"error": "This number is already linked to another Skillvaya account."}, 409)
+        c.execute("UPDATE users SET phone_verified_at='',phone_verify_method='' WHERE phone_e164=? AND id<>? AND phone_verify_method='self'", (phone, uid))
         c.execute("UPDATE users SET phone=?,phone_e164=?,phone_verified_at=?,phone_verify_method='email' WHERE id=?", (phone, phone, A.now(), uid))
         c.execute("DELETE FROM fc_phone_codes WHERE user_id=?", (uid,))
     return h.sendj({"ok": True, "phone": phone, "verified": True, "method": "email"})
