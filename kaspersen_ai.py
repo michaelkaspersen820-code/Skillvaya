@@ -381,6 +381,8 @@ def handle_post(h, path, d):
         return _set_keys(h, d)
     if path.startswith("/api/kai/pc/"):
         return _pc_post(h, path, d)
+    if path == "/api/kai/image":
+        return _image(h, d)
     if path != "/api/kai/chat/completions":
         return h.sendj({"error": "Not found"}, 404)
     u = h.require()
@@ -455,6 +457,62 @@ def handle_post(h, path, d):
             time.sleep(1.5)
         _cool.setdefault(name, time.time() + 30)
     return h.sendj({"error": {"message": "Kaspersen's brain is unavailable right now. " + last}}, 502)
+
+
+# STUDIO-20261102: pictures for Kaspersen Pocket (same image models as PC Kaspersen's Studio). About half a US cent each.
+IMAGE_MODELS = ["google/gemini-3.1-flash-image", "google/gemini-2.5-flash-image"]
+ASPECTS = {"1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
+_img_used = {}
+
+
+def _image(h, d):
+    u = h.require()
+    uid = int(u["id"]); unl = _unlimited(u); day = _today()
+    if not unl and not _phone_ok(uid):
+        return h.sendj({"error": "Confirm your mobile number for Future Chat to use Kaspersen.", "verify_phone": True}, 403)
+    if not unl and _img_used.get((uid, day), 0) >= _env_int("KASPERSEN_DAILY_IMAGES", 15):
+        return h.sendj({"error": "You've made today's limit of pictures. It resets at midnight.", "limit": True}, 429)
+    prompt = str(d.get("prompt") or "").strip()[:3000]
+    if not prompt:
+        return h.sendj({"error": "Describe the picture."}, 400)
+    key = _keys().get("openrouter")
+    if not key:
+        return h.sendj({"error": "Pictures aren't set up on the server yet."}, 503)
+    content = [{"type": "text", "text": prompt}]
+    src = str(d.get("source_image") or "")
+    if src:
+        content.append({"type": "image_url", "image_url": {"url": src if src.startswith("data:") else "data:image/jpeg;base64," + src}})
+    aspect = str(d.get("aspect_ratio") or "")
+    errors = []
+    for model in IMAGE_MODELS:
+        body = {"model": model, "modalities": ["image", "text"], "messages": [{"role": "user", "content": content}]}
+        if aspect in ASPECTS:
+            body["image_config"] = {"aspect_ratio": aspect}
+        req = urllib.request.Request(FREE_URL, data=json.dumps(body).encode(), method="POST", headers={
+            "Authorization": "Bearer " + key, "Content-Type": "application/json",
+            "HTTP-Referer": "https://skillvaya.onrender.com", "X-Title": "Kaspersen Pocket"})
+        try:
+            with urllib.request.urlopen(req, timeout=170) as r:
+                j = json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            try: msg = json.loads(e.read()).get("error")
+            except Exception: msg = ""
+            msg = (msg.get("message") if isinstance(msg, dict) else msg) or ("HTTP %s" % e.code)
+            if e.code == 402:
+                return h.sendj({"error": "The picture service has run out of credit (OpenRouter). Top it up and try again."}, 402)
+            errors.append("%s: %s" % (model, str(msg)[:160])); continue
+        except Exception as e:
+            errors.append("%s: %s" % (model, type(e).__name__)); continue
+        msg = ((j.get("choices") or [{}])[0].get("message") or {})
+        imgs = msg.get("images") or []
+        url = imgs[0].get("image_url", {}).get("url", "") if imgs else ""
+        if not url.startswith("data:image"):
+            errors.append("%s: no picture came back" % model); continue
+        _img_used[(uid, day)] = _img_used.get((uid, day), 0) + 1
+        _count(uid, day, (j.get("usage") or {}).get("total_tokens", 0))
+        return h.sendj({"ok": True, "image": url, "model": model, "note": str(msg.get("content") or "")[:300],
+                        "cost_usd": (j.get("usage") or {}).get("cost")})
+    return h.sendj({"error": "Couldn't make the picture: " + " | ".join(errors)}, 502)
 
 
 def _set_keys(h, d):
