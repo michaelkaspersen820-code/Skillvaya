@@ -3,6 +3,7 @@ from urllib.parse import urlparse, parse_qs
 import json, sqlite3, hashlib, hmac, secrets, os, datetime, threading, webbrowser, urllib.parse, urllib.request, urllib.error, base64, time
 from contextlib import contextmanager
 import futurechat as FC
+import kaspersen_ai as KAI
 import homeads as HA
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -4129,7 +4130,7 @@ class Handler(BaseHTTPRequestHandler):
         n=int(self.headers.get("Content-Length","0"))
         path=urlparse(getattr(self,"path","")).path
         # Allow larger JSON only for the explicitly bounded in-chat image/video upload endpoint.
-        max_bytes=20_000_000 if path=="/api/messages/attachments" else 24_000_000 if path=="/api/fc/send" else 18_000_000 if path=="/api/home-ads/create" else 3_000_000
+        max_bytes=20_000_000 if path=="/api/messages/attachments" else 16_000_000 if path=="/api/kai/chat/completions" else 24_000_000 if path=="/api/fc/send" else 18_000_000 if path=="/api/home-ads/create" else 3_000_000
         if n<0 or n>max_bytes: raise ValueError("Request too large")
         return json.loads(self.rfile.read(n) or b"{}")
     def user(self,want_photo=False):
@@ -5063,6 +5064,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return self.sendj({"publicKey":pub,"enabled":bool(pub)})
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
                 return FC.handle_get(self,path)
+            if path.startswith("/api/kai/"):
+                return KAI.handle_get(self,path)
             if path.startswith("/api/home-ads/") or path=="/api/admin/home-ads":
                 return HA.handle_get(self,path)
             if path=="/api/ice-servers":
@@ -5495,6 +5498,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
             d=self.body()
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
                 return FC.handle_post(self,path,d)
+            if path.startswith("/api/kai/"):
+                return KAI.handle_post(self,path,d)
             if path.startswith("/api/home-ads/") or path=="/api/admin/home-ads":
                 return HA.handle_post(self,path,d)
 
@@ -6763,6 +6768,8 @@ def fc_setup():
     with conn() as c: FC.init(c)
     HA.bind(globals())
     with conn() as c: HA.init(c)
+    KAI.bind(globals())
+    with conn() as c: KAI.init(c)
     threading.Thread(target=lambda:FC.migrate_legacy(True),name="futurechat-migrate",daemon=True).start()
 def main():
     init()
