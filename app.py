@@ -4130,7 +4130,7 @@ class Handler(BaseHTTPRequestHandler):
         n=int(self.headers.get("Content-Length","0"))
         path=urlparse(getattr(self,"path","")).path
         # Allow larger JSON only for the explicitly bounded in-chat image/video upload endpoint.
-        max_bytes=20_000_000 if path=="/api/messages/attachments" else 16_000_000 if path=="/api/kai/chat/completions" else 24_000_000 if path=="/api/fc/send" else 18_000_000 if path=="/api/home-ads/create" else 3_000_000
+        max_bytes=20_000_000 if path=="/api/messages/attachments" else 16_000_000 if path=="/api/kai/chat/completions" else 8_000_000 if path=="/api/kai/transcribe" else 24_000_000 if path=="/api/fc/send" else 18_000_000 if path=="/api/home-ads/create" else 3_000_000
         if n<0 or n>max_bytes: raise ValueError("Request too large")
         return json.loads(self.rfile.read(n) or b"{}")
     def user(self,want_photo=False):

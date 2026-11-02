@@ -383,6 +383,8 @@ def handle_post(h, path, d):
         return _pc_post(h, path, d)
     if path == "/api/kai/image":
         return _image(h, d)
+    if path == "/api/kai/transcribe":
+        return _transcribe(h, d)
     if path != "/api/kai/chat/completions":
         return h.sendj({"error": "Not found"}, 404)
     u = h.require()
@@ -513,6 +515,58 @@ def _image(h, d):
         return h.sendj({"ok": True, "image": url, "model": model, "note": str(msg.get("content") or "")[:300],
                         "cost_usd": (j.get("usage") or {}).get("cost")})
     return h.sendj({"error": "Couldn't make the picture: " + " | ".join(errors)}, 502)
+
+
+# NOISEPROOF-20261102: speech to text that copes with background noise (Pocket's noise-proof microphone).
+# Tested 2 Nov 2026 with loud hum + hiss + beeps over speech: full sentence right, ~3-4 s, ~$0.00015.
+STT_MODELS = ["google/gemini-3.5-flash-lite", "google/gemini-3.1-flash-lite"]
+_stt_used = {}
+
+
+def _transcribe(h, d):
+    u = h.require()
+    uid = int(u["id"]); unl = _unlimited(u); day = _today()
+    if not unl and not _phone_ok(uid):
+        return h.sendj({"error": "Confirm your mobile number for Future Chat to use Kaspersen.", "verify_phone": True}, 403)
+    if not unl and _stt_used.get((uid, day), 0) >= _env_int("KASPERSEN_DAILY_VOICE", 400):
+        return h.sendj({"error": "You've used today's voice limit. Type your message instead - it resets at midnight.", "limit": True}, 429)
+    audio = str(d.get("audio") or "")
+    fmt = str(d.get("format") or "wav").lower()
+    if not audio or fmt not in {"wav", "mp3", "ogg", "flac", "aac", "m4a"}:
+        return h.sendj({"error": "No recording came through."}, 400)
+    key = _keys().get("openrouter")
+    if not key:
+        return h.sendj({"error": "Voice isn't set up on the server yet."}, 503)
+    name = str(d.get("name") or "").strip()[:40]
+    prompt = ("Transcribe exactly what the person says in this recording (usually South African English). Ignore background noise, "
+              "music, TV and other distant voices. The assistant they talk to is called Kaspersen"
+              + (", and the speaker's name is " + name if name else "") +
+              ". Reply with ONLY the words spoken, with normal punctuation - no quotes, labels or notes. If nobody speaks, reply with nothing.")
+    errors = []
+    for model in STT_MODELS:
+        body = {"model": model, "temperature": 0, "max_tokens": 1500, "messages": [{"role": "user", "content": [
+            {"type": "text", "text": prompt}, {"type": "input_audio", "input_audio": {"data": audio, "format": fmt}}]}]}
+        req = urllib.request.Request(FREE_URL, data=json.dumps(body).encode(), method="POST", headers={
+            "Authorization": "Bearer " + key, "Content-Type": "application/json",
+            "HTTP-Referer": "https://skillvaya.onrender.com", "X-Title": "Kaspersen Pocket"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                j = json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code == 402:
+                return h.sendj({"error": "Voice has run out of credit (OpenRouter). Top it up, or type for now."}, 402)
+            errors.append("%s: HTTP %s" % (model, e.code)); continue
+        except Exception as e:
+            errors.append("%s: %s" % (model, type(e).__name__)); continue
+        msg = ((j.get("choices") or [{}])[0].get("message") or {})
+        if not j.get("choices"):
+            errors.append("%s: empty" % model); continue
+        text = str(msg.get("content") or "").strip().strip('"').strip("'").strip()
+        if text.lower() in {"nothing", "(nothing)", "[silence]", "(silence)", "no speech", "[no speech]"}:
+            text = ""
+        _stt_used[(uid, day)] = _stt_used.get((uid, day), 0) + 1
+        return h.sendj({"ok": True, "text": text, "model": model})
+    return h.sendj({"error": "Couldn't write down what you said - please try again. (" + " | ".join(errors)[:200] + ")"}, 502)
 
 
 def _set_keys(h, d):
