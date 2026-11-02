@@ -359,35 +359,45 @@ def handle_post(h, path, d):
     except (TypeError, ValueError): body["max_tokens"] = MAX_TOKENS
     if isinstance(d.get("tools"), list) and d["tools"]:
         body["tools"] = d["tools"]; body["tool_choice"] = d.get("tool_choice", "auto")
-    keys = _keys(); last = "No AI provider is configured on the server yet."
-    for name, url, model, _env, sec in PROVIDERS:
-        key = keys.get(sec)
-        if not key or _cool.get(name, 0) > time.time():
-            continue
+    # RELIABLE-20261102: every provider that has a key gets a real try (cool-downs only reorder them), short
+    # hiccups (rate limits, 5xx, timeouts) get one quick retry, and the person sees the real reason if all fail.
+    keys = _keys(); last = "No AI provider key is set on the server."
+    order = sorted([p for p in PROVIDERS if keys.get(p[4])], key=lambda p: _cool.get(p[0], 0) > time.time())
+    for name, url, model, _env, sec in order:
         payload = json.dumps(dict(body, model=model)).encode()
-        req = urllib.request.Request(url, data=payload, method="POST", headers={
-            "Authorization": "Bearer " + key, "Content-Type": "application/json",
-            "HTTP-Referer": "https://skillvaya.onrender.com", "X-Title": "Kaspersen Pocket"})
-        try:
-            with urllib.request.urlopen(req, timeout=170) as r:
-                j = json.loads(r.read())
-            if j.get("choices"):
-                _count(uid, day, (j.get("usage") or {}).get("total_tokens", 0))
-                j["provider"] = name
-                return h.sendj(j)
-            last = name + ": empty answer"
-        except urllib.error.HTTPError as e:
-            try: msg = json.loads(e.read()).get("error")
-            except Exception: msg = ""
-            msg = (msg.get("message") if isinstance(msg, dict) else msg) or ("HTTP %s" % e.code)
-            last = "%s: %s" % (name, str(msg)[:200])
-            if e.code == 400 and body.get("tools") and ("tool" in str(msg).lower() or "function" in str(msg).lower()):
-                return h.sendj({"error": {"message": last}}, 400)  # let the phone retry without tools
-            if e.code in (401, 402, 403, 429) or e.code >= 500:
-                _cool[name] = time.time() + (600 if e.code in (401, 402, 403) else 60)
-        except Exception as e:
-            last = "%s: %s" % (name, type(e).__name__)
-            _cool[name] = time.time() + 30
+        for attempt in (1, 2):
+            req = urllib.request.Request(url, data=payload, method="POST", headers={
+                "Authorization": "Bearer " + keys[sec], "Content-Type": "application/json",
+                "HTTP-Referer": "https://skillvaya.onrender.com", "X-Title": "Kaspersen Pocket"})
+            retry = False
+            try:
+                with urllib.request.urlopen(req, timeout=170) as r:
+                    j = json.loads(r.read())
+                if j.get("choices"):
+                    _count(uid, day, (j.get("usage") or {}).get("total_tokens", 0))
+                    _cool.pop(name, None)
+                    j["provider"] = name
+                    return h.sendj(j)
+                err = j.get("error") or {}
+                last = "%s: %s" % (name, (err.get("message") if isinstance(err, dict) else err) or "empty answer")
+                retry = True
+            except urllib.error.HTTPError as e:
+                try: msg = json.loads(e.read()).get("error")
+                except Exception: msg = ""
+                msg = (msg.get("message") if isinstance(msg, dict) else msg) or ("HTTP %s" % e.code)
+                last = "%s: %s" % (name, str(msg)[:200])
+                if e.code == 400 and body.get("tools") and ("tool" in str(msg).lower() or "function" in str(msg).lower()):
+                    return h.sendj({"error": {"message": last}}, 400)  # let the phone retry without tools
+                if e.code in (401, 402, 403):
+                    _cool[name] = time.time() + 120
+                else:
+                    retry = e.code == 429 or e.code >= 500
+            except Exception as e:
+                last = "%s: %s" % (name, type(e).__name__); retry = True
+            if not (retry and attempt == 1):
+                break
+            time.sleep(1.5)
+        _cool.setdefault(name, time.time() + 30)
     return h.sendj({"error": {"message": "Kaspersen's brain is unavailable right now. " + last}}, 502)
 
 
