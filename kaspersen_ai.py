@@ -519,7 +519,7 @@ def _image(h, d):
 
 # NOISEPROOF-20261102: speech to text that copes with background noise (Pocket's noise-proof microphone).
 # Tested 2 Nov 2026 with loud hum + hiss + beeps over speech: full sentence right, ~3-4 s, ~$0.00015.
-STT_MODELS = ["google/gemini-3.6-flash", "google/gemini-3.5-flash-lite"]  # NPFIX: 3.6-flash heard noisy speech best (~$0.001)
+STT_MODELS = ["google/gemini-3.5-flash-lite", "google/gemini-3.6-flash"]  # SPEED-20261102: lite ~2 s (3.6-flash took 4-6 s)
 _stt_used = {}
 
 
