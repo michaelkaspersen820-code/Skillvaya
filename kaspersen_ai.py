@@ -7,11 +7,18 @@ Routes (app.py dispatches /api/kai/* here):
   POST /api/kai/chat/completions  OpenAI-style chat request (signed-in, phone-verified accounts)
   GET  /api/kai/status            usage today, limits, whether the number is confirmed
   POST /api/kai/keys              store provider keys; must be signed by the owner's PC (Ed25519)
+  PC Link (PCLINK-20261102) - the owner's phone uses his Windows PC through this relay:
+  POST /api/kai/pc/job            owner account queues a PC job {kind, args}
+  GET  /api/kai/pc/job?id=...     owner account reads the job's status/result
+  GET  /api/kai/pc/status         is the PC online
+  POST /api/kai/pc/poll           the PC collects jobs (long-poll); signed by the PC's key
+  POST /api/kai/pc/result         the PC returns a result; signed by the PC's key
+  Jobs live only in memory (nothing stored in the database, so polling costs no database time).
 
 Keys come from environment variables (KASPERSEN_OPENROUTER_KEY, KASPERSEN_VERCEL_KEY, KASPERSEN_ORCA_KEY) or,
 when those are absent, from the kai_secrets table filled through /api/kai/keys. Nothing secret lives in this file.
 """
-import base64, datetime, json, os, threading, time, urllib.error, urllib.request
+import base64, datetime, json, os, secrets, threading, time, urllib.error, urllib.parse, urllib.request
 
 A = None
 # Public half of the owner's signing key. Only the matching private key (kept on the owner's PC) can set keys.
@@ -93,7 +100,99 @@ def _phone_ok(uid):
     return bool(r and r["phone_verified_at"])
 
 
+# ---------------------------------------------------------------- PC Link relay
+PC = {"jobs": {}, "queue": [], "cv": threading.Condition(), "seen": 0.0, "last_ts": 0.0}
+
+
+def _pc_owner(u):
+    emails = os.environ.get("KASPERSEN_PC_OWNERS", "michaelkaspersen820@gmail.com,mikekas92@gmail.com,kaspersenai@gmail.com")
+    return u.get("role") == "admin" or str(u.get("email", "")).lower() in {e.strip().lower() for e in emails.split(",") if e.strip()}
+
+
+def _verify(d, max_age=600):
+    """Return the signed payload (dict) if it was signed by the owner's PC key, else None."""
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        payload = base64.b64decode(str(d.get("payload", "")))
+        Ed25519PublicKey.from_public_bytes(base64.b64decode(ADMIN_PUBKEY)).verify(base64.b64decode(str(d.get("sig", ""))), payload)
+        data = json.loads(payload)
+        return data if abs(time.time() - float(data.get("ts", 0))) <= max_age else None
+    except Exception:
+        return None
+
+
+def _pc_signed(h, d):
+    data = _verify(d, 120)
+    if not data:
+        return None
+    with PC["cv"]:
+        if float(data["ts"]) <= PC["last_ts"]:
+            return None
+        PC["last_ts"] = float(data["ts"]); PC["seen"] = time.time()
+    return data
+
+
+def _pc_gc():
+    cut = time.time() - 900
+    for k in [k for k, j in PC["jobs"].items() if j["created"] < cut]:
+        PC["jobs"].pop(k, None)
+
+
+def _pc_post(h, path, d):
+    if path == "/api/kai/pc/job":
+        u = h.require()
+        if not _pc_owner(u):
+            return h.sendj({"error": "PC control is only for the owner's account."}, 403)
+        kind = str(d.get("kind", ""))[:30]
+        args = d.get("args") if isinstance(d.get("args"), dict) else {}
+        if not kind:
+            return h.sendj({"error": "No job."}, 400)
+        if time.time() - PC["seen"] > 60:
+            return h.sendj({"error": "The PC is offline (switched off, asleep or PC Link not running).", "offline": True}, 409)
+        jid = secrets.token_hex(8)
+        with PC["cv"]:
+            _pc_gc()
+            PC["jobs"][jid] = {"kind": kind, "args": args, "status": "queued", "result": None, "created": time.time(), "owner": int(u["id"])}
+            PC["queue"].append(jid)
+            PC["cv"].notify_all()
+        return h.sendj({"ok": True, "id": jid})
+    if path == "/api/kai/pc/poll":
+        if not _pc_signed(h, d):
+            return h.sendj({"error": "Not authorised."}, 403)
+        deadline = time.time() + 25
+        with PC["cv"]:
+            while not PC["queue"] and time.time() < deadline:
+                PC["cv"].wait(max(0.1, deadline - time.time()))
+            PC["seen"] = time.time()
+            out = []
+            while PC["queue"] and len(out) < 3:
+                jid = PC["queue"].pop(0); j = PC["jobs"].get(jid)
+                if j:
+                    j["status"] = "running"; out.append({"id": jid, "kind": j["kind"], "args": j["args"]})
+        return h.sendj({"jobs": out})
+    if path == "/api/kai/pc/result":
+        data = _pc_signed(h, d)
+        if not data:
+            return h.sendj({"error": "Not authorised."}, 403)
+        with PC["cv"]:
+            j = PC["jobs"].get(str(data.get("id", "")))
+            if j:
+                j["status"] = "done"; j["result"] = data.get("result")
+        return h.sendj({"ok": bool(j)})
+    return h.sendj({"error": "Not found"}, 404)
+
+
 def handle_get(h, path):
+    if path == "/api/kai/pc/status":
+        u = h.require()
+        return h.sendj({"online": time.time() - PC["seen"] < 60, "owner": _pc_owner(u), "last_seen_s": int(time.time() - PC["seen"]) if PC["seen"] else None})
+    if path == "/api/kai/pc/job":
+        u = h.require()
+        jid = (urllib.parse.parse_qs(urllib.parse.urlparse(h.path).query).get("id") or [""])[0]
+        j = PC["jobs"].get(jid)
+        if not j or j["owner"] != int(u["id"]):
+            return h.sendj({"error": "No such job."}, 404)
+        return h.sendj({"status": j["status"], "result": j["result"]})
     if path != "/api/kai/status":
         return h.sendj({"error": "Not found"}, 404)
     u = h.require()
@@ -107,6 +206,8 @@ def handle_get(h, path):
 def handle_post(h, path, d):
     if path == "/api/kai/keys":
         return _set_keys(h, d)
+    if path.startswith("/api/kai/pc/"):
+        return _pc_post(h, path, d)
     if path != "/api/kai/chat/completions":
         return h.sendj({"error": "Not found"}, 404)
     u = h.require()
@@ -160,15 +261,9 @@ def handle_post(h, path, d):
 
 
 def _set_keys(h, d):
-    try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        payload = base64.b64decode(str(d.get("payload", "")))
-        Ed25519PublicKey.from_public_bytes(base64.b64decode(ADMIN_PUBKEY)).verify(base64.b64decode(str(d.get("sig", ""))), payload)
-        data = json.loads(payload)
-    except Exception:
+    data = _verify(d)
+    if not data:
         return h.sendj({"error": "Not authorised."}, 403)
-    if abs(time.time() - float(data.get("ts", 0))) > 600:
-        return h.sendj({"error": "Request expired."}, 403)
     stored = []
     with _lock, A.conn() as c:
         last = c.execute("SELECT value FROM kai_secrets WHERE name='_last_ts'").fetchone()
