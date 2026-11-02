@@ -519,7 +519,7 @@ def _image(h, d):
 
 # NOISEPROOF-20261102: speech to text that copes with background noise (Pocket's noise-proof microphone).
 # Tested 2 Nov 2026 with loud hum + hiss + beeps over speech: full sentence right, ~3-4 s, ~$0.00015.
-STT_MODELS = ["google/gemini-3.5-flash-lite", "google/gemini-3.1-flash-lite"]
+STT_MODELS = ["google/gemini-3.6-flash", "google/gemini-3.5-flash-lite"]  # NPFIX: 3.6-flash heard noisy speech best (~$0.001)
 _stt_used = {}
 
 
@@ -538,10 +538,12 @@ def _transcribe(h, d):
     if not key:
         return h.sendj({"error": "Voice isn't set up on the server yet."}, 503)
     name = str(d.get("name") or "").strip()[:40]
+    # NPFIX-20261102: naming the assistant up front made the model answer "Kaspersen" when it couldn't hear - now it's only a spelling hint
     prompt = ("Transcribe exactly what the person says in this recording (usually South African English). Ignore background noise, "
-              "music, TV and other distant voices. The assistant they talk to is called Kaspersen"
-              + (", and the speaker's name is " + name if name else "") +
-              ". Reply with ONLY the words spoken, with normal punctuation - no quotes, labels or notes. If nobody speaks, reply with nothing.")
+              "music, TV and other distant voices. Write ONLY words that were actually spoken - never guess or fill in. "
+              "Reply with ONLY the words, with normal punctuation - no quotes, labels or notes. If you can't make out any words, reply with nothing. "
+              "(Spelling help only: if the speaker says the assistant's name it is written 'Kaspersen'"
+              + ("; the speaker is " + name if name else "") + ".)")
     errors = []
     for model in STT_MODELS:
         body = {"model": model, "temperature": 0, "max_tokens": 1500, "messages": [{"role": "user", "content": [
@@ -562,8 +564,8 @@ def _transcribe(h, d):
         if not j.get("choices"):
             errors.append("%s: empty" % model); continue
         text = str(msg.get("content") or "").strip().strip('"').strip("'").strip()
-        if text.lower() in {"nothing", "(nothing)", "[silence]", "(silence)", "no speech", "[no speech]"}:
-            text = ""
+        if text.lower().strip(" .!?,") in {"nothing", "(nothing)", "[silence]", "(silence)", "no speech", "[no speech]", "kaspersen", "casperson", "kasperson"}:
+            text = ""   # just the name on its own = it didn't really hear anything
         _stt_used[(uid, day)] = _stt_used.get((uid, day), 0) + 1
         return h.sendj({"ok": True, "text": text, "model": model})
     return h.sendj({"error": "Couldn't write down what you said - please try again. (" + " | ".join(errors)[:200] + ")"}, 502)
