@@ -73,19 +73,28 @@
   async function open(convId) {
     ensureRoot();
     if (!token()) { try { if (typeof window.view === 'function') window.view('settings'); } catch (_) {} toast('Sign in to use Future Chat'); return; }
+    if (!S.open) { try { if (!(history.state && history.state.fc)) history.pushState({ fc: 'list' }, ''); } catch (_) {} }   // FCBACK-20261102: phone Back closes Future Chat
     S.open = true; const nv = document.querySelector('.bottom-tabbar'); if (nv) { nv.style.display = 'grid'; nv.style.zIndex = '5000'; } root.classList.add('open'); setNavActive(true); document.body.classList.add('fc-open'); window.dispatchEvent(new Event('resize'));
     if (convId) return openConv(Number(convId));
     renderList(true);
   }
-  function close() {
-    if (!S.open) return; S.open = false; stopTimers(); if (root) root.classList.remove('open'); document.body.classList.remove('fc-open'); S.conv = null;
+  function close(fromBack) {
+    if (!S.open) return;
+    if (fromBack !== true) { try { if (history.state && history.state.fc) { S.unwind = true; history.back(); } } catch (_) {} }
+    S.open = false; stopTimers(); if (root) root.classList.remove('open'); document.body.classList.remove('fc-open'); S.conv = null;
   }
+  window.addEventListener('popstate', () => {
+    if (S.unwind) { if (history.state && history.state.fc) { history.back(); return; } S.unwind = false; return; }
+    if (!S.open) return;
+    if (S.conv) { S.archivedView = false; renderList(true); if (!(history.state && history.state.fc)) try { history.pushState({ fc: 'list' }, ''); } catch (_) {} return; }
+    close(true);
+  });
   function stopTimers() { clearInterval(S.timer); clearInterval(S.fullTimer); S.timer = S.fullTimer = null; }
 
   // ---------- chat list
   async function renderList(load) {
     stopTimers(); S.conv = null; S.reply = null;
-    root.innerHTML = '<header class="fc-hdr"><div class="fc-hrow"><div class="fc-logo" aria-hidden="true">' + cmSvg('bubble') + '</div><div class="fc-ttl"><b>Future Chat</b><small>Chats, calls and Chatmoji in Skillvaya</small></div>' +
+    root.innerHTML = '<header class="fc-hdr"><div class="fc-hrow"><button class="fc-ib plain" id="fcClose" aria-label="Back" title="Back">' + ICON.back + '</button><div class="fc-logo" aria-hidden="true">' + cmSvg('bubble') + '</div><div class="fc-ttl"><b>Future Chat</b><small>Chats, calls and Chatmoji in Skillvaya</small></div>' +
       '<button class="fc-ib" id="fcNew" aria-label="New chat">' + ICON.plus + '</button></div>' +
       '<label class="fc-search">' + ICON.search.replace('<svg', '<svg width="18" height="18" stroke="#a9c8e7" fill="none" stroke-width="2"') + '<input id="fcQ" placeholder="Search chats, providers, groups" aria-label="Search chats" value="' + esc(S.q) + '"></label>' +
       '<div class="fc-chips" role="tablist">' + [['all', 'All'], ['unread', 'Unread'], ['contacts', 'Contacts'], ['business', 'Providers'], ['person', 'People'], ['group', 'Groups']].map(([k, l]) =>
@@ -94,6 +103,7 @@
     bodyEl = $('#fcBody', root);
     const fab = document.createElement('button'); fab.className = 'fc-fab'; fab.setAttribute('aria-label', 'Start a new chat'); fab.innerHTML = ICON.plus; fab.onclick = newChat; bodyEl.appendChild(fab);
     $('#fcNew', root).onclick = newChat;
+    $('#fcClose', root).onclick = () => close();
     $('#fcQ', root).oninput = e => { S.q = e.target.value; drawList(); };
     root.querySelectorAll('.fc-chip').forEach(b => b.onclick = () => { S.filter = b.dataset.f; root.querySelectorAll('.fc-chip').forEach(x => x.classList.toggle('on', x === b)); drawList(); });
     if (load) await loadList(); else drawList();
@@ -270,7 +280,8 @@
       '<div class="fc-composer"><div id="fcReply"></div><div class="fc-cbar"><div class="fc-pill"><button class="fc-ib" id="fcEmoji" aria-label="Chatmoji">' + ICON.smile + '</button>' +
       '<textarea id="fcText" rows="1" placeholder="Message" aria-label="Message"></textarea><button class="fc-ib" id="fcAttach" aria-label="Attach">' + ICON.clip + '</button><button class="fc-ib" id="fcCam" aria-label="Camera">' + ICON.cam + '</button></div>' +
       '<button class="fc-send" id="fcSend" aria-label="Record voice note">' + ICON.mic + '</button></div></div>';
-    $('#fcBack', root).onclick = () => { S.archivedView = false; renderList(true); };
+    try { if (!(history.state && history.state.fc === 'conv')) history.pushState({ fc: 'conv' }, ''); } catch (_) {}
+    $('#fcBack', root).onclick = () => { if (history.state && history.state.fc === 'conv') history.back(); else { S.archivedView = false; renderList(true); } };
     const ta = $('#fcText', root), sendBtn = $('#fcSend', root);
     const sync = () => { ta.style.height = 'auto'; ta.style.height = Math.min(120, ta.scrollHeight) + 'px'; const has = !!ta.value.trim(); sendBtn.innerHTML = has ? ICON.send : (S.rec ? ICON.stop : ICON.mic); sendBtn.setAttribute('aria-label', has ? 'Send' : (S.rec ? 'Stop and send voice note' : 'Record voice note')); };
     ta.oninput = sync;
