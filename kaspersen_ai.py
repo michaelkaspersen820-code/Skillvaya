@@ -29,6 +29,16 @@ PROVIDERS = [  # name, endpoint, model, env var, secret name
     ("Vercel", "https://ai-gateway.vercel.sh/v1/chat/completions", "zai/glm-5.3-flash", "KASPERSEN_VERCEL_KEY", "vercel"),
 ]
 MAX_TOKENS = 8000
+# FREECHAIN-20261102: when the paid model fails (or the credit runs out) Kaspersen keeps working on OpenRouter's free
+# models, one after another. The list is refreshed from OpenRouter every 6 hours (free models that can use tools),
+# preferred ones first; models that refuse us are skipped for a day.
+FREE_PREFERRED = ["nvidia/nemotron-3.5-super-vl:free", "nvidia/nemotron-3.5-lightning:free", "dots-studio/dots-3-note-preview:free",
+                  "google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+                  "nvidia/nemotron-3-ultra-550b-a55b:free"]  # tested 2 Nov 2026: fastest first, Ultra works but is slow
+FREE_URL = "https://openrouter.ai/api/v1/chat/completions"
+FREE_MAX = 5           # free models tried per request (each answers in a few seconds or fails fast)
+_free = {"at": 0.0, "ids": list(FREE_PREFERRED), "vision": set()}
+_bad = {}              # model id -> skip until (refused / not allowed)
 _cool = {}
 _cache = {"at": 0.0, "keys": {}}
 _lock = threading.Lock()
@@ -86,6 +96,38 @@ def _keys():
             keys[sec] = os.environ[env].strip()
     _cache.update(at=time.time(), keys=keys)
     return keys
+
+
+def _free_models():
+    if time.time() - _free["at"] > 6 * 3600:
+        _free["at"] = time.time()
+        try:
+            with urllib.request.urlopen("https://openrouter.ai/api/v1/models", timeout=20) as r:
+                data = json.loads(r.read()).get("data") or []
+            ok = {m["id"]: m for m in data if str(m.get("id", "")).endswith(":free") and "tools" in (m.get("supported_parameters") or [])}
+            ids = [i for i in FREE_PREFERRED if i in ok] + sorted([i for i in ok if i not in FREE_PREFERRED],
+                                                                  key=lambda i: -(ok[i].get("context_length") or 0))
+            if ids:
+                _free["ids"] = ids
+                _free["vision"] = {i for i in ids if "image" in ((ok[i].get("architecture") or {}).get("input_modalities") or [])}
+        except Exception as e:
+            print("Free model list refresh failed:", type(e).__name__)
+    now = time.time()
+    return [i for i in _free["ids"] if _bad.get(i, 0) < now]
+
+
+def _text_only(msgs):
+    """Free models without eyes get a note instead of the photo."""
+    out = []
+    for m in msgs:
+        c = m.get("content")
+        if isinstance(c, list):
+            txt = " ".join(p.get("text", "") for p in c if isinstance(p, dict) and p.get("type") == "text")
+            if any(isinstance(p, dict) and p.get("type") == "image_url" for p in c):
+                txt += " [A photo was attached, but this backup brain can't see photos - say so if it matters.]"
+            m = dict(m, content=txt.strip())
+        out.append(m)
+    return out
 
 
 def _usage(uid, day):
@@ -363,8 +405,20 @@ def handle_post(h, path, d):
     # hiccups (rate limits, 5xx, timeouts) get one quick retry, and the person sees the real reason if all fail.
     keys = _keys(); last = "No AI provider key is set on the server."
     order = sorted([p for p in PROVIDERS if keys.get(p[4])], key=lambda p: _cool.get(p[0], 0) > time.time())
+    if keys.get("openrouter"):
+        has_img = any(isinstance(m.get("content"), list) for m in body["messages"])
+        for mid in _free_models()[:FREE_MAX + 3]:
+            order.append(("Free " + mid.split("/")[-1].replace(":free", ""), FREE_URL,
+                          mid, "", "openrouter"))
+        order = order[:len([p for p in PROVIDERS if keys.get(p[4])]) + FREE_MAX]
     for name, url, model, _env, sec in order:
-        payload = json.dumps(dict(body, model=model)).encode()
+        free = model.endswith(":free")
+        b = dict(body, model=model)
+        if free:
+            b["max_tokens"] = min(b.get("max_tokens", MAX_TOKENS), 6000)
+            if has_img and model not in _free["vision"]:
+                b["messages"] = _text_only(b["messages"])
+        payload = json.dumps(b).encode()
         for attempt in (1, 2):
             req = urllib.request.Request(url, data=payload, method="POST", headers={
                 "Authorization": "Bearer " + keys[sec], "Content-Type": "application/json",
@@ -390,11 +444,13 @@ def handle_post(h, path, d):
                     return h.sendj({"error": {"message": last}}, 400)  # let the phone retry without tools
                 if e.code in (401, 402, 403):
                     _cool[name] = time.time() + 120
+                    if free:
+                        _bad[model] = time.time() + 24 * 3600
                 else:
                     retry = e.code == 429 or e.code >= 500
             except Exception as e:
                 last = "%s: %s" % (name, type(e).__name__); retry = True
-            if not (retry and attempt == 1):
+            if not (retry and attempt == 1) or free:
                 break
             time.sleep(1.5)
         _cool.setdefault(name, time.time() + 30)
