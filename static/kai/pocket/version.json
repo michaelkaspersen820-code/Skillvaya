@@ -1,9 +1,9 @@
 {
- "ui": 2026110302,
- "ui_sha256": "2dfcd6f85250ef0ae1b1c48e094c6b136f9a7e9b3e93593cd480ad58356ebc10",
- "apk_version_code": 9,
- "apk_version": "1.6.1",
+ "ui": 2026110303,
+ "ui_sha256": "f262fce1625bc2aced83990c95cfb207db7bc3afcfe40035ccb2cd529233b5ea",
+ "apk_version_code": 10,
+ "apk_version": "1.7",
  "apk_url": "/downloads/Kaspersen-Pocket.apk",
- "apk_sha256": "9950468011ef83161bc779801588f1a1e3b77759fb4d67b39506cae78ab19716",
- "notes": "Clearer update messages; reminder when phone control is switched off"
+ "apk_sha256": "61968c6b0429649e25d7e3c63458ceef2645f4d7387dd09a851b0f533016af8f",
+ "notes": "Set-up checklist for all permissions; downloads work inside the call screen"
 }

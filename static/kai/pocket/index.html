@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110302">
+<meta name="kp-ui" content="2026110303">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -100,6 +100,7 @@ textarea:focus{border-color:var(--accent)}
   <h3>Settings</h3>
   <div style="display:flex;gap:8px;margin:0 0 14px"><button class="btn sec" id="refreshChat" style="flex:1">⟳ Refresh chat</button><button class="btn sec" id="newChatSet" style="flex:1">＋ New chat</button></div>
   <div class="row" style="margin-top:-6px"><span id="verLine" class="note"></span><button class="btn sec" id="chkUpd" style="padding:7px 11px">Check for updates</button></div>
+  <button class="btn sec" id="openSetupBtn" style="width:100%;margin:2px 0 14px">✔ Set up Kaspersen (permissions &amp; switches)</button>
   <h3>Projects</h3>
   <div id="projList"></div>
   <div style="display:flex;gap:8px;margin:8px 0 4px"><input type="text" id="projNew" placeholder="New project name" style="flex:1;margin:0"><button class="btn sec" id="projAdd">Add</button></div>
@@ -748,7 +749,50 @@ let busy = false;
 // UPDATE-20261103: a newer copy of this page arrives from the Skillvaya server - she switches over only when she is free.
 setInterval(() => { try { if (!busy && hasNative && Native.uiUpdateReady && Native.uiUpdateReady()) Native.reloadUi(); } catch (_) {} }, 60000);
 // UPDATE-20261103: Android can switch phone control off when the app is updated - notice it and offer the switch.
-setTimeout(() => { try { if (!hasNative || !Native.controlOn) return; if (Native.controlOn()) { LS.set('ctl_was_on', true); return; } if (LS.get('ctl_was_on', false)) showCtlBar(); } catch (_) {} }, 2500);
+setTimeout(() => { try {
+  if (!hasNative) return;
+  if (Native.setupStatus) {   // SETUP-20261103
+    const st = JSON.parse(Native.setupStatus() || '{}');
+    if (st.control) LS.set('ctl_was_on', true);
+    if (!LS.get('setup_seen', false) || (!st.control && LS.get('ctl_was_on', false))) openSetup();
+    return;
+  }
+  if (!Native.controlOn) return; if (Native.controlOn()) { LS.set('ctl_was_on', true); return; } if (LS.get('ctl_was_on', false)) showCtlBar();
+} catch (_) {} }, 2500);
+// SETUP-20261103: "Set up Kaspersen" - every permission and switch she needs, each ticks green when done.
+// Pop-up permissions are asked in one go; phone control and updates are switches Android only lets the person flip,
+// so the button opens the exact page and the list updates by itself when they come back.
+function openSetup() {
+  if (!hasNative || !Native.setupStatus) return;
+  let sh = document.getElementById('setupSheet');
+  if (!sh) {
+    sh = document.createElement('div'); sh.className = 'sheet open'; sh.id = 'setupSheet';
+    sh.innerHTML = '<div class="card"><h3>Set up Kaspersen</h3><p class="note">A few one-time switches so I can help you properly. Tap each button - a green tick means it is done.</p><div id="setupList"></div><button class="btn" id="setupDone" style="width:100%;margin-top:14px">Done</button></div>';
+    document.body.appendChild(sh);
+    $('#setupDone').onclick = () => { LS.set('setup_seen', true); sh.remove(); };
+  }
+  renderSetup();
+}
+function renderSetup() {
+  const box = document.getElementById('setupList'); if (!box) return;
+  let st = {}; try { st = JSON.parse(Native.setupStatus() || '{}'); } catch (_) {}
+  if (st.control) LS.set('ctl_was_on', true);
+  const perms = [['mic', 'microphone'], ['camera', 'camera'], ['contacts', 'contacts'], ['calls', 'phone calls'], ['photos', 'photos'], ['notifications', 'notifications']];
+  const missing = perms.filter(p => !st[p[0]]).map(p => p[1]);
+  const row = (done, title, why, btn, act, extra) => '<div class="row" style="align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:0"><b style="color:var(--text)">' + (done ? '<span class="ok">\u2714</span> ' : '') + title + '</b><p class="note" style="margin:3px 0 0">' + why + '</p>' + (extra && !done ? extra : '') + '</div>' + (done ? '<span class="ok" style="flex:none">On</span>' : '<button class="btn" style="padding:8px 12px;flex:none" data-act="' + act + '">' + btn + '</button>') + '</div>';
+  let h = '';
+  h += row(!missing.length, 'Microphone, camera, contacts, calls, photos, notifications', missing.length ? 'Still needed: ' + missing.join(', ') + '. Tap Allow and say Allow on each pop-up.' : 'All allowed.', 'Allow', 'perms');
+  h += row(!!st.control, 'Phone control', 'Lets me use your apps for you - tapping, typing and reading the screen.', 'Turn on', 'control',
+    '<p class="note" style="margin:6px 0 0">On the page that opens: tap <b>Installed apps</b> (or <b>Downloaded apps</b>) &gt; <b>Kaspersen phone control</b> &gt; switch on &gt; <b>Allow</b>.' + (st.android >= 33 ? ' If it is greyed out or says <b>Restricted setting</b>: tap <a href="#" data-act="appinfo" style="color:var(--accent)">App info</a>, then the \u22ee menu (top right) &gt; <b>Allow restricted settings</b>, and try again.' : '') + '</p>');
+  h += row(!!st.battery, 'Keep working in the background', 'Stops the phone from putting me to sleep in the middle of a job.', 'Allow', 'battery');
+  h += row(!!st.installs, 'Allow updates', 'So I can install my own updates (you still confirm each one).', 'Allow', 'installs',
+    '<p class="note" style="margin:6px 0 0">On the page that opens, switch on <b>Kaspersen</b>, then come back here.</p>');
+  box.innerHTML = h;
+  box.querySelectorAll('[data-act]').forEach(b => b.onclick = e => { e.preventDefault(); const a = b.dataset.act;
+    if (a === 'perms') Native.setupAllowAll(); else if (a === 'control') Native.openAccessibilitySettings(); else if (a === 'battery') Native.setupBattery();
+    else if (a === 'installs') Native.setupInstalls(); else if (a === 'appinfo') Native.setupAppInfo(); });
+}
+window.onSetupChanged = () => { try { renderSetup(); const b = document.getElementById('ctlBar'); if (b && hasNative && Native.controlOn && Native.controlOn()) b.remove(); } catch (_) {} };
 document.addEventListener('visibilitychange', () => { try { if (!document.hidden && hasNative && Native.controlOn && Native.controlOn()) { LS.set('ctl_was_on', true); const b = document.getElementById('ctlBar'); if (b) b.remove(); } } catch (_) {} });
 function showCtlBar() {
   if (document.getElementById('ctlBar')) return;
@@ -1018,6 +1062,7 @@ function openSettings() {
   $('#sheet').classList.add('open');
 }
 $('#menuBtn').onclick = openSettings;
+$('#openSetupBtn').onclick = () => { if (!(hasNative && Native.setupStatus)) { showError('Update Kaspersen first to use the setup checklist.'); return; } $('#sheet').classList.remove('open'); openSetup(); };
 $('#chkUpd').onclick = () => { if (hasNative && Native.checkUpdates) { Native.checkUpdates(); $('#chkUpd').textContent = 'Checking\u2026'; setTimeout(() => { $('#chkUpd').textContent = 'Check for updates'; }, 4000); } };
 $('#setClose').onchange = () => LS.set('close_apps', $('#setClose').checked);
 $('#projAdd').onclick = () => { MEM.projectAdd($('#projNew').value); $('#projNew').value = ''; openSettings(); };
