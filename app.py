@@ -4847,6 +4847,22 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 if not os.path.isfile(image_path): self.send_response(404); self.end_headers(); return
                 with open(image_path,"rb") as f: b=f.read()
                 self.send_response(200); self.send_header("Content-Type","image/jpeg" if filename.lower().endswith((".jpg",".jpeg")) else "image/png"); self.send_header("Content-Length",str(len(b))); self.send_header("Cache-Control","public, max-age=86400"); self.end_headers(); self.wfile.write(b); return
+            if path in ("/kai/pocket/index.html","/kai/pocket/version.json","/downloads/Kaspersen-Pocket.apk"):  # UPDATE-20261103: Kaspersen Pocket self-update
+                rel,ctype={"/kai/pocket/index.html":("static/kai/pocket/index.html","text/plain; charset=utf-8"),
+                           "/kai/pocket/version.json":("static/kai/pocket/version.json","application/json"),
+                           "/downloads/Kaspersen-Pocket.apk":("downloads/Kaspersen-Pocket.apk","application/vnd.android.package-archive")}[path]
+                fp=os.path.join(ROOT,*rel.split("/"))
+                if not os.path.isfile(fp): return self.sendj({"error":"Not available yet."},404)
+                self.send_response(200); self.send_header("Content-Type",ctype); self.send_header("Content-Length",str(os.path.getsize(fp)))
+                self.send_header("Cache-Control","no-store"); self.send_header("X-Content-Type-Options","nosniff")
+                if path.endswith(".apk"): self.send_header("Content-Disposition",'attachment; filename="Kaspersen-Pocket.apk"')
+                self.end_headers()
+                with open(fp,"rb") as f:
+                    while True:
+                        ch=f.read(262144)
+                        if not ch: break
+                        self.wfile.write(ch)
+                return
             if path.startswith("/dl/"):  # SV84-DOWNLOAD-01
                 item=_sv_dl_get(path[4:].split("/")[0])
                 if not item: return self.sendj({"error":"This download link has expired. Tap Download again."},404)
