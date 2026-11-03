@@ -134,7 +134,7 @@ function start(){var c=document.getElementById('content');if(!c)return;decorate(
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start()})();
 </script><script>/* SV84-DOWNLOAD-01: in the Android app, file links that live inside the page (data:/blob:) are handed to the
 server for a moment, so the phone's normal downloader can save them - no Chrome needed, works on every phone. */
-(function(){if(window.svDownload)return;function nativeApp(){return /SkillvayaNative/i.test(navigator.userAgent||'')}
+(function(){if(window.svDownload)return;function nativeApp(){return /SkillvayaNative/i.test(navigator.userAgent||'')||!!window.KCall}
 function toData(h){if(h.indexOf('data:')===0)return Promise.resolve(h);return fetch(h).then(r=>r.blob()).then(b=>new Promise((ok,no)=>{const f=new FileReader();f.onload=()=>ok(String(f.result));f.onerror=no;f.readAsDataURL(b)}))}
 window.svDownload=function(href,name){return toData(href).then(data=>fetch('/api/download-ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name||'download',data:data})})).then(r=>r.json().then(j=>{if(!r.ok||!j.url)throw Error(j.error||'Download failed');location.href=j.url})).catch(e=>{try{(window.toast||alert)('Could not download: '+e.message)}catch(_){}})};
 document.addEventListener('click',function(e){const a=e.target&&e.target.closest?e.target.closest('a[download]'):null;if(!a)return;const h=a.getAttribute('href')||'';if(!nativeApp()||!(h.indexOf('data:')===0||h.indexOf('blob:')===0))return;e.preventDefault();e.stopPropagation();window.svDownload(h,a.getAttribute('download')||'download')},true)})();</script></body></html>
