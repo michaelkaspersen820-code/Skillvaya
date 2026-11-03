@@ -57,6 +57,8 @@ def init(c):
         CREATE TABLE IF NOT EXISTS kai_usage(user_id BIGINT NOT NULL, day TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0,
             tokens BIGINT NOT NULL DEFAULT 0, PRIMARY KEY(user_id, day));
         CREATE TABLE IF NOT EXISTS kai_secrets(name TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
+        CREATE TABLE IF NOT EXISTS kai_subs(user_id BIGINT PRIMARY KEY, paid_until TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '',
+            trial_tasks INTEGER NOT NULL DEFAULT 0, trial_calls INTEGER NOT NULL DEFAULT 0);
     """)
     pk = A.WF_ID_TYPE + " PRIMARY KEY" + ("" if A.DATABASE_URL else " AUTOINCREMENT")
     A.execute_script(c, """
@@ -141,6 +143,130 @@ def _count(uid, day, tokens):
     with A.conn() as c:
         c.execute("INSERT INTO kai_usage(user_id,day,calls,tokens) VALUES(?,?,1,?) ON CONFLICT(user_id,day) DO UPDATE SET "
                   "calls=kai_usage.calls+1, tokens=kai_usage.tokens+excluded.tokens", (uid, day, int(tokens or 0)))
+
+
+# SUBS-20261103: Kaspersen customers pay R150 a month (Kaspersen is its own product - customers never see Skillvaya).
+# New customers get 3 free test tasks (a task = one request, however many steps she takes). After that, or when a
+# paid month runs out, she answers only with a polite pay message. The owner switches a customer on for a month by
+# telling his own Kaspersen "X paid" (POST /api/kai/subs).
+def _trial_tasks():
+    return _env_int("KASPERSEN_TRIAL_TASKS", 3)
+
+
+def _sub_row(uid):
+    try:
+        with A.conn() as c:
+            r = c.execute("SELECT paid_until,trial_tasks,trial_calls FROM kai_subs WHERE user_id=?", (uid,)).fetchone()
+        if r:
+            return {"paid_until": r["paid_until"] or "", "trial_tasks": int(r["trial_tasks"] or 0), "trial_calls": int(r["trial_calls"] or 0)}
+    except Exception as e:
+        print("kai_subs read failed:", type(e).__name__)
+    return {"paid_until": "", "trial_tasks": 0, "trial_calls": 0}
+
+
+def _paid_until(uid):
+    return _sub_row(uid)["paid_until"]
+
+
+def _price():
+    return os.environ.get("KASPERSEN_PRICE", "R150")
+
+
+def _pay_contact():
+    return os.environ.get("KASPERSEN_PAY_CONTACT", "27837874569")
+
+
+def _pay_how():
+    return os.environ.get("KASPERSEN_PAY_HOW", "Tap Pay to WhatsApp Michael Kaspersen for the payment details. As soon as he confirms your payment, I'm switched on for the month.")
+
+
+def _sub_state(uid, unl):
+    r = _sub_row(uid); today = _today()
+    paid = unl or r["paid_until"] >= today
+    left = max(0, _trial_tasks() - r["trial_tasks"])
+    return {"subscribed": paid, "unlimited": unl, "paid_until": r["paid_until"], "trial_tasks": _trial_tasks(),
+            "trial_left": 0 if r["paid_until"] else left, "price": _price(), "pay_contact": _pay_contact(), "pay_how": _pay_how()}
+
+
+def _paywall(uid, unl, new_task):
+    """None when this account may use Kaspersen now, else (json, 402)."""
+    if unl:
+        return None
+    r = _sub_row(uid); today = _today()
+    if r["paid_until"] >= today:
+        return None
+    ended = bool(r["paid_until"])          # a paid month that ran out: no second trial
+    trial_over = ended or r["trial_tasks"] >= _trial_tasks()
+    if (new_task and trial_over) or r["trial_calls"] >= _trial_tasks() * 60:
+        msg = ("Your Kaspersen month ended on %s. " % r["paid_until"] if ended else "Your 3 free test tasks are used up. ") + \
+              "I'm sorry - you'll need to make the payment for this month (%s) before I can do anything for you. " % _price() + _pay_how()
+        return ({"error": msg, "subscription": True, "paywall": True, "message": msg, "price": _price(),
+                 "pay_contact": _pay_contact(), "paid_until": r["paid_until"]}, 402)
+    return None
+
+
+def _trial_count(uid, unl, new_task):
+    """After a successful answer: count the trial task (first call of a request) and the call. Returns tasks left."""
+    if unl:
+        return None
+    r = _sub_row(uid)
+    if r["paid_until"] >= _today():
+        return None
+    try:
+        with A.conn() as c:
+            c.execute("INSERT INTO kai_subs(user_id,updated_at,trial_tasks,trial_calls) VALUES(?,?,?,1) ON CONFLICT(user_id) DO UPDATE SET "
+                      "trial_tasks=kai_subs.trial_tasks+excluded.trial_tasks, trial_calls=kai_subs.trial_calls+1", (uid, _today(), 1 if new_task else 0))
+    except Exception as e:
+        print("kai_subs count failed:", type(e).__name__)
+    return max(0, _trial_tasks() - r["trial_tasks"] - (1 if new_task else 0)) if not r["paid_until"] else 0
+
+
+def _find_user(c, who):
+    who = str(who or "").strip()
+    if not who:
+        return None
+    if "@" in who:
+        return c.execute("SELECT id,name,email,phone FROM users WHERE LOWER(email)=?", (who.lower(),)).fetchone()
+    digits = "".join(ch for ch in who if ch.isdigit())
+    if len(digits) >= 9:
+        tail = digits[-9:]
+        for r in c.execute("SELECT id,name,email,phone FROM users WHERE phone<>''").fetchall():
+            if "".join(ch for ch in str(r["phone"]) if ch.isdigit()).endswith(tail):
+                return r
+        return None
+    rows = c.execute("SELECT id,name,email,phone FROM users WHERE LOWER(name) LIKE ?", ("%" + who.lower() + "%",)).fetchall()
+    return rows[0] if len(rows) == 1 else ("many" if rows else None)
+
+
+def _subs(h, d):
+    u = h.require()
+    if not _unlimited(u):
+        return h.sendj({"error": "Only the owner can do this."}, 403)
+    with A.conn() as c:
+        if d is None:   # list
+            rows = c.execute("SELECT s.user_id,s.paid_until,s.note,s.trial_tasks,u.name,u.email,u.phone FROM kai_subs s JOIN users u ON u.id=s.user_id ORDER BY s.paid_until DESC, s.updated_at DESC").fetchall()
+            today = _today()
+            return h.sendj({"ok": True, "today": today, "price": _price(), "customers": [{"name": r["name"], "email": r["email"], "phone": r["phone"],
+                            "paid_until": r["paid_until"], "active": r["paid_until"] >= today, "free_tasks_used": int(r["trial_tasks"] or 0), "note": r["note"]} for r in rows]})
+        r = _find_user(c, d.get("who"))
+        if r == "many":
+            return h.sendj({"error": "More than one account matches that name - use their email or phone number."}, 400)
+        if not r:
+            return h.sendj({"error": "No Kaspersen account found for '" + str(d.get("who", "")) + "'. They must sign up in the Kaspersen app first."}, 404)
+        uid = int(r["id"]); cur = _paid_until(uid); today = _today()
+        try: months = max(-12, min(12, int(d.get("months", 1))))
+        except (TypeError, ValueError): months = 1
+        if months == 0:
+            new = ""   # switch off now
+        else:
+            base = datetime.datetime.strptime(max(cur, today) if months > 0 else (cur or today), "%Y-%m-%d")
+            new = (base + datetime.timedelta(days=30 * months)).strftime("%Y-%m-%d")
+        note = str(d.get("note") or "")[:200]
+        if c.execute("SELECT 1 FROM kai_subs WHERE user_id=?", (uid,)).fetchone():
+            c.execute("UPDATE kai_subs SET paid_until=?, note=?, updated_at=? WHERE user_id=?", (new, note, today, uid))
+        else:
+            c.execute("INSERT INTO kai_subs(user_id,paid_until,note,updated_at) VALUES(?,?,?,?)", (uid, new, note, today))
+        return h.sendj({"ok": True, "name": r["name"], "email": r["email"], "paid_until": new, "active": new >= today if new else False})
 
 
 def _phone_ok(uid):
@@ -366,6 +492,8 @@ def handle_get(h, path):
         if not j or j["owner"] != int(u["id"]):
             return h.sendj({"error": "No such job."}, 404)
         return h.sendj({"status": j["status"], "result": j["result"]})
+    if path == "/api/kai/subs":
+        return _subs(h, None)
     if path != "/api/kai/status":
         return h.sendj({"error": "Not found"}, 404)
     u = h.require()
@@ -373,7 +501,8 @@ def handle_get(h, path):
     used, tokens, _ = _usage(uid, _today())
     return h.sendj({"ok": True, "name": u.get("name", ""), "email": u.get("email", ""), "used_today": used, "tokens_today": tokens,
                     "daily_limit": None if unl else _env_int("KASPERSEN_DAILY_CALLS", 200), "unlimited": unl,
-                    "phone_verified": unl or _phone_ok(uid), "ready": bool([1 for p in PROVIDERS if _keys().get(p[4])])})
+                    "phone_verified": unl or _phone_ok(uid), "ready": bool([1 for p in PROVIDERS if _keys().get(p[4])]),
+                    "sub": _sub_state(uid, unl)})
 
 
 def handle_post(h, path, d):
@@ -381,6 +510,8 @@ def handle_post(h, path, d):
         return _set_keys(h, d)
     if path.startswith("/api/kai/pc/"):
         return _pc_post(h, path, d)
+    if path == "/api/kai/subs":
+        return _subs(h, d if isinstance(d, dict) else {})
     if path == "/api/kai/image":
         return _image(h, d)
     if path == "/api/kai/transcribe":
@@ -392,6 +523,10 @@ def handle_post(h, path, d):
     if not unl and not _phone_ok(uid):
         return h.sendj({"error": "Confirm your mobile number for Future Chat to use Kaspersen.", "verify_phone": True}, 403)
     used, _t, total = _usage(uid, day)
+    new_task = bool(d.get("new_task"))
+    blk = _paywall(uid, unl, new_task)
+    if blk:
+        return h.sendj(*blk)
     if not unl:
         if used >= _env_int("KASPERSEN_DAILY_CALLS", 200):
             return h.sendj({"error": "You've reached today's Kaspersen limit. It resets at midnight.", "limit": True}, 429)
@@ -435,6 +570,8 @@ def handle_post(h, path, d):
                     _count(uid, day, (j.get("usage") or {}).get("total_tokens", 0))
                     _cool.pop(name, None)
                     j["provider"] = name
+                    left = _trial_count(uid, unl, new_task)
+                    if left is not None: j["trial_left"] = left
                     return h.sendj(j)
                 err = j.get("error") or {}
                 last = "%s: %s" % (name, (err.get("message") if isinstance(err, dict) else err) or "empty answer")
@@ -472,6 +609,9 @@ def _image(h, d):
     uid = int(u["id"]); unl = _unlimited(u); day = _today()
     if not unl and not _phone_ok(uid):
         return h.sendj({"error": "Confirm your mobile number for Future Chat to use Kaspersen.", "verify_phone": True}, 403)
+    blk = _paywall(uid, unl, False)
+    if blk:
+        return h.sendj(*blk)
     if not unl and _img_used.get((uid, day), 0) >= _env_int("KASPERSEN_DAILY_IMAGES", 15):
         return h.sendj({"error": "You've made today's limit of pictures. It resets at midnight.", "limit": True}, 429)
     prompt = str(d.get("prompt") or "").strip()[:3000]
@@ -528,6 +668,9 @@ def _transcribe(h, d):
     uid = int(u["id"]); unl = _unlimited(u); day = _today()
     if not unl and not _phone_ok(uid):
         return h.sendj({"error": "Confirm your mobile number for Future Chat to use Kaspersen.", "verify_phone": True}, 403)
+    blk = _paywall(uid, unl, False)
+    if blk:
+        return h.sendj(*blk)
     if not unl and _stt_used.get((uid, day), 0) >= _env_int("KASPERSEN_DAILY_VOICE", 400):
         return h.sendj({"error": "You've used today's voice limit. Type your message instead - it resets at midnight.", "limit": True}, 429)
     audio = str(d.get("audio") or "")
