@@ -1,9 +1,9 @@
 {
- "ui": 2026110309,
- "ui_sha256": "78198144c49595259f6d98bcf22bfbdaf192046a29c755d89a6924a5ebaf868b",
+ "ui": 2026110311,
+ "ui_sha256": "b3f10607d31de79cfe86f190ae73661506ed08170e1723e9066ef6130ecdac2a",
  "apk_version_code": 11,
  "apk_version": "1.8",
  "apk_url": "/downloads/Kaspersen-Pocket.apk",
  "apk_sha256": "079e4cbd0cbd6e8b175831350b470a0993980004bb6b215302057f6900b04331",
- "notes": "Real moving characters (flipbook frames on the PC); busy PC is not an offline PC; interruptions understood"
+ "notes": "Never give up on a requirement; every character their own human voice; animation kit"
 }
