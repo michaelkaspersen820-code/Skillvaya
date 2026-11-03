@@ -1,0 +1,6 @@
+{
+ "version": "1.2",
+ "sha256": "9a2b1c6a4f930e76a7092075f4a1e2b4ed772ab8de7b817ad25b65bdcd404dcb",
+ "size": 25630433,
+ "notes": "Keeps checking in during long jobs; receives pictures from the phone; updates itself"
+}

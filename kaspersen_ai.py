@@ -610,6 +610,14 @@ def serve_pclink(h, path):
     """/pclink -> the download; /downloads/KaspersenPCLink.exe -> the Windows program."""
     if path == "/pclink":
         h.send_response(302); h.send_header("Location", "/downloads/KaspersenPCLink.exe"); h.end_headers(); return
+    if path == "/downloads/KaspersenPCLink.json":   # UPDATE-20261103: PC Link checks this to update itself
+        f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "KaspersenPCLink.json")
+        try:
+            b = open(f, "rb").read()
+        except OSError:
+            return h.sendj({"error": "No update info."}, 404)
+        h.send_response(200); h.send_header("Content-Type", "application/json"); h.send_header("Content-Length", str(len(b)))
+        h.send_header("Cache-Control", "no-cache"); h.end_headers(); h.wfile.write(b); return
     f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "KaspersenPCLink.exe")
     if not os.path.isfile(f):
         return h.sendj({"error": "Kaspersen PC Link is not available for download yet."}, 404)
