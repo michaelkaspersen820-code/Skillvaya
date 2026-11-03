@@ -417,6 +417,8 @@ public class MainActivity extends Activity {
         webView.clearCache(true);
         settings.setAllowFileAccess(false); settings.setAllowContentAccess(true);
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
+            // SV84-DOWNLOAD-01: files that live inside the page (data: links) are saved straight to Downloads.
+            if (url != null && url.startsWith("data:")) { svSaveDataUrl(url, URLUtil.guessFileName(null, contentDisposition, mimeType), mimeType); return; }
             try {
                 DownloadManager manager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
                 DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
@@ -433,9 +435,11 @@ public class MainActivity extends Activity {
                 String cookie = CookieManager.getInstance().getCookie(url);
                 if (cookie != null && !cookie.isEmpty()) request.addRequestHeader("Cookie", cookie);
                 manager.enqueue(request);
-                Toast.makeText(MainActivity.this, "Download started. Open the APK and confirm installation; Android will register Skillvaya as an installed app.", Toast.LENGTH_LONG).show();
+                boolean apk = fileName.toLowerCase(java.util.Locale.ROOT).endsWith(".apk");
+                Toast.makeText(MainActivity.this, apk ? "Download started. Open the APK and confirm installation; Android will register Skillvaya as an installed app."
+                        : "Downloading " + fileName + " - you'll find it in your Downloads folder.", Toast.LENGTH_LONG).show();
             } catch (Exception e) {
-                Toast.makeText(MainActivity.this, "Could not start download. Open Skillvaya in Chrome and try again.", Toast.LENGTH_LONG).show();
+                Toast.makeText(MainActivity.this, "The download could not start. Please check your connection and try again.", Toast.LENGTH_LONG).show();
             }
         });
         webView.setWebViewClient(new WebViewClient());
@@ -702,6 +706,34 @@ public class MainActivity extends Activity {
         // Refresh the device-token association whenever the user returns to Skillvaya.
         if (BuildConfig.PUBLIC_URL != null && BuildConfig.PUBLIC_URL.startsWith("https://")) {
             PushTokenRegistrar.register(this, BuildConfig.PUBLIC_URL);
+        }
+    }
+
+    // SV84-DOWNLOAD-01: save a file that lives inside the page (data: link) to the phone's Downloads folder.
+    private void svSaveDataUrl(String dataUrl, String fileName, String mimeType) {
+        try {
+            int comma = dataUrl.indexOf(',');
+            String head = comma > 5 ? dataUrl.substring(5, comma) : "";
+            String mime = head.contains(";") ? head.substring(0, head.indexOf(';')) : head;
+            if (mime.isEmpty()) mime = mimeType != null ? mimeType : "application/octet-stream";
+            byte[] bytes = head.contains(";base64") ? android.util.Base64.decode(dataUrl.substring(comma + 1), android.util.Base64.DEFAULT)
+                    : Uri.decode(dataUrl.substring(comma + 1)).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            String name = (fileName == null || fileName.trim().isEmpty() || fileName.endsWith(".bin")) ? "Skillvaya-file" : fileName.trim();
+            if (Build.VERSION.SDK_INT >= 29) {
+                android.content.ContentValues v = new android.content.ContentValues();
+                v.put(MediaStore.Downloads.DISPLAY_NAME, name);
+                v.put(MediaStore.Downloads.MIME_TYPE, mime);
+                Uri out = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                if (out == null) throw new Exception("no space");
+                try (java.io.OutputStream os = getContentResolver().openOutputStream(out)) { os.write(bytes); }
+            } else {
+                File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                if (dir != null) dir.mkdirs();
+                try (FileOutputStream os = new FileOutputStream(new File(dir, name))) { os.write(bytes); }
+            }
+            Toast.makeText(this, "Saved " + name + " to your Downloads folder.", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "The file could not be saved. Please try again.", Toast.LENGTH_LONG).show();
         }
     }
 

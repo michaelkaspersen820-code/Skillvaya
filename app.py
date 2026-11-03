@@ -2,6 +2,38 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import json, sqlite3, hashlib, hmac, secrets, os, datetime, threading, webbrowser, urllib.parse, urllib.request, urllib.error, base64, time
 from contextlib import contextmanager
+
+# SV84-DOWNLOAD-01: short-lived download links for files that live inside a page (data: links). The Android
+# app's downloader can only save real web addresses, so the page hands the file over and gets a link back.
+_SV_DL = {}; _SV_DL_LOCK = threading.Lock(); _SV_DL_RATE = {}
+_SV_DL_MIMES = {"image/jpeg","image/png","image/webp","image/gif","application/pdf","application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document","video/mp4","video/webm","video/quicktime",
+    "video/3gpp","audio/mpeg","audio/mp4","audio/ogg","audio/webm","audio/wav","text/plain","text/csv"}
+def _sv_dl_put(ip, name, data_url):
+    if not isinstance(data_url, str) or not data_url.startswith("data:") or "," not in data_url: return None, "Nothing to download."
+    head, b64 = data_url.split(",", 1)
+    if ";base64" not in head: return None, "Unsupported file."
+    mime = head[5:].split(";")[0].strip().lower() or "application/octet-stream"
+    if mime not in _SV_DL_MIMES: mime = "application/octet-stream"
+    if len(b64) > 28_000_000: return None, "File is too large to download (20 MB maximum)."
+    try: raw = base64.b64decode(b64)
+    except Exception: return None, "The file could not be read."
+    name = "".join(ch for ch in str(name or "download") if ch.isprintable() and ch not in '<>:"/\\|?*;').strip()[:120]
+    name = name.encode("ascii", "ignore").decode("ascii").strip() or "download"
+    now_t = time.time()
+    with _SV_DL_LOCK:
+        for k in [k for k, v in _SV_DL.items() if v[3] < now_t]: _SV_DL.pop(k, None)
+        hits = [t for t in _SV_DL_RATE.get(ip, []) if t > now_t - 600]
+        if len(hits) >= 40: return None, "Too many downloads at once. Try again in a few minutes."
+        hits.append(now_t); _SV_DL_RATE[ip] = hits
+        if sum(len(v[0]) for v in _SV_DL.values()) + len(raw) > 150_000_000: return None, "The server is busy. Try again in a minute."
+        tk = secrets.token_urlsafe(18); _SV_DL[tk] = (raw, mime, name, now_t + 600)
+    return tk, None
+def _sv_dl_get(tk):
+    with _SV_DL_LOCK:
+        v = _SV_DL.get(tk)
+        if not v or v[3] < time.time(): return None
+        return v[0], v[1], v[2]
 import futurechat as FC
 import kaspersen_ai as KAI
 import homeads as HA
@@ -3979,6 +4011,10 @@ let installPrompt=null;window.addEventListener('beforeinstallprompt',e=>{install
 if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).then(reg=>reg.update()).catch(console.warn);
 /* SV78-WEBPUSH-01: alerts for the iPhone home-screen app, computers and other browsers (the Android app keeps using Firebase). */
 function svIsNativeApp(){return /SkillvayaNative/.test(navigator.userAgent||'')||!!window.SkillvayaNotifications}
+/* SV84-DOWNLOAD-01: in the Android app, file links that live inside the page are saved through a short-lived server link - no Chrome needed */
+(function(){if(window.svDownload)return;function toData(h){if(h.indexOf('data:')===0)return Promise.resolve(h);return fetch(h).then(r=>r.blob()).then(b=>new Promise((ok,no)=>{const f=new FileReader();f.onload=()=>ok(String(f.result));f.onerror=no;f.readAsDataURL(b)}))}
+window.svDownload=function(href,name){return toData(href).then(data=>fetch('/api/download-ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name||'download',data:data})})).then(r=>r.json().then(j=>{if(!r.ok||!j.url)throw Error(j.error||'Download failed');location.href=j.url})).catch(e=>{try{alert('Could not download: '+e.message)}catch(_){}})};
+document.addEventListener('click',function(e){const a=e.target&&e.target.closest?e.target.closest('a[download]'):null;if(!a)return;const h=a.getAttribute('href')||'';if(!/SkillvayaNative/i.test(navigator.userAgent||'')||!(h.indexOf('data:')===0||h.indexOf('blob:')===0))return;e.preventDefault();e.stopPropagation();window.svDownload(h,a.getAttribute('download')||'download')},true)})();
 function svIsIOS(){return /iPad|iPhone|iPod/.test(navigator.userAgent||'')||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)}
 function svIsStandalone(){try{return window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true}catch(_){return false}}
 function svWebPushSupported(){return !svIsNativeApp()&&('serviceWorker' in navigator)&&('PushManager' in window)&&('Notification' in window)}
@@ -4811,6 +4847,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 if not os.path.isfile(image_path): self.send_response(404); self.end_headers(); return
                 with open(image_path,"rb") as f: b=f.read()
                 self.send_response(200); self.send_header("Content-Type","image/jpeg" if filename.lower().endswith((".jpg",".jpeg")) else "image/png"); self.send_header("Content-Length",str(len(b))); self.send_header("Cache-Control","public, max-age=86400"); self.end_headers(); self.wfile.write(b); return
+            if path.startswith("/dl/"):  # SV84-DOWNLOAD-01
+                item=_sv_dl_get(path[4:].split("/")[0])
+                if not item: return self.sendj({"error":"This download link has expired. Tap Download again."},404)
+                b,mime,name=item
+                self.send_response(200); self.send_header("Content-Type",mime); self.send_header("Content-Disposition",'attachment; filename="'+name+'"'); self.send_header("Content-Length",str(len(b))); self.send_header("Cache-Control","no-store"); self.send_header("X-Content-Type-Options","nosniff"); self.end_headers(); self.wfile.write(b); return
             if path in ("/downloads/Skillvaya.apk","/downloads/Skillvaya.exe"):
                 filename=path.rsplit("/",1)[-1]
                 download_path=os.path.join(ROOT,"downloads",filename)
@@ -5786,6 +5827,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                             c.execute("INSERT INTO workfinder_records(user_id,kind,record_key,payload,created_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,kind,record_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",(u["id"],kind,key,json.dumps(payload),stamp,stamp))
                             return self.sendj({"ok":True,"item":payload},201)
                         key=str(d.get("key",""))[:240]
+                        if action=="delete":  # SV84-WF-FILES-01
+                            c.execute("DELETE FROM workfinder_records WHERE user_id=? AND kind=? AND record_key=?",(u["id"],kind,key))
+                            return self.sendj({"ok":True})
                         row=c.execute("SELECT payload FROM workfinder_records WHERE user_id=? AND kind=? AND record_key=?",(u["id"],kind,key)).fetchone()
                         if not row:return self.sendj({"error":"Application not found."},404)
                         payload=json.loads(row["payload"]); payload.update({k:d[k] for k in ("status","followUp","note") if k in d})
@@ -5800,8 +5844,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     payload=d.get("payload",d)
                     if not isinstance(payload,dict):return self.sendj({"error":"Invalid record."},400)
                     raw=json.dumps(payload,ensure_ascii=False)
-                    record_limit=2_500_000 if kind=="profile" and key in ("portfolio_files","documents","business_files") else 200000
-                    if len(raw)>record_limit:return self.sendj({"error":"Record is too large. Choose files within the 1.5 MB combined upload limit." if record_limit>200000 else "Record is too large."},413)
+                    record_limit=6_000_000 if kind=="profile" and key in ("portfolio_files","documents","business_files") else 200000
+                    if len(raw)>record_limit:return self.sendj({"error":"Your saved files here are over the 4 MB limit. Delete a file first or choose smaller ones." if record_limit>200000 else "Record is too large."},413)
                     stamp=now()
                     c.execute("INSERT INTO workfinder_records(user_id,kind,record_key,payload,created_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,kind,record_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",(u["id"],kind,key,raw,stamp,stamp))
                 return self.sendj({"ok":True,"key":key},201)
@@ -5811,6 +5855,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return self.handle_my_team_assignments("POST",d)
             if path=="/api/marketing/track":
                 return self.handle_public_marketing_track(d)
+            if path=="/api/download-ticket":  # SV84-DOWNLOAD-01
+                ip=(self.headers.get("X-Forwarded-For","") or "").split(",")[0].strip() or (self.client_address[0] if self.client_address else "?")
+                tk,err=_sv_dl_put(ip,d.get("name"),d.get("data"))
+                if err: return self.sendj({"error":err},400)
+                return self.sendj({"ok":True,"url":"/dl/"+tk})
             if path=="/api/messages/attachments":
                 u=self.require()
                 if u["role"] not in ("customer","provider","admin"): return self.sendj({"error":"Only account holders can share chat media."},403)
