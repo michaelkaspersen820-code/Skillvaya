@@ -1,0 +1,1101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Kaspersen</title>
+<meta name="kp-ui" content="2026110301">
+<style>
+:root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:4px;padding:10px 8px;border-bottom:1px solid var(--line);background:var(--bg)}
+.logo{width:34px;height:34px;margin-right:4px;border-radius:50%;border:2.5px solid var(--accent);display:grid;place-items:center;font-weight:800;color:#fff;flex:none}
+.who{flex:1;min-width:0}.who b{display:block;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.who small{color:var(--dim);font-size:12.5px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.icon{background:none;border:0;color:var(--text);width:34px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:18px;flex:none;padding:0}
+.icon:active{background:var(--panel)}
+#log{flex:1;overflow-y:auto;padding:14px 12px 6px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
+.msg{max-width:88%;padding:10px 13px;border-radius:16px;word-wrap:break-word;overflow-wrap:anywhere}
+.me{align-self:flex-end;background:var(--me);border-bottom-right-radius:5px;white-space:pre-wrap}
+.her{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:5px}
+.her p{margin:0 0 8px}.her p:last-child{margin:0}.her ul,.her ol{margin:4px 0 8px;padding-left:20px}.her li{margin:2px 0}
+.her code{background:#0a1424;padding:1px 5px;border-radius:5px;font-size:14px}.her pre{background:#0a1424;padding:9px;border-radius:9px;overflow-x:auto;font-size:13.5px;margin:6px 0}
+.her a{color:var(--accent)}.her h4{margin:6px 0 4px;font-size:16px}
+.tools{align-self:flex-start;color:var(--dim);font-size:13px;padding:2px 6px;display:flex;align-items:center;gap:7px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:p 1s infinite alternate}@keyframes p{to{opacity:.25}}
+.src{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.src a{font-size:12px;background:var(--panel2);border-radius:999px;padding:3px 9px;text-decoration:none;color:var(--dim)}
+.actions{display:flex;gap:4px;margin-top:6px}.actions button{background:none;border:0;color:var(--dim);font-size:12.5px;padding:3px 6px;border-radius:7px}.actions button:active{background:var(--panel2)}
+.err{align-self:center;color:var(--warn);font-size:13.5px;text-align:center;padding:4px 10px}
+.hello{margin:auto;text-align:center;color:var(--dim);padding:20px;max-width:340px}.hello b{color:var(--text);font-size:20px;display:block;margin-bottom:6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px}.chips button{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:999px;padding:8px 12px;font-size:13.5px}
+footer{padding:8px 10px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);display:flex;gap:8px;align-items:flex-end;background:var(--bg)}
+textarea{flex:1;resize:none;max-height:140px;min-height:44px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:22px;padding:11px 15px;font:inherit;outline:none}
+textarea:focus{border-color:var(--accent)}
+.round{width:46px;height:46px;border-radius:50%;border:0;display:grid;place-items:center;font-size:20px;flex:none}
+#mic{background:var(--panel2);color:var(--text)}#send{background:var(--accent);color:#06221f}#send:disabled{opacity:.45}
+#mic.on{background:#c0392b}
+#cam{background:var(--panel2);color:var(--text)}
+#attach{display:none;padding:6px 12px 0;align-items:center;gap:10px}#attach.on{display:flex}#attach img{height:64px;border-radius:10px;border:1px solid var(--line)}#attach button{background:none;border:0;color:var(--warn);font-size:15px}
+.camMenu{position:fixed;left:10px;bottom:76px;background:var(--panel);border:1px solid var(--line);border-radius:14px;display:none;flex-direction:column;z-index:8;overflow:hidden}.camMenu.on{display:flex}.camMenu button{background:none;border:0;color:var(--text);padding:13px 18px;text-align:left;font-size:15px}
+.msg img.pic{max-width:100%;border-radius:10px;margin-bottom:6px;display:block}
+#handsBtn.on{color:var(--accent)}
+.sheet{position:fixed;inset:0;background:rgba(3,8,15,.6);display:none;align-items:flex-end;z-index:9}.sheet.open{display:flex}
+.card{background:var(--panel);width:100%;max-height:88%;overflow-y:auto;border-radius:20px 20px 0 0;padding:18px 16px 26px;border-top:1px solid var(--line)}
+.card h3{margin:0 0 12px}.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.row span{color:var(--dim);font-size:14px}.card input[type=text],.card input[type=password]{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;margin:4px 0 10px}
+.btn{background:var(--accent);color:#06221f;border:0;border-radius:12px;padding:11px 14px;font-weight:700;font-size:15px}.btn.sec{background:var(--panel2);color:var(--text)}
+.ok{color:var(--accent)}.no{color:var(--warn)}.note{color:var(--dim);font-size:13px}
+.tabs{display:flex;gap:6px;margin:0 0 12px}.tabs button{flex:1;background:var(--bg);color:var(--dim);border:1px solid var(--line);border-radius:10px;padding:9px;font:inherit}.tabs button.on{background:var(--panel2);color:var(--text);border-color:var(--accent)}
+#welcome .card{max-height:96%}#welcome input[type=email],#welcome input[type=tel]{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;margin:4px 0 10px}
+.mem{font-size:14px;background:var(--bg);border-radius:9px;padding:8px 10px;margin:5px 0;display:flex;justify-content:space-between;gap:8px}.mem button{background:none;border:0;color:var(--warn)}
+#send.stop{background:#c0392b;color:#fff;font-size:18px}
+#attachList{display:flex;gap:8px;overflow-x:auto;padding-top:6px;flex:1;min-width:0}.thumb{position:relative;flex:none}.thumb img{height:56px!important;border-radius:9px;border:1px solid var(--line);display:block}
+.thumb button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#c0392b!important;color:#fff!important;font-size:11px!important;padding:0;line-height:20px}
+#attachMore{color:var(--accent)!important;font-size:22px!important}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">K</div>
+  <div class="who"><b>Kaspersen</b><small id="status">GLM-5.3 · 320B</small></div>
+  <button class="icon" id="callsBtn" title="Future Chat calls (free over Wi-Fi, with live captions)">📞</button>
+  <button class="icon" id="handsBtn" title="Hands-free conversation">🎧</button>
+  <button class="icon" id="speakBtn" title="Read replies aloud">🔈</button>
+  <button class="icon" id="newBtn" title="New chat">＋</button>
+  <button class="icon" id="menuBtn" title="Settings">⚙</button>
+</header>
+<main id="log"></main>
+<div id="attach"><div id="attachList"></div><span class="note" id="attachNote">1 photo</span><button id="attachMore" title="Add another photo">＋</button><button id="attachX" title="Remove all">✕</button></div>
+<div class="camMenu" id="camMenu"><button id="camTake">📷 Take a photo</button><button id="camPick">🖼 Choose from gallery</button></div>
+<footer>
+  <button class="round" id="cam" title="Camera">📷</button>
+  <button class="round" id="mic" title="Talk">🎤</button>
+  <textarea id="input" rows="1" placeholder="Talk to Kaspersen…"></textarea>
+  <button class="round" id="send" title="Send">➤</button>
+</footer>
+
+<div class="sheet" id="welcome"><div class="card">
+  <h3 id="wTitle">Welcome to Kaspersen 👋</h3>
+  <p class="note" id="wIntro">Kaspersen works with your free Skillvaya account, the same one you use for Future Chat. Future Chat lets her call and message for free over Wi-Fi or data.</p>
+  <div id="wAuth">
+    <div class="tabs"><button id="wTabIn" class="on">I have an account</button><button id="wTabUp">Create account</button></div>
+    <div id="wUpOnly" style="display:none"><label class="note">Your name</label><input type="text" id="wName" autocomplete="name">
+      <label class="note">Mobile number (for Future Chat)</label><input type="tel" id="wPhone" placeholder="082 123 4567" autocomplete="tel"></div>
+    <label class="note">Email</label><input type="email" id="wEmail" autocomplete="email">
+    <label class="note">Password</label><input type="password" id="wPass" autocomplete="current-password">
+    <label class="note" style="display:flex;gap:8px;align-items:flex-start;margin:4px 0 12px"><input type="checkbox" id="wTerms" style="margin-top:4px"><span>I accept the <a href="#" id="wTermsLink" style="color:var(--accent)">Skillvaya Terms, Rules &amp; Safety</a></span></label>
+    <button class="btn" id="wGo" style="width:100%">Sign in</button>
+  </div>
+  <div id="wVerify" style="display:none">
+    <p class="note" id="wVerifyNote">We emailed you a 6-digit code to confirm your mobile number.</p>
+    <label class="note">Code from the email</label><input type="text" id="wCode" inputmode="numeric" maxlength="6" placeholder="123456">
+    <div style="display:flex;gap:10px"><button class="btn" id="wConfirm" style="flex:1">Confirm</button><button class="btn sec" id="wResend">Send again</button></div>
+  </div>
+  <p class="note" id="wMsg" style="min-height:20px;margin-top:10px"></p>
+  <p class="note" style="margin-top:4px"><a href="#" id="wOwnKey" style="color:var(--dim)">I have my own AI key instead</a></p>
+</div></div>
+
+<div class="sheet" id="sheet"><div class="card">
+  <h3>Settings</h3>
+  <div style="display:flex;gap:8px;margin:0 0 14px"><button class="btn sec" id="refreshChat" style="flex:1">⟳ Refresh chat</button><button class="btn sec" id="newChatSet" style="flex:1">＋ New chat</button></div>
+  <div class="row" style="margin-top:-6px"><span id="verLine" class="note"></span><button class="btn sec" id="chkUpd" style="padding:7px 11px">Check for updates</button></div>
+  <h3>Projects</h3>
+  <div id="projList"></div>
+  <div style="display:flex;gap:8px;margin:8px 0 4px"><input type="text" id="projNew" placeholder="New project name" style="flex:1;margin:0"><button class="btn sec" id="projAdd">Add</button></div>
+  <h3 style="margin-top:14px">All conversations</h3>
+  <p class="note">Every chat is kept. Chats about a finished project are forgotten 7 days after it's finished. Tap one to continue it.</p>
+  <div id="sessList"></div>
+  <h3 style="margin-top:14px">Account &amp; voice</h3>
+  <div id="provList"></div>
+  <p class="note">Kaspersen runs on your Skillvaya account. Your own AI keys below are optional and stay only on this phone.</p>
+  <label class="note">Kaspersen's voice</label><select id="setVoice" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;margin:4px 0 6px">
+    <option value="en-US-JennyNeural">Jenny - warm, natural (like on the PC)</option>
+    <option value="en-US-AriaNeural">Aria - bright, natural</option>
+    <option value="en-US-AvaMultilingualNeural">Ava - soft, very human</option>
+    <option value="en-US-EmmaMultilingualNeural">Emma - friendly, very human</option>
+    <option value="en-ZA-LeahNeural">Leah - South African</option>
+    <option value="en-GB-SoniaNeural">Sonia - British</option>
+    <option value="device">Phone's built-in voice (works offline)</option>
+  </select><button class="btn sec" id="testVoice" style="margin:0 0 12px">▶ Test voice</button>
+  <label class="note">Microphone</label><select id="setMic" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;margin:4px 0 12px">
+    <option value="noise">Noise-proof - works in noisy places (words appear when you stop)</option>
+    <option value="live">Live typing - words appear as you speak (quiet places)</option>
+  </select>
+  <label class="note">Your name</label><input type="text" id="setName" placeholder="What should Kaspersen call you?">
+  <label class="note">OpenRouter key (optional override)</label><input type="password" id="setOpenrouter" placeholder="sk-or-…">
+  <label class="note">OrcaRouter key (optional override)</label><input type="password" id="setOrca">
+  <label class="note">Vercel AI Gateway key (optional override)</label><input type="password" id="setVercel">
+  <h3 style="margin-top:14px">Your computer</h3>
+  <div id="pcBox"><p class="note">Sign in to link your Windows computer.</p></div>
+  <label class="row" style="cursor:pointer"><span style="color:var(--text)">Close apps when she's done<br><small class="note">She swipes away every app she used in a job, so nothing keeps running in the background.</small></span><input type="checkbox" id="setClose" style="width:22px;height:22px"></label>
+  <h3 style="margin-top:14px">What she has learned about apps</h3>
+  <div id="lessonList"></div>
+  <h3 style="margin-top:14px">What Kaspersen remembers about you</h3>
+  <div id="memList"></div>
+  <div style="display:flex;gap:10px;margin-top:14px"><button class="btn" id="saveSet">Save</button><button class="btn sec" id="closeSet">Close</button></div>
+</div></div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const LS = {get(k, d){try{const v=localStorage.getItem('kp_'+k);return v==null?d:JSON.parse(v)}catch(_){return d}}, set(k, v){try{localStorage.setItem('kp_'+k, JSON.stringify(v))}catch(_){}}};
+const hasNative = typeof window.Native !== 'undefined';
+
+// ---------- native bridge (HTTP without browser CORS limits) ----------
+const pending = {};
+let reqSeq = 0;
+window.onHttp = (id, b64) => {
+  const p = pending[id]; if (!p) return; delete pending[id];
+  try { const bin = atob(b64); const bytes = Uint8Array.from(bin, c => c.charCodeAt(0)); p(JSON.parse(new TextDecoder().decode(bytes))); }
+  catch (e) { p({status: 0, body: '', error: 'decode: ' + e.message}); }
+};
+function http(method, url, headers, body, limit, timeoutMs) {   // STALL-20261103: never wait forever
+  return new Promise(resolve => {
+    if (!hasNative) { resolve({status: 0, body: '', error: 'no native bridge'}); return; }
+    const id = 'r' + (++reqSeq), ms = timeoutMs || 175000;
+    const t = setTimeout(() => { if (pending[id]) { delete pending[id]; resolve({status: 0, body: '', error: 'no reply after ' + Math.round(ms / 1000) + ' s'}); } }, ms);
+    pending[id] = r => { clearTimeout(t); resolve(r); };
+    Native.http(id, method, url, JSON.stringify(headers || {}), body || '', limit || 0);
+  });
+}
+
+// ---------- providers (same GLM-5.3-Flash 320B brain as Kaspersen on the PC) ----------
+function baked() { return {}; }  // KAI-20261102: no keys ship inside the app any more
+const SITE = 'https://skillvaya.onrender.com';
+const ACCT = {
+  get tok() { return LS.get('acct_tok', ''); },
+  user() { return LS.get('acct_user', {}); },
+  set(t, u) { LS.set('acct_tok', t || ''); LS.set('acct_user', u || {}); try { if (hasNative && Native.setSiteLogin) Native.setSiteLogin(t || '', JSON.stringify(u || {})); } catch (_) {} },
+  clear() { this.set('', {}); },
+};
+async function siteApi(path, body) {
+  const h = {'Content-Type': 'application/json'}; if (ACCT.tok) h.Authorization = 'Bearer ' + ACCT.tok;
+  const r = await http(body ? 'POST' : 'GET', SITE + path, h, body ? JSON.stringify(body) : '', 2000000);
+  let j = {}; try { j = JSON.parse(r.body) || {}; } catch (_) {}
+  if (!r.status) j.error = j.error || 'No connection. Check your Wi-Fi or data and try again.';
+  return {status: r.status, j};
+}
+function providers() {
+  const b = baked(), o = LS.get('keys', {});
+  const list = [
+    {name: 'Kaspersen', base: SITE + '/api/kai', model: 'glm-5.3-flash', key: ACCT.tok, cloud: true},
+    {name: 'OrcaRouter', base: 'https://api.orcarouter.ai/v1', model: 'z-ai/glm-5.3-flash-free', key: o.orca || b.orcarouter_api_key},
+    {name: 'OpenRouter', base: 'https://openrouter.ai/api/v1', model: 'z-ai/glm-5.3-flash', key: o.openrouter || b.openrouter_api_key},
+    {name: 'Vercel', base: 'https://ai-gateway.vercel.sh/v1', model: 'zai/glm-5.3-flash', key: o.vercel || b.vercel_ai_gateway_key},
+  ];
+  return list.filter(p => p.key);
+}
+const cooldown = {};
+
+// ---------- memory & persona ----------
+const OWNER = (hasNative && typeof Native.ownerName === 'function') ? (Native.ownerName() || '') : '';
+function userName() { return LS.get('name', OWNER) || ''; }
+function phoneName() { try { return JSON.parse(hasNative ? Native.act('status', '{}') : '{}').phone || 'Android phone'; } catch (_) { return 'Android phone'; } }
+function memories() { return LS.get('memories', []); }
+function systemPrompt() {
+  const now = new Date();
+  const when = now.toLocaleString('en-ZA', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Johannesburg'});
+  const mem = memories();
+  return [
+    ...(OWNER ? [
+    `You are Kaspersen, ${userName()} Kaspersen's personal AI - his pocket version of the Kaspersen AI he built. You run on the GLM-5.3-Flash 320B model.`,
+    `You are talking with ${userName()} on his phone. Talk like a sharp, warm, genuinely helpful friend who happens to know a lot: natural, direct, a little personality, no corporate filler, no lectures. Match his energy - short questions get short answers; big questions get a clear, well-organised answer.`,
+    `Understand what he MEANS, not just the literal words. He often speaks into the phone, so messages may have voice-typing mistakes or missing words - work out the most likely meaning from context (e.g. "Casperson"/"Gasperson" = Kaspersen) and answer that. If something is genuinely ambiguous and the answer depends on it, ask ONE short question.`,
+    `Be honest. If you don't know or aren't sure, say so plainly, then find out with your tools. Never invent facts, numbers, prices, links or sources. Give your real opinion when asked, including when it's not what he wants to hear - kindly.`,
+    `RESEARCH: you have web_search and read_page tools. Use them whenever the answer depends on current or specific facts (prices, news, people, companies, laws, how-to details, anything after your training) - search, then read the 1-3 best pages, then answer in your own words. Mention where the info came from briefly. Don't search for things you already know well (general knowledge, explanations, writing, maths).`,
+    `YOU LIVE IN HIS PHONE (an ${phoneName()}). You can see photos he takes or shares (and ask to take one with take_photo when seeing would help), and you can use the phone: find_contact, call_number, send_sms, send_whatsapp, send_email, open_app, set_alarm, set_timer, add_calendar_event, navigate_to, torch, phone_status, share_text. When he asks you to do something on the phone, just do it with the tool - don't explain how he could do it himself. call_number places the call straight away - if he asked you to call someone, just call (confirm first only if it is unclear who). send_sms / send_whatsapp open the chat with your message typed in, then YOU press Send: read the screen (phone_screen), tap the Send button (phone_tap), check it shows as sent, then finish_phone_task. He trusts you: when he asks you to message someone, write it well and send it straight away - no need to show him first (only ask if it's unclear WHO or WHAT he wants said). His own number is 083 787 4569 (also on Future Chat) - use it when he says 'send it to me' or 'call me'. If he names a person, use find_contact first; if several numbers match, ask which one. Never invent phone numbers.`,
+    `CALL OR MESSAGE (REACH-20261102): when he wants someone reached, pick the right channel yourself. CALL when it needs a real conversation or is urgent/time-sensitive (a customer waiting on a job, a booking for today, a problem to sort out, they asked to be called). MESSAGE (WhatsApp, or Future Chat if they use it; SMS if they have no WhatsApp) for information, quotes, prices, confirmations, 'it's ready', reminders, follow-ups, and anything after hours (calls only Mon-Fri 08:00-18:00, Sat 09:00-13:00, never Sunday unless urgent). EMAIL (send_email) for formal things: invoices, documents, quotes to a company, or when you only have an email address. Cold prospects who've never dealt with him get an email or message, never a cold call. IF A CALL ISN'T ANSWERED (after call_number, phone_wait about 40 seconds, then phone_screen: still ringing, voicemail, or the call ended with nobody talking): hang up (phone_key back/end) and straight away send them a short message saying who it is and what it's about - WhatsApp first, SMS if WhatsApp isn't available, email if you only have an email - then tell him what you sent. Don't keep calling the same person: at most 2 tries a day, then message.`,
+    `TALKING ON CALLS (AIVOICE-20261102): your voice can only go into FUTURE CHAT calls - an ordinary phone call (call_number) cannot carry your voice. So when YOU must speak to someone yourself, call them on Future Chat: open_future_chat, find them, tap the call button, and wait (phone_wait / phone_screen) until it connects. Then talk with call_talk, turn by turn: first who you are and why - "Hi <first name>, this is Kaspersen, ${userName()}'s AI assistant, calling about ..." - then listen to their answers, answer their questions, agree next steps, say goodbye. Natural, short, friendly sentences; never read lists aloud. When done: hang up (tap the end-call button), call_done, close_future_chat, then tell him what was said and agreed. If they are not on Future Chat, or don't answer, message them instead (see CALL OR MESSAGE).`,
+    `HIS PC (PC LINK): you can also use his Windows PC from here, like Desktop Commander - wherever he is, as long as the PC is on. pc_run runs PowerShell (files, folders, git, python, installs, anything), pc_read_file / pc_write_file / pc_list_dir work with files, and pc_read_screen / pc_click / pc_type / pc_key / pc_scroll / pc_open_app use any program on its screen (call pc_done when finished with the screen). His home folder is C:\\Users\\user and his projects are in C:\\Users\\user\\Documents\\Codex (Skillvaya, Kaspersen AI, Kaspersen Pocket). When he asks for something on his PC, just do it there - check results, fix errors, and tell him what you did. Ask him first before deleting files, uninstalling, changing passwords/security, or anything that spends money. If pc_ tools say the PC is offline, tell him it needs to be switched on (with PC Link running). WORK EFFICIENTLY ON THE PC: keep using the windows you already opened - never open a second browser window or a second copy of an app; to show another page use pc_open_app (it reuses your browser) or the address bar (pc_key ctrl+l, pc_type, Enter). Don't open things with pc_run Start-Process. pc_read_screen lists the other open windows - check it before opening anything, and use pc_read_screen(window=...) to switch to one. Close windows you no longer need (pc_key alt+f4) when you finish.`,
+    `WORK FAST (SPEED-20261103): every phone action (open_app, open_url, tap, type, scroll, key) already returns screen_now - the fresh screen once it has finished loading. Act on it straight away; only call phone_screen when screen_now is missing. When you are sure of several steps on the SAME screen (for example type into a field and then tap Send), do them together as several tool calls in one reply. Do not narrate between steps. Tap things by their id with phone_tap whenever they have one (exact every time); use phone_tap_xy only for things with no id, using real pixel positions on the latest picture and aiming at the middle of the item, never the top strip of the screen. If a tap says it pulled down the notification shade, do not repeat it - use the id or aim lower. DIRECT ROUTES: to work on a photo in an app (edit it in Snapseed, post it, send it), use find_photos to see and pick it, then open_photo_in - never hunt through gallery grids by tapping. YOUR NOTEBOOK: when you enter an app you get your_lessons_for_this_app - follow them. When a phone job is done, or after you recover from a mistake, save_lesson one short sentence about what worked. EVIDENCE FIRST: never guess why something failed. Check phone_history, the latest screen and (for memory) phone_status, and only tell them causes you actually saw. If you do not know the cause, say so and say what you will try next.`,
+    `FULL PHONE CONTROL: with phone_screen / phone_tap / phone_type / phone_scroll / phone_key you can use ANY app on the phone yourself, exactly like a person: open the app (open_app), read the screen, tap, type, scroll, go back/home, and check the screen again after every step. Use this when he asks you to do something inside an app (e.g. check WhatsApp, change a setting, order something, use Skillvaya, install an app). To install an app: open_url "https://play.google.com/store/search?q=<name>&c=apps", tap the right app, tap Install, wait, then open it. When the task is finished call finish_phone_task, then tell him what you did. Work efficiently - don't re-read the screen without acting.`,
+    `ALWAYS ASK HIM FIRST (in chat, and wait for his yes) before: paying or buying anything, entering card/bank/ID details or passwords, deleting anything, posting publicly on social media in his name, changing security/lock/account settings, or giving another app sensitive permissions. Free app installs and normal navigation don't need asking. If he presses Stop, stop immediately.`,
+    `MEMORY: you never lose a conversation. Every chat with him is saved: you see a list of your earlier conversations below, and recall searches everything either of you ever said (open_conversation reads one in full). Whenever he refers to something from before ("that thing we discussed", "the plan", "what did you say about..."), or an earlier chat could matter, look it up with recall instead of guessing or asking him to repeat himself. When he tells you something lasting about himself, his work, family or preferences, call remember() with a short fact. Use what you remember naturally - don't recite it.`,
+    `PROJECTS: when he is working on something with a goal (an app, a business task, a plan, an order, a document), create it with project_update and keep its notes current (goal, what's decided, what's done, what's next) as things change - that is how you keep track until it's finished. Only call project_done when he confirms the project is completely finished end to end. Conversations about a finished project are forgotten 7 days after it's finished; nothing else is ever forgotten.`,
+    `Context about him: he is in South Africa (prices in rand). He builds his own tech: Skillvaya (a services marketplace app on Google Play), Future Chat (a South African messenger with Chatmoji emojis and calls), and Kaspersen AI (his autonomous AI agent on his PC that sells services like CVs, design and bookkeeping to small businesses). He wants to grow these into real income.`,
+    ] : [
+    `You are Kaspersen, a friendly personal AI assistant that lives on this phone (made by Kaspersen AI). You run on the GLM-5.3-Flash 320B model.`,
+    userName() ? `You are talking with ${userName()}, the person who uses this phone. Talk like a sharp, warm, genuinely helpful friend who happens to know a lot: natural, direct, a little personality, no corporate filler, no lectures. Match their energy - short questions get short answers; big questions get a clear, well-organised answer.`
+      : `You are talking with the person who uses this phone, and you don't know their name yet. In your first reply, warmly say hi, introduce yourself as Kaspersen, their AI assistant, and ask what you should call them; when they tell you, save it with set_name. Talk like a sharp, warm, genuinely helpful friend who happens to know a lot: natural, direct, a little personality, no corporate filler, no lectures. Match their energy.`,
+    `This phone may be used by a child or teenager, so keep everything friendly, kind and age-appropriate, and encourage them to involve a parent for anything risky or grown-up.`,
+    `Understand what they MEAN, not just the literal words. They often speak into the phone, so messages may have voice-typing mistakes or missing words - work out the most likely meaning from context (e.g. "Casperson"/"Gasperson" = Kaspersen) and answer that. If something is genuinely ambiguous and the answer depends on it, ask ONE short question.`,
+    `Be honest. If you don't know or aren't sure, say so plainly, then find out with your tools. Never invent facts, numbers, prices, links or sources. Give your real opinion when asked, including when it's not what they want to hear - kindly.`,
+    `RESEARCH: you have web_search and read_page tools. Use them whenever the answer depends on current or specific facts (prices, news, people, companies, laws, how-to details, anything after your training) - search, then read the 1-3 best pages, then answer in your own words. Mention where the info came from briefly. Don't search for things you already know well (general knowledge, explanations, writing, maths).`,
+    `YOU LIVE IN THEIR PHONE (an ${phoneName()}). You can see photos they take or shares (and ask to take one with take_photo when seeing would help), and you can use the phone: find_contact, call_number, send_sms, send_whatsapp, send_email, open_app, set_alarm, set_timer, add_calendar_event, navigate_to, torch, phone_status, share_text. When they ask you to do something on the phone, just do it with the tool - don't explain how they could do it themselves. call_number places the call straight away - if they asked you to call someone, just call (confirm first only if it is unclear who). send_sms / send_whatsapp open the chat with your message typed in, then YOU press Send: read the screen (phone_screen), tap the Send button (phone_tap), check it shows as sent, then finish_phone_task. Only send words they asked for or approved - if you wrote the wording yourself and they haven't seen it, show them and ask first. If they name a person, use find_contact first; if several numbers match, ask which one. Never invent phone numbers.`,
+    `CALL OR MESSAGE: when they want someone reached, pick the right channel: CALL when it needs a real conversation or is urgent; MESSAGE (WhatsApp, Future Chat, or SMS) for information, confirmations, reminders and anything late at night; EMAIL for formal things or when you only have an email address. If a call isn't answered (after call_number, phone_wait about 40 seconds, then phone_screen), offer to send them a short message instead - write it and show it for their OK before sending.`,
+    `TALKING ON CALLS (PARITY-20261102): your voice can only go into FUTURE CHAT calls - an ordinary phone call (call_number) cannot carry your voice. Only call someone yourself when they asked you to. Call them on Future Chat: open_future_chat, find them, tap the call button, wait (phone_wait / phone_screen) until it connects, then talk with call_talk turn by turn - first say who you are and on whose behalf ("Hi, this is Kaspersen, ${userName() || 'my user'}'s AI assistant, calling about ..."), listen, answer, agree next steps, say goodbye. Short, natural, friendly sentences. When done: hang up, call_done, close_future_chat, and tell them what was said. If the person isn't on Future Chat or doesn't answer, offer to message them instead.`,
+    `WORK FAST (SPEED-20261103): every phone action (open_app, open_url, tap, type, scroll, key) already returns screen_now - the fresh screen once it has finished loading. Act on it straight away; only call phone_screen when screen_now is missing. When you are sure of several steps on the SAME screen (for example type into a field and then tap Send), do them together as several tool calls in one reply. Do not narrate between steps. Tap things by their id with phone_tap whenever they have one (exact every time); use phone_tap_xy only for things with no id, using real pixel positions on the latest picture and aiming at the middle of the item, never the top strip of the screen. If a tap says it pulled down the notification shade, do not repeat it - use the id or aim lower. DIRECT ROUTES: to work on a photo in an app (edit it in Snapseed, post it, send it), use find_photos to see and pick it, then open_photo_in - never hunt through gallery grids by tapping. YOUR NOTEBOOK: when you enter an app you get your_lessons_for_this_app - follow them. When a phone job is done, or after you recover from a mistake, save_lesson one short sentence about what worked. EVIDENCE FIRST: never guess why something failed. Check phone_history, the latest screen and (for memory) phone_status, and only tell them causes you actually saw. If you do not know the cause, say so and say what you will try next.`,
+    `FULL PHONE CONTROL: with phone_screen / phone_tap / phone_type / phone_scroll / phone_key you can use ANY app on the phone yourself, exactly like a person: open the app (open_app), read the screen, tap, type, scroll, go back/home, and check the screen again after every step. Use this when they ask you to do something inside an app (e.g. check WhatsApp, change a setting, order something, install an app). To install an app: open_url "https://play.google.com/store/search?q=<name>&c=apps", tap the right app, tap Install, wait, then open it. When the task is finished call finish_phone_task, then tell them what you did. Work efficiently - don't re-read the screen without acting.`,
+    LS.get('pc_linked', false) ? `THEIR COMPUTER (PC LINK): their Windows computer is linked, so you can use it from here, like Desktop Commander, whenever it is switched on: pc_run runs PowerShell, pc_read_file / pc_write_file / pc_list_dir work with files (call pc_status first to learn their user folder), and pc_read_screen / pc_click / pc_type / pc_key / pc_scroll / pc_open_app use programs on the screen (pc_done when finished). Just do what they ask on it and say what you did. Ask first before deleting files, uninstalling, changing passwords/security or spending money. If it is offline, tell them to switch it on and check Kaspersen PC Link is running. WORK EFFICIENTLY ON THE PC: keep using the windows you already opened - never open a second browser window or a second copy of an app; to show another page use pc_open_app (it reuses your browser) or the address bar (pc_key ctrl+l, pc_type, Enter). Don't open things with pc_run Start-Process. pc_read_screen lists the other open windows - check it before opening anything, and use pc_read_screen(window=...) to switch to one. Close windows you no longer need (pc_key alt+f4) when you finish.` : '',
+    `ALWAYS ASK THEM FIRST (in chat, and wait for their yes) before: paying or buying anything, entering card/bank/ID details or passwords, deleting anything, sending a message or post they haven't approved word for word, changing security/lock/account settings, or giving another app sensitive permissions. Free app installs and normal navigation don't need asking. If they press Stop, stop immediately.`,
+    `MEMORY: you never lose a conversation. Every chat with them is saved: you see a list of your earlier conversations below, and recall searches everything either of you ever said (open_conversation reads one in full). Whenever they refer to something from before ("that thing we discussed", "the plan", "what did you say about..."), or an earlier chat could matter, look it up with recall instead of guessing or asking them to repeat themselves. When they tell you something lasting about themselves, their work, family or preferences, call remember() with a short fact. Use what you remember naturally - don't recite it.`,
+    `PROJECTS: when they are working on something with a goal (an app, a business task, a plan, an order, a document), create it with project_update and keep its notes current (goal, what's decided, what's done, what's next) as things change - that is how you keep track until it's finished. Only call project_done when they confirm the project is completely finished end to end. Conversations about a finished project are forgotten 7 days after it's finished; nothing else is ever forgotten.`,
+    ]),
+    `HIGH STANDARDS - BUILD TO SELL: whatever you make (an app, website, document, design, message) must look premium and professional, never plain or 'basic' - plain looks cheap and doesn't sell. For apps: a brand name and logo, a confident colour palette with gradients, strong typography, icons, cards with depth and rounded corners, smooth animations, a friendly empty state, mobile-friendly layout, dark/light. Make it complete: it SAVES its data, has no dead buttons, handles mistakes. On a PC, save each app as Documents\\Kaspersen Apps\\<Name>\\index.html and install it with pc_install_app so it gets its own icon and window - never leave it as a browser tab. CHECK YOUR WORK before you say it's done: open it, read the screen, LOOK at it (pc_screenshot) and fix anything that looks plain or broken, click every button, enter realistic test data, fix every bug, and repeat until everything works. Then report what you built and what you tested.`,
+    `PICTURES: when asked for any picture, logo, profile photo, flyer, poster or post image, use make_picture (seconds, premium quality) - never try to draw it in another app. Look at the result; if text is misspelled or anything looks off, make it again before you show it. To put it on a profile, upload the newest picture from the gallery (Pictures/Kaspersen).`,
+    `UPLOADING PICTURES (UPLOAD-20261102): apps like WhatsApp, Facebook and Google already fit the picture for you. Pick it, and on the crop / adjust / preview screen tap Done (or the tick / Save / Upload) ONCE straight away - do NOT rotate, zoom, drag or reopen it to 'see how it fits', unless the user asked for that. Then one phone_screen to confirm it saved, and stop. Every extra tap costs time and money.`,
+    `CHOOSING OPTIONS (PICKER-20261102): on a list of options (a business category, language, type ...) your choice is KEPT as soon as you tap it, even when the screen only has a Back arrow and no Save. Tap the option ONCE, press Back ONCE, then tap Save / Done on the screen you return to. Never tap a chosen option again (that can un-choose it) and never go back in to check - read the screen instead ("checked"/"selected"). If you notice yourself repeating the same steps, STOP, read the whole screen (scroll for a Save button) and try a different way, or tell the user exactly where you are stuck.`,
+    `FINISH THE JOB (DONE-20261102): a job is done only when you have SEEN proof that it worked - the post on the profile/page or group, the message showing as sent, the setting saved. Never stop at 'it was sent toward Post' or hand it back with 'please check'. When something blocks you, find a way around it, trying genuinely different approaches one after another: read the screen again; phone_look to SEE it and phone_tap_xy for buttons phone_screen can't see (Facebook Lite and similar apps draw their own buttons); wait a few seconds and retry; go back and redo the step; close and reopen the app (if the app suddenly closed, it was the PHONE running out of memory, not a ban - reopen it, check for a draft or a 'posting…' bar first so you never post twice, then continue); or reach the same goal another way (the full Facebook app or facebook.com in the browser with open_url instead of Facebook Lite, the share sheet, another app). Only after at least 3 COMPLETELY DIFFERENT methods have failed may you stop (DIFFERENT-20261102). Repeating the same thing - the same app, the same button, the same route, the same step again - is NOT a new attempt and does not count. Each new attempt must change the method itself (a different app, the website instead of the app, seeing the screen with phone_look instead of reading it, a different path to the same result). Before each one, decide what you will do differently. If you do stop, tell him which screen you are on, list the different methods you tried, and what you need. This phone has little memory: for heavy jobs (posting photos or videos) don't open extra apps.`,
+    `GO ALL THE WAY: when asked to do or make something, do the COMPLETE job to the best standard you can in one go - research it properly, write the full finished thing, take every step needed - not a small first step, a 'basic version', or a list of things they could do next. Don't stop halfway to ask permission for obvious next steps (only the ASK FIRST cases need asking). If a task truly can't be finished in one go, do as much as possible and say exactly what's left. Short, casual questions still get short answers.`,
+    `Format for a phone screen: short paragraphs, simple bullet lists when useful, **bold** for key points, no tables, no long walls of text.`,
+    `Now: ${when} (South Africa time).`,
+    mem.length ? `What you remember about ${userName() || 'this person'}:\n- ` + mem.join('\n- ') : '',
+    MEM.promptBlock(contextStart())
+  ].filter(Boolean).join('\n\n');
+}
+
+const TOOLS = [
+  {type: 'function', function: {name: 'web_search', description: 'Search the web. Returns titles, links and snippets.', parameters: {type: 'object', properties: {query: {type: 'string', description: 'Short search query'}}, required: ['query']}}},
+  {type: 'function', function: {name: 'read_page', description: 'Read the text of a web page (from a search result link).', parameters: {type: 'object', properties: {url: {type: 'string'}}, required: ['url']}}},
+  ...[
+    ['find_contact', 'Look up a person in the phone contacts by name. Returns names and numbers.', {name: {type: 'string'}}, ['name']],
+    ['call_number', 'Phone this number now (the call starts immediately).', {number: {type: 'string'}}, ['number']],
+    ['send_sms', 'Open an SMS to this number with the text typed in; then press Send yourself with phone_screen + phone_tap.', {number: {type: 'string'}, text: {type: 'string'}}, ['number', 'text']],
+    ['send_whatsapp', 'Open a WhatsApp chat with this number with the message typed in; then press Send yourself with phone_screen + phone_tap.', {number: {type: 'string'}, text: {type: 'string'}}, ['number', 'text']],
+    ['send_email', 'Open an email ready to send.', {to: {type: 'string'}, subject: {type: 'string'}, body: {type: 'string'}}, ['to', 'subject', 'body']],
+    ['open_app', 'Open an app on the phone by its name (e.g. WhatsApp, Skillvaya, YouTube, Settings).', {name: {type: 'string'}}, ['name']],
+    ['set_alarm', 'Set an alarm (24h time).', {hour: {type: 'integer'}, minute: {type: 'integer'}, label: {type: 'string'}}, ['hour', 'minute']],
+    ['set_timer', 'Start a countdown timer.', {seconds: {type: 'integer'}, label: {type: 'string'}}, ['seconds']],
+    ['add_calendar_event', 'Open a new calendar event. start/end as local date-time like 2026-11-03T14:00.', {title: {type: 'string'}, start: {type: 'string'}, end: {type: 'string'}, location: {type: 'string'}}, ['title', 'start']],
+    ['navigate_to', 'Open maps for a place or address.', {place: {type: 'string'}}, ['place']],
+    ['torch', 'Turn the phone torch/flashlight on or off.', {on: {type: 'boolean'}}, ['on']],
+    ['phone_status', 'Battery level, charging, network, phone model and real free memory right now.', {}, []],
+    ['share_text', 'Share text to another app (share sheet).', {text: {type: 'string'}}, ['text']],
+    ['phone_screen', 'Read what is on the phone screen right now (any app): elements with id numbers, text and what you can do with them.', {}, []],
+    ['phone_tap', 'Tap an element by its id. The result has screen_now = the NEW screen after the tap; use it directly (no phone_screen needed).', {id: {type: 'integer'}}, ['id']],
+    ['phone_type', 'Type text into an input element by its id. The result has screen_now = the new screen.', {id: {type: 'integer'}, text: {type: 'string'}}, ['id', 'text']],
+    ['phone_scroll', 'Scroll a list or page. direction: down or up. id optional (a scrollable element). The result has screen_now = the new screen.', {direction: {type: 'string', enum: ['down', 'up']}, id: {type: 'integer'}}, ['direction']],
+    ['phone_key', 'Press a system key: back, home, recents, notifications or quick_settings. The result has screen_now = the new screen.', {key: {type: 'string', enum: ['back', 'home', 'recents', 'notifications', 'quick_settings']}}, ['key']],
+    ['phone_wait', 'Wait a few seconds for something to load or download.', {seconds: {type: 'integer'}}, ['seconds']],
+    ['open_url', 'Open a web or Play Store link on the phone.', {url: {type: 'string'}}, ['url']],
+    ['open_future_chat', 'Open the built-in Future Chat caller: free chats and voice/video calls over Wi-Fi or data with live captions. Use when they want to call or message someone on Future Chat (including Kaspersen AI on 078 244 1456). You can work inside it with phone_screen/phone_tap like any app; it is already signed in with their account.', {}, []],
+    ['close_future_chat', 'Leave Future Chat and come back to the Kaspersen chat. Any call in progress keeps going in the background.', {}, []],
+    ['finish_phone_task', 'You are done using other apps: closes every app you used in this job (so nothing keeps running in the background), hides the Stop button and comes back to the chat.', {}, []],
+    ['take_photo', 'Open the camera so the user can take a photo for you to look at.', {reason: {type: 'string'}}, []],
+    ['call_talk', 'TALK in a connected Future Chat call that you placed: says `say` out loud INTO the call in your voice (the phone mic is muted while you run the call), then listens and returns what the other person answered (heard). Use say="" just to listen (e.g. for their hello). Keep each turn to 1-3 short natural sentences.', {say: {type: 'string'}, listen_seconds: {type: 'number', description: 'how long to wait for their answer, default 12'}}, ['say']],
+    ['call_done', 'Finished talking in the call (gives the phone mic back). Use right after you hang up.', {}, []],
+    ['phone_look', 'SEE the phone screen (a screenshot). Use it whenever phone_screen shows unlabeled, missing or confusing elements (Facebook Lite, games, apps that draw their own buttons), and to CHECK that something really worked (the post is on the profile, the message shows as sent). Only the newest picture is kept.', {}, []],
+    ['phone_tap_xy', 'Tap a point on the phone screen using x,y pixel positions on the LATEST phone_look picture (top-left is 0,0). Use it for buttons phone_screen cannot see. Look again afterwards to check.', {x: {type: 'number'}, y: {type: 'number'}}, ['x', 'y']],
+    ['find_photos', 'SEE the photos on this phone as one numbered picture sheet (newest first, 9 per page) so you can pick the right one by looking. page: 0 = newest 9, 1 = the next 9. folder optional (Camera, Screenshots, WhatsApp Images, Kaspersen...). Gives each photo_id.', {page: {type: 'integer'}, folder: {type: 'string'}}, []],
+    ['open_photo_in', 'DIRECT ROUTE: open one photo (photo_id from find_photos) straight inside an app - Snapseed, WhatsApp, Facebook, Gallery... - with no gallery or picker screens. mode edit (default) opens it for editing; share sends it to the app to post or send. Far faster and more reliable than picking a photo by tapping.', {photo_id: {type: 'integer'}, app: {type: 'string'}, mode: {type: 'string', enum: ['edit', 'share']}}, ['photo_id', 'app']],
+    ['save_lesson', 'Write one short sentence in your notebook about an app: what worked, where a button is, what to avoid. You will be shown it next time you use that app.', {app: {type: 'string'}, lesson: {type: 'string'}}, ['app', 'lesson']],
+    ['phone_history', 'Your own log of your last phone actions and what happened after each (worked or error, which app was on screen). Check it BEFORE explaining why something failed.', {}, []],
+    ['make_picture', 'CREATE a picture in seconds: logo, profile picture, avatar, flyer, poster, social post, product shot, illustration or a real-life-looking photo. It is saved in the phone gallery (Pictures/Kaspersen) so any app can use it (e.g. upload as a profile picture), shown in the chat, and you SEE it to check it. Write a rich prompt: subject, style, colours, lighting, composition, and any text EXACTLY in quotes. based_on: "my_photo" edits/uses the photo the user sent, "last_picture" changes the last picture you made. Never try to draw pictures inside other apps.', {prompt: {type: 'string'}, aspect_ratio: {type: 'string', description: '1:1 (profile pictures, logos, posts), 4:5, 9:16 (stories, phone wallpaper), 16:9 (banners, covers), 3:4, 4:3'}, based_on: {type: 'string', description: 'none | my_photo | last_picture'}}, ['prompt']],
+  ].map(([name, description, props, req]) => ({type: 'function', function: {name, description, parameters: {type: 'object', properties: props, required: req}}})),
+  {type: 'function', function: {name: 'remember', description: 'Save a lasting fact about the user for future conversations.', parameters: {type: 'object', properties: {fact: {type: 'string'}}, required: ['fact']}}},
+  {type: 'function', function: {name: 'set_name', description: "Save the name the user wants to be called.", parameters: {type: 'object', properties: {name: {type: 'string'}}, required: ['name']}}},
+  {type: 'function', function: {name: 'recall', description: 'Search EVERYTHING you and the user said in all earlier conversations (and earlier in this one), word for word. Use whenever they refer to something from before or an earlier chat could matter.', parameters: {type: 'object', properties: {query: {type: 'string', description: 'key words, e.g. "logo price Thabo"'}}, required: ['query']}}},
+  {type: 'function', function: {name: 'open_conversation', description: 'Read one earlier conversation in full. id comes from your list of earlier conversations or from recall.', parameters: {type: 'object', properties: {id: {type: 'string'}}, required: ['id']}}},
+  {type: 'function', function: {name: 'project_update', description: 'Start or update a project the user is working on and link this conversation to it. notes = its current state (goal, decisions, done, next). status: active (default) or paused.', parameters: {type: 'object', properties: {name: {type: 'string'}, notes: {type: 'string'}, status: {type: 'string', enum: ['active', 'paused']}}, required: ['name']}}},
+  {type: 'function', function: {name: 'project_done', description: 'Mark a project as completely finished end to end - ONLY when the user confirms it is done. Its conversations are forgotten 7 days later.', parameters: {type: 'object', properties: {name: {type: 'string'}}, required: ['name']}}},
+];
+
+// ---------- research tools ----------
+function clean(t) { return (t || '').replace(/\s+/g, ' ').trim(); }
+async function webSearch(query) {
+  const urls = ['https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query), 'https://lite.duckduckgo.com/lite/?q=' + encodeURIComponent(query)];
+  for (const u of urls) {
+    const r = await http('GET', u, {'Accept': 'text/html'}, '', 900000);
+    if (r.status !== 200 || !r.body) continue;
+    const doc = new DOMParser().parseFromString(r.body, 'text/html');
+    const out = [];
+    const anchors = doc.querySelectorAll('a.result__a, a.result-link, td a[href*="uddg="]');
+    anchors.forEach(a => {
+      let href = a.getAttribute('href') || '';
+      const m = href.match(/[?&]uddg=([^&]+)/); if (m) href = decodeURIComponent(m[1]);
+      if (href.startsWith('//')) href = 'https:' + href;
+      if (!/^https?:/.test(href) || /duckduckgo\.com/.test(href)) return;
+      const box = a.closest('.result, tr');
+      let snip = '';
+      if (box) { const s = box.querySelector('.result__snippet, .result-snippet'); snip = s ? clean(s.textContent) : ''; if (!snip && box.nextElementSibling) snip = clean(box.nextElementSibling.textContent); }
+      if (out.some(o => o.url === href)) return;
+      out.push({title: clean(a.textContent).slice(0, 140), url: href, snippet: snip.slice(0, 300)});
+    });
+    if (out.length) return out.slice(0, 8);
+  }
+  return [];
+}
+async function readPage(url) {
+  const r = await http('GET', url, {'Accept': 'text/html,text/plain'}, '', 1500000);
+  if (!r.body) return {url, error: 'Could not open page (' + (r.error || r.status) + ')'};
+  const doc = new DOMParser().parseFromString(r.body, 'text/html');
+  doc.querySelectorAll('script,style,noscript,svg,nav,footer,header,form,iframe,aside').forEach(n => n.remove());
+  const main = doc.querySelector('article, main, [role=main]') || doc.body;
+  const text = clean(main ? main.textContent : r.body).slice(0, 7000);
+  return {url: r.url || url, title: clean(doc.title).slice(0, 160), text};
+}
+
+// ---------- phone abilities ----------
+let photoWaiter = null, contactWaiter = null, pendingImages = [];
+window.onPhoto = b64 => { if (photoWaiter) { const w = photoWaiter; photoWaiter = null; w(b64); return; } if (b64) addAttach(b64); };
+window.flushPhotos = () => { let arr = []; try { arr = JSON.parse(Native.takePhotos()); } catch (_) {} arr.forEach(b => window.onPhoto(b)); };   // PHOTOS-20261103
+window.onContacts = j => { if (contactWaiter) { const w = contactWaiter; contactWaiter = null; w(j); } };
+window.onActError = t => showError('Phone: ' + t);
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+// EVIDENCE-20261103: her own log of what she did and what happened, so she checks instead of guessing
+const ACTLOG = []; let lastApp = '';
+// TIDY-20261103: apps she used in this job - closed when she is done (Settings > Close apps when done)
+const usedApps = new Set();
+function finishPhone() {
+  if (!hasNative) return null; let r = null;
+  const list = [...usedApps]; usedApps.clear();
+  if (list.length && LS.get('close_apps', true) && Native.closeApps) { ind_set_safe('Closing the apps I used…'); try { r = JSON.parse(Native.closeApps(JSON.stringify(list))); } catch (_) {} }
+  Native.controlDone(); return r;
+}
+let curInd = null; function ind_set_safe(t) { try { if (curInd) curInd.set(t); } catch (_) {} }
+function logAct(kind, args, r, app) {
+  ACTLOG.push({time: new Date().toTimeString().slice(0, 8), action: kind, details: JSON.stringify(args || {}).slice(0, 90), ok: !(r && (r.ok === false || r.error)), error: r && r.error ? String(r.error).slice(0, 180) : undefined, app_on_screen_after: app || undefined});
+  if (ACTLOG.length > 40) ACTLOG.shift();
+}
+// LESSONS-20261103: her notebook - short notes per app on what worked
+function lessonsAll() { return LS.get('lessons', {}); }
+function lessonsFor(x) { x = String(x || '').toLowerCase(); if (!x) return []; const all = lessonsAll(), out = []; for (const k in all) if (x.includes(k) || k.includes(x)) out.push(...all[k]); return out.slice(-12); }
+function ctl(kind, args) {
+  if (!hasNative) return {ok: false, error: 'not on phone'};
+  let r; try { r = JSON.parse(Native.control(kind, JSON.stringify(args || {}))); } catch (e) { r = {ok: false, error: e.message}; }
+  try {
+    const scr = r.screen_now || (kind === 'screen' || kind === 'settle' ? r : null);
+    const app = (scr && scr.app) || '';
+    if (kind !== 'screen' && kind !== 'look') logAct(kind, args, r, app);
+    if (app) usedApps.add(app);
+    if (app && app !== lastApp) { lastApp = app; const L = lessonsFor(app); if (L.length) r.your_lessons_for_this_app = L; }
+  } catch (_) {}
+  return r;
+}
+// SPEED-20261103: after opening something, wait only until it has loaded, and hand back what is on screen
+function settled(max) { return hasNative ? {screen_now: ctl('settle', {min: 600, max: max || 4000})} : {}; }
+function act(kind, args) { if (!hasNative) return {ok: false, error: 'not on phone'}; try { return JSON.parse(Native.act(kind, JSON.stringify(args || {}))); } catch (e) { return {ok: false, error: e.message}; } }
+const PHONE_LABEL = {phone_screen: 'Looking at the screen…', phone_tap: 'Tapping…', phone_type: 'Typing…', phone_scroll: 'Scrolling…', phone_key: 'Pressing a key…', phone_wait: 'Waiting…', open_url: 'Opening link…', find_contact: 'Checking contacts…', take_photo: 'Opening camera…', call_number: 'Calling…', send_sms: 'Opening SMS…', send_whatsapp: 'Opening WhatsApp…', open_app: 'Opening app…', navigate_to: 'Opening maps…'};
+const PHONE = {
+  find_contact: a => new Promise(res => { if (!hasNative) return res({error: 'not on phone'}); contactWaiter = j => { try { res(JSON.parse(j)); } catch (_) { res({error: 'no result'}); } }; Native.findContact(a.name || ''); setTimeout(() => { if (contactWaiter) { contactWaiter = null; res({error: 'timed out'}); } }, 20000); }),
+  call_number: a => Object.assign({}, act('call', {number: a.number}), {next: 'If you are trying to reach this person for a task: phone_wait ~40s, then phone_screen. If nobody answered, end the call and send a message instead (see CALL OR MESSAGE).'}),
+  send_sms: a => { const r = act('sms', a); if (hasNative) Native.controlStart(); return Object.assign({}, r, settled(3500), {next: 'Tap Send on screen_now, then confirm it sent.'}); },
+  send_whatsapp: a => { const r = act('whatsapp', a); if (hasNative) Native.controlStart(); return Object.assign({}, r, settled(5000), {next: 'Tap the Send button on screen_now, then confirm it sent.'}); },
+  send_email: a => act('email', a),
+  open_app: a => { const r = act('open_app', a); logAct('open_app', a, r); if (hasNative) Native.controlStart(); const o = Object.assign({}, r, settled(4500)); const L = lessonsFor(a.name); if (L.length) o.your_lessons_for_this_app = L; return o; },
+  set_alarm: a => act('alarm', a),
+  set_timer: a => act('timer', a),
+  add_calendar_event: a => act('calendar', {title: a.title, location: a.location || '', start_ms: Date.parse(a.start) || 0, end_ms: Date.parse(a.end || '') || (Date.parse(a.start) ? Date.parse(a.start) + 3600000 : 0)}),
+  navigate_to: a => act('navigate', a),
+  torch: a => act('torch', a),
+  phone_status: () => act('status', {}),
+  share_text: a => act('share', a),
+  phone_screen: () => ctl('screen', {}),
+  phone_tap: a => ctl('tap', a),
+  phone_type: a => ctl('type', a),
+  phone_scroll: a => ctl('scroll', {direction: a.direction, id: a.id == null ? -1 : a.id}),
+  phone_key: a => ctl('key', a),
+  phone_wait: async a => { await sleep(Math.min(30, Math.max(1, a.seconds || 3)) * 1000); return {ok: true}; },
+  open_future_chat: async () => { if (hasNative && Native.openCalls) Native.openCalls(''); if (hasNative) Native.controlStart(); await sleep(2500); return {opened: true, note: 'Future Chat is open (signed in). Use phone_screen / phone_tap to work in it, then close_future_chat to come back.'}; },
+  close_future_chat: async () => { if (hasNative && Native.showKaspersen) Native.showKaspersen(); await sleep(800); return {closed: true}; },
+  open_url: a => { const r = act('open_url', a); if (hasNative) Native.controlStart(); return Object.assign({}, r, settled(5000)); },
+  finish_phone_task: () => { const r = finishPhone(); return Object.assign({ok: true}, r && r.closed ? {closed_apps: r.closed} : {}); },
+  take_photo: (a, working) => new Promise(res => {
+    if (!hasNative) return res({error: 'not on phone'});
+    photoWaiter = b64 => {
+      if (!b64) return res({ok: false, note: 'No photo was taken.'});
+      working.push({role: 'user', content: [{type: 'text', text: '(Here is the photo.)'}, {type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + b64}}]});
+      shownPhotos.push(b64);
+      res({ok: true, note: 'Photo taken - it is in the next message.'});
+    };
+    Native.takePhoto();
+  }),
+};
+let shownPhotos = [], usedControl = false;
+// STUDIO-20261102: pictures from the same image models PC Kaspersen's Studio uses (via the Skillvaya server).
+let lastPicture = LS.get('last_picture', '');
+PHONE.make_picture = async (a, working) => {
+  if (!ACCT.tok) return {ok: false, error: 'Sign in first to make pictures.'};
+  let src = '';
+  if (a.based_on === 'last_picture') src = lastPicture;
+  if (a.based_on === 'my_photo') { for (let i = history.length - 1; i >= 0; i--) if (history[i].role === 'user' && history[i].image) { src = history[i].image; break; } }
+  if (a.based_on && a.based_on !== 'none' && !src) return {ok: false, error: a.based_on === 'my_photo' ? 'No photo from the user in this chat - ask them to send one (camera button).' : 'There is no earlier picture to change.'};
+  const hd = {'Content-Type': 'application/json', Authorization: 'Bearer ' + ACCT.tok};
+  const r = await http('POST', SITE + '/api/kai/image', hd, JSON.stringify({prompt: a.prompt || '', aspect_ratio: a.aspect_ratio || '1:1', source_image: src}), 16000000);
+  let jr = {}; try { jr = JSON.parse(r.body) || {}; } catch (_) {}
+  if (r.status !== 200 || !jr.image) return {ok: false, error: jr.error || (r.status ? 'The picture service failed (' + r.status + ').' : 'No connection.')};
+  let pic = {ok: false};
+  try { pic = hasNative && Native.savePicture ? JSON.parse(Native.savePicture(jr.image)) : {ok: true, preview: jr.image.split(',')[1]}; } catch (e) { pic = {ok: false, error: e.message}; }
+  if (!pic.ok || !pic.preview) return {ok: false, error: pic.error || 'Could not open the picture.'};
+  lastPicture = pic.preview; LS.set('last_picture', pic.preview);
+  shownPhotos.push(pic.preview);
+  pendingShots.push({role: 'user', _shot: true, content: [{type: 'text', text: '(The picture you just made. CHECK it: does it match the request, is any text spelled exactly right, are faces/hands/details clean, does it look premium? If not, make it again with a better prompt.)'},
+    {type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + pic.preview}}]});
+  return {ok: true, saved_in_gallery: pic.saved || '(not saved - older Android)', size: pic.width + 'x' + pic.height,
+    note: 'Shown to the user in the chat. You can see it in the next message - check it. To use it in another app (e.g. a profile picture), pick the newest photo in the gallery / Pictures > Kaspersen.'};
+};
+PHONE_LABEL.make_picture = 'Making the picture…';
+// AIVOICE-20261102: real voice conversations in Future Chat calls
+const callWaiters = {};
+window.onCallTalk = (id, j) => { const w = callWaiters[id]; if (!w) return; delete callWaiters[id]; try { w(JSON.parse(j)); } catch (_) { w({ok: false, error: 'bad reply'}); } };
+PHONE.call_talk = a => new Promise(res => {
+  if (!hasNative || !Native.callTalk) return res({ok: false, error: 'Calls need the phone app.'});
+  const id = 'c' + Date.now() + Math.random().toString(36).slice(2, 6);
+  callWaiters[id] = res;
+  Native.callTalk(id, String(a.say || ''), Math.round(a.listen_seconds == null ? 12 : +a.listen_seconds || 0));
+  setTimeout(() => { if (callWaiters[id]) { delete callWaiters[id]; res({ok: false, error: 'No answer from the call screen.'}); } }, 150000);
+});
+PHONE.call_done = () => { if (hasNative && Native.callDone) Native.callDone(); return {ok: true}; };
+PHONE_LABEL.call_talk = 'Talking on the call…'; PHONE_LABEL.call_done = 'Finishing the call…';
+// SIGHT-20261102: see the phone screen, tap by position
+PHONE.phone_look = async () => {
+  const r = ctl('look', {});
+  if (!r || !r.ok || !r.jpeg_b64) return {ok: false, error: (r && r.error) || 'Could not see the screen.'};
+  pendingShots.push({role: 'user', _shot: true, content: [{type: 'text', text: '(Screenshot of the phone screen, ' + r.width + 'x' + r.height + ' px. To tap something you see here use phone_tap_xy with its x,y position on THIS picture.)'},
+    {type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + r.jpeg_b64}}]});
+  return {ok: true, width: r.width, height: r.height, note: 'The screenshot is in the next message.'};
+};
+PHONE.phone_tap_xy = a => ctl('tap_xy', {x: +a.x, y: +a.y});
+// DIRECT-20261103: see the phone's photos as a numbered sheet, then open the right one straight inside an app
+PHONE.find_photos = a => {
+  const r = act('photo_sheet', {page: a.page || 0, folder: a.folder || ''});
+  if (!r || !r.ok || !r.jpeg_b64) return r || {ok: false, error: 'Could not read the photos.'};
+  pendingShots.push({role: 'user', _shot: true, content: [{type: 'text', text: '(Photos on the phone, newest first, page ' + (a.page || 0) + '. Each has its number in a red circle - match it to the photo_id list.)'}, {type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + r.jpeg_b64}}]});
+  delete r.jpeg_b64; r.note = 'The numbered photo sheet is in the next message. Pick by number, then use that photo_id.'; return r;
+};
+PHONE.open_photo_in = a => {
+  const r = act('open_photo_in', {photo_id: a.photo_id, app: a.app, mode: a.mode || 'edit'});
+  logAct('open_photo_in', a, r);
+  if (!r || !r.ok) return r;
+  if (hasNative) Native.controlStart();
+  const o = Object.assign({}, r, settled(7000)); const L = lessonsFor(r.package || a.app); if (L.length) o.your_lessons_for_this_app = L; return o;
+};
+PHONE.save_lesson = a => {
+  const app = clean(a.app).toLowerCase().slice(0, 40), t = clean(a.lesson).slice(0, 240);
+  if (!app || !t) return {error: 'Give the app name and the lesson.'};
+  const all = lessonsAll(), l = all[app] || []; if (!l.includes(t)) l.push(t); all[app] = l.slice(-15); LS.set('lessons', all);
+  return {saved: true};
+};
+PHONE.phone_history = () => ({your_last_actions: ACTLOG.slice(-20), note: ACTLOG.length ? 'Oldest first. Look for the first action that went wrong.' : 'No phone actions yet in this session.'});
+PHONE_LABEL.find_photos = 'Looking through the photos…'; PHONE_LABEL.open_photo_in = 'Opening the photo…'; PHONE_LABEL.save_lesson = 'Noting what worked…'; PHONE_LABEL.phone_history = 'Checking what happened…';
+PHONE_LABEL.phone_look = 'Looking at the screen…'; PHONE_LABEL.phone_tap_xy = 'Tapping…';
+
+
+// LEAN-20261102: every step re-sends the whole conversation, so old screen readings and screenshots are what
+// make long jobs expensive. Keep only the newest of each, and shorten older bulky tool results.
+const pendingShots = [];
+function leanWorking(w) {
+  let lastScreen = -1, lastShot = -1;
+  w.forEach((m, i) => { if (m._screen) lastScreen = i; if (m._shot) lastShot = i; });
+  let tools = 0;
+  for (let i = w.length - 1; i >= 0; i--) {
+    const m = w[i];
+    if (m._trimmed) continue;
+    if (m._screen && i !== lastScreen) { m.content = '(older screen reading removed to save cost - read the screen again if you need it)'; m._trimmed = true; continue; }
+    if (m._shot && i !== lastShot) { m.content = '(older screenshot removed to save cost)'; m._trimmed = true; continue; }
+    if (m.role === 'tool' && ++tools > 6 && typeof m.content === 'string' && m.content.length > 1500) { m.content = m.content.slice(0, 1500) + ' ...(trimmed)'; m._trimmed = true; }
+  }
+}
+
+// ---------- his PC, from the phone (PCLINK-20261102) ----------
+// Jobs go through the Skillvaya server to "Kaspersen PC Link" on his PC. Only his account can send them.
+async function pcJob(kind, args, waitS) {
+  const r = await siteApi('/api/kai/pc/job', {kind, args: args || {}});
+  if (r.status !== 200 || !r.j.id) return {ok: false, error: r.j.error || 'Could not reach the PC.'};
+  const until = Date.now() + (waitS || 90) * 1000;
+  while (Date.now() < until) {
+    await sleep(900);
+    const q = await siteApi('/api/kai/pc/job?id=' + encodeURIComponent(r.j.id));
+    if (q.status === 200 && q.j.status === 'done') return q.j.result || {ok: true};
+    if (q.status === 404) return {ok: false, error: 'The PC job was lost (the server restarted). Try again.'};
+  }
+  return {ok: false, error: 'The PC did not answer in time. It may be busy, asleep or offline.'};
+}
+const PC_TOOLS = [
+  ['pc_status', 'Check that his PC is online and reachable (PC name, user, time).', {}, []],
+  ['pc_run', 'Run a PowerShell command on his Windows PC (like Desktop Commander) and get the output. Use for anything: files, folders, git, python scripts, installs, system info. Set shell "cmd" for cmd.exe. Long jobs: Start-Process them in the background.', {command: {type: 'string'}, timeout: {type: 'number', description: 'seconds, default 60, max 600'}, cwd: {type: 'string'}, shell: {type: 'string', enum: ['powershell', 'cmd']}}, ['command']],
+  ['pc_read_file', 'Read a text file on his PC. offset = first line (negative = from the end), length = number of lines (max 1500).', {path: {type: 'string'}, offset: {type: 'number'}, length: {type: 'number'}}, ['path']],
+  ['pc_write_file', 'Write a text file on his PC (full Windows path). mode rewrite (default) or append.', {path: {type: 'string'}, content: {type: 'string'}, mode: {type: 'string', enum: ['rewrite', 'append']}}, ['path', 'content']],
+  ['pc_list_dir', 'List a folder on his PC.', {path: {type: 'string'}}, ['path']],
+  ['pc_read_screen', 'SEE the app in front on his PC screen: every button, field, link and text with id numbers (window = part of a window title to pick another app).', {window: {type: 'string'}}, []],
+  ['pc_click', 'Click an element on his PC screen by its id from pc_read_screen. how: auto, double, right, mouse.', {element_id: {type: 'number'}, how: {type: 'string'}}, ['element_id']],
+  ['pc_type', 'Type text into a field on his PC by id from pc_read_screen (-1 = the focused field).', {element_id: {type: 'number'}, text: {type: 'string'}, press_enter: {type: 'boolean'}}, ['element_id', 'text']],
+  ['pc_key', 'Press a key or shortcut on his PC: enter, esc, tab, ctrl+s, alt+tab, win ...', {keys: {type: 'string'}}, ['keys']],
+  ['pc_scroll', 'Scroll on his PC screen (element_id from pc_read_screen or -1), direction up/down/left/right.', {element_id: {type: 'number'}, direction: {type: 'string'}, amount: {type: 'number'}}, []],
+  ['pc_open_app', 'Open a program, website or file on the PC by name, URL or path, then pc_read_screen. It REUSES what is already open: web pages and .html files go into the browser window you already opened (or a new tab of an open browser), and an app/file that is already open is switched to. Always use this to show pages/files - never pc_run Start-Process for that.', {target: {type: 'string'}}, ['target']],
+  ['pc_install_app', 'Turn an HTML app you built on the PC into a REAL Windows app: its own icon (initials + two brand colours) on the desktop and Start menu, opening in its own window with no browser bars, and opens it for testing. Use for EVERY app you build.', {path: {type: 'string', description: 'full path of the index.html'}, name: {type: 'string'}, color: {type: 'string', description: '#hex top colour'}, color2: {type: 'string', description: '#hex bottom colour'}, label: {type: 'string', description: '1-2 letters for the icon'}}, ['path', 'name']],
+  ['pc_screenshot', 'SEE the PC screen with your eyes (a small screenshot of the window you are working in) to judge how it LOOKS: premium design, colours, layout, overlaps, cut-off text. Use it to check everything you build before you report. Only the newest screenshot is kept.', {}, []],
+  ['pc_done', 'Finished using his PC screen (hides the Stop button on the PC).', {summary: {type: 'string'}}, []],
+].map(([name, description, props, req]) => ({type: 'function', function: {name, description, parameters: {type: 'object', properties: props, required: req}}}));
+let pcToolsOn = false;
+function enablePcTools() { if (!pcToolsOn) { TOOLS.push(...PC_TOOLS); pcToolsOn = true; } }
+if (OWNER || LS.get('pc_linked', false)) enablePcTools();
+async function refreshPc() {
+  if (!ACCT.tok) return null;
+  const r = await siteApi('/api/kai/pc/status');
+  if (r.status !== 200) return null;
+  LS.set('pc_linked', !!r.j.has_pc); if (r.j.has_pc) enablePcTools();
+  return r.j;
+}
+const PC_KIND = {pc_status: 'status', pc_run: 'run', pc_read_file: 'read_file', pc_write_file: 'write_file', pc_list_dir: 'list_dir', pc_read_screen: 'screen',
+  pc_click: 'click', pc_type: 'type', pc_key: 'key', pc_scroll: 'scroll', pc_open_app: 'open_app', pc_done: 'finish', pc_install_app: 'install_app'};
+for (const [tool, kind] of Object.entries(PC_KIND)) {
+  PHONE[tool] = async a => {
+    const res = await pcJob(kind, a, kind === 'run' ? Math.min(620, (+a.timeout || 60) + 30) : 90);
+    const t = JSON.stringify(res);
+    return t.length > 24000 ? {ok: res.ok, note: 'Output was long - showing the start and end.', text: t.slice(0, 8000) + ' ... ' + t.slice(-14000)} : res;
+  };
+  PHONE_LABEL[tool] = {status: 'Checking your PC…', run: 'Working on your PC…', read_file: 'Reading a file on your PC…', write_file: 'Saving a file on your PC…',
+    list_dir: 'Looking in a folder on your PC…', screen: 'Looking at your PC screen…', click: 'Clicking on your PC…', type: 'Typing on your PC…', key: 'Pressing a key on your PC…',
+    scroll: 'Scrolling on your PC…', open_app: 'Opening it on your PC…', finish: 'Done on your PC', install_app: 'Installing the app on your PC…'}[kind];
+}
+
+PHONE.pc_screenshot = async () => {
+  const r = await pcJob('screenshot', {max_width: 1280}, 60);
+  if (!r || !r.ok || !r.jpeg_b64) return {ok: false, error: (r && r.error) || 'Could not take a screenshot of the PC.'};
+  pendingShots.push({role: 'user', _shot: true, content: [{type: 'text', text: '(Screenshot of the PC - ' + (r.window || 'screen') + '. Judge how it LOOKS: is it premium and professional? Any overlaps, cut-off text, plain styling or broken parts?)'},
+    {type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + r.jpeg_b64}}]});
+  return {ok: true, note: 'The screenshot is in the next message.', window: r.window};
+};
+PHONE_LABEL.pc_screenshot = 'Looking at your PC screen…';
+
+// ---------- model calls with provider fallback ----------
+async function callModel(messages, useTools, quiet) {
+  const list = providers();
+  if (!list.length) { showWelcome(''); throw new Error('Please sign in to use Kaspersen.'); }
+  let lastErr = '';
+  for (const p of list) {
+    if (!p.cloud && (cooldown[p.name] || 0) > Date.now()) continue;
+    for (const tools of (useTools ? [true, false] : [false])) {
+      const body = {model: p.model, messages: messages.map(m => { const o = {}; for (const k in m) if (k[0] !== '_') o[k] = m[k]; return o; }), temperature: 0.6, max_tokens: 8000};
+      if (tools) { body.tools = TOOLS; body.tool_choice = 'auto'; }
+      if (!quiet) setStatus('Thinking… (' + p.name + ')');
+      let r = null;   // STALL-20261103: dropped connection / server restart -> try again, up to 3 times
+      for (let attempt = 0; attempt < 3; attempt++) {
+        r = await http('POST', p.base + '/chat/completions', {'Authorization': 'Bearer ' + p.key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://skillvaya.onrender.com', 'X-Title': 'Kaspersen Pocket'}, JSON.stringify(body), 4000000, 175000);
+        if ((r.status && r.status < 500) || (typeof stopAsked !== 'undefined' && stopAsked)) break;
+        if (!quiet) setStatus('Connection dropped - trying again\u2026 (' + p.name + ')');
+        await sleep(2500 * (attempt + 1));
+      }
+      let j = null; try { j = JSON.parse(r.body); } catch (_) {}
+      if (p.cloud && (r.status === 401 || (r.status === 403 && j && j.verify_phone))) {
+        if (r.status === 401) ACCT.clear();
+        showWelcome(r.status === 403 ? 'verify' : '');
+        throw new Error(r.status === 401 ? 'Please sign in to keep using Kaspersen.' : 'Please confirm your mobile number first.');
+      }
+      if (p.cloud && r.status === 429) throw new Error((j && j.error) || "You've reached today's limit.");
+      if (r.status === 200 && j && j.choices && j.choices[0]) { if (!quiet) setStatus('GLM-5.3 · 320B via ' + p.name); return j.choices[0].message || {}; }
+      const msg = (j && j.error && (j.error.message || j.error)) || r.error || ('HTTP ' + r.status);
+      lastErr = p.name + ': ' + String(msg).slice(0, 160);
+      if (r.status === 400 && tools && /tool|function/i.test(String(msg))) continue; // retry this provider without tools
+      if (!p.cloud && (r.status === 429 || r.status >= 500 || r.status === 0)) cooldown[p.name] = Date.now() + 60000;
+      break; // next provider
+    }
+  }
+  if (!quiet) setStatus('GLM-5.3 · 320B');
+  throw new Error(lastErr ? lastErr.replace(/^Kaspersen: /, '') + ' - tap Retry or send again.' : 'Could not reach Kaspersen\'s brain - check your internet and send again.');
+}
+function stripThink(t) { return (t || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim(); }
+
+
+// ---------- long-term memory (MEMORY-20261102) ----------
+// Every conversation is kept for good. Conversations linked ONLY to projects that are finished
+// end to end are forgotten 7 days after the project was marked finished. Nothing else is forgotten.
+const MEM = (() => {
+  const has = hasNative && typeof Native.load === 'function';
+  const rd = (n, d) => { try { const t = has ? Native.load(n) : localStorage.getItem('kpm_' + n); return t ? JSON.parse(t) : d; } catch (_) { return d; } };
+  const wr = (n, v) => { const t = JSON.stringify(v); try { if (has) Native.store(n, t); else localStorage.setItem('kpm_' + n, t); } catch (_) {} };
+  const rm = n => { try { if (has) Native.remove(n); else localStorage.removeItem('kpm_' + n); } catch (_) {} };
+  const DAY = 864e5, KEEP_AFTER_DONE = 7 * DAY;
+  let index = rd('sessions.json', []);
+  let projects = rd('projects.json', []);
+  let cur = null;
+  const saveIndex = () => wr('sessions.json', index);
+  const saveProjects = () => wr('projects.json', projects);
+  const file = id => 's_' + id + '.json';
+  const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const noPhotos = h => h.map(m => { const c = Object.assign({}, m); if (c.image) { delete c.image; delete c.more; c.photo = true; } return c; });
+  const titleOf = h => { const u = h.find(m => m.role === 'user'); return u ? clean(u.content).slice(0, 70) : 'Chat'; };
+  const fmt = t => new Date(t).toLocaleDateString('en-ZA', {day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Africa/Johannesburg'});
+  const findProject = n => projects.find(p => p.name.toLowerCase() === clean(n).toLowerCase());
+  function startNew() {
+    const x = {id: newId(), title: '', started: Date.now(), updated: Date.now(), projects: [], summary: '', sumAt: 0, count: 0};
+    index.push(x); saveIndex(); LS.set('curSession', x.id); return x;
+  }
+  function purge() {
+    const now = Date.now();
+    const gone = new Set(projects.filter(p => p.status === 'done' && p.done_at && now - p.done_at > KEEP_AFTER_DONE).map(p => p.name.toLowerCase()));
+    if (!gone.size) return;
+    index = index.filter(x => {
+      const ps = (x.projects || []).map(p => p.toLowerCase());
+      const forget = ps.length > 0 && ps.every(p => gone.has(p)) && x.id !== LS.get('curSession', '');
+      if (forget) rm(file(x.id));
+      return !forget;
+    });
+    projects = projects.filter(p => !gone.has(p.name.toLowerCase()));
+    saveIndex(); saveProjects();
+  }
+  function boot() {
+    let id = LS.get('curSession', '');
+    const live = LS.get('history', []);
+    if (!index.length && live.length) {   // first run: keep the chat that was already on the phone
+      id = newId();
+      index.push({id, title: titleOf(live), started: Date.now(), updated: Date.now(), projects: [], summary: '', sumAt: 0, count: live.length});
+      wr(file(id), noPhotos(live)); saveIndex(); LS.set('curSession', id);
+    }
+    purge();
+    cur = index.find(x => x.id === id) || null;
+    if (!cur) { cur = startNew(); LS.set('history', []); return []; }
+    return live.length ? live : rd(file(cur.id), []);
+  }
+  function saveCurrent(h) {
+    if (!cur) cur = startNew();
+    LS.set('history', h);
+    wr(file(cur.id), noPhotos(h));
+    cur.updated = Date.now(); cur.count = h.length; if (!cur.title) cur.title = titleOf(h);
+    saveIndex();
+  }
+  async function summarize(x, h) {
+    if (!h || h.length < 2) return;
+    const text = h.map(m => (m.role === 'user' ? (userName() || 'User') : 'Kaspersen') + ': ' + (m.content || '')).join('\n').slice(-80000);
+    try {
+      const msg = await callModel([{role: 'system', content: 'Summarise this conversation for your own long-term memory in at most 130 words: what it was about, key facts, numbers, names, decisions, and anything still open or promised. Plain text, no preamble.'}, {role: 'user', content: text}], false, true);
+      const sum = stripThink(msg.content || '').slice(0, 1400);
+      if (sum) { x.summary = sum; x.sumAt = h.length; saveIndex(); }
+    } catch (_) {}
+  }
+  function leave(h) {   // archive the current conversation (kept forever unless its project finishes)
+    if (!cur) return;
+    if (!h.length) { index = index.filter(x => x.id !== cur.id); rm(file(cur.id)); saveIndex(); }
+    else { saveCurrent(h); if (h.length !== cur.sumAt) summarize(cur, h.slice()); }
+  }
+  function newSession(h) { leave(h); cur = startNew(); LS.set('history', []); return []; }
+  function openSession(id, h) {
+    if (cur && cur.id === id) return h;
+    const target = index.find(x => x.id === id); if (!target) return h;
+    leave(h); cur = target; LS.set('curSession', id);
+    const nh = rd(file(id), []); LS.set('history', nh); return nh;
+  }
+  function afterAnswer(h) { if (cur && h.length - (cur.sumAt || 0) >= 16) summarize(cur, h.slice()); }
+  function snippet(t, words) {
+    const low = t.toLowerCase(); let at = -1;
+    for (const w of words) { const i = low.indexOf(w); if (i >= 0 && (at < 0 || i < at)) at = i; }
+    const a = Math.max(0, at - 250);
+    return (a ? '…' : '') + t.slice(a, a + 700) + (t.length > a + 700 ? '…' : '');
+  }
+  function recall(q) {
+    const words = clean(q).toLowerCase().split(' ').filter(w => w.length > 2);
+    if (!words.length) return {error: 'Give some words to search for.'};
+    const hits = [];
+    for (const x of index) {
+      const h = (cur && x.id === cur.id) ? noPhotos(history) : rd(file(x.id), []);
+      h.forEach((m, i) => {
+        if (cur && x.id === cur.id && i >= h.length - 1) return;   // skip the question being asked right now
+        const low = (m.content || '').toLowerCase(); let score = 0;
+        for (const w of words) if (low.includes(w)) score++;
+        if (score) hits.push({score: score + x.updated / 1e14, x, i, t: m.content || '', role: m.role});
+      });
+    }
+    hits.sort((a, b) => b.score - a.score);
+    if (!hits.length) return {matches: [], note: 'Nothing found with those words. Try other words.'};
+    return {matches: hits.slice(0, 10).map(m => ({conversation: m.x.id, date: fmt(m.x.started), title: m.x.title, who: m.role === 'user' ? (userName() || 'them') : 'you', text: snippet(m.t, words)}))};
+  }
+  function openConversation(id) {
+    const x = index.find(y => y.id === clean(id).replace(/[\[\]]/g, ''));
+    if (!x) return {error: 'No conversation with that id.'};
+    const h = (cur && x.id === cur.id) ? noPhotos(history) : rd(file(x.id), []);
+    let text = h.map(m => (m.role === 'user' ? (userName() || 'User') : 'You') + ': ' + (m.content || '')).join('\n\n');
+    if (text.length > 60000) text = '…' + text.slice(-60000);
+    return {conversation: x.id, date: fmt(x.started), projects: x.projects, text};
+  }
+  function link(name) { if (cur && !cur.projects.some(p => p.toLowerCase() === name.toLowerCase())) { cur.projects.push(name); saveIndex(); } }
+  function projectUpdate(a) {
+    const name = clean(a.name).slice(0, 60); if (!name) return {error: 'Give the project a name.'};
+    let p = findProject(name);
+    if (!p) { p = {name, status: 'active', notes: '', created: Date.now(), updated: Date.now(), done_at: 0}; projects.push(p); }
+    if (a.notes) p.notes = clean(a.notes).slice(0, 1500);
+    if (a.status && a.status !== 'done') { p.status = a.status; p.done_at = 0; }
+    p.updated = Date.now(); saveProjects(); link(p.name);
+    return {saved: true, project: p.name, status: p.status};
+  }
+  function projectDone(a) {
+    const p = findProject(a.name || ''); if (!p) return {error: 'No project with that name. Open projects: ' + projects.filter(q => q.status !== 'done').map(q => q.name).join(', ')};
+    p.status = 'done'; p.done_at = Date.now(); p.updated = Date.now(); saveProjects(); link(p.name);
+    return {saved: true, project: p.name, forgotten_after: fmt(p.done_at + KEEP_AFTER_DONE)};
+  }
+  function promptBlock(contextCut) {
+    const open = projects.filter(p => p.status !== 'done');
+    const done = projects.filter(p => p.status === 'done');
+    const past = index.filter(x => !cur || x.id !== cur.id).sort((a, b) => b.updated - a.updated);
+    const out = [];
+    if (open.length) out.push('OPEN PROJECTS (keep their notes up to date with project_update):\n' + open.map(p => `- ${p.name} [${p.status}] - ${p.notes || 'no notes yet'} (started ${fmt(p.created)})`).join('\n'));
+    if (done.length) out.push('FINISHED PROJECTS (their chats are forgotten 7 days after finishing):\n' + done.map(p => `- ${p.name} - finished ${fmt(p.done_at)}`).join('\n'));
+    if (past.length) {
+      let budget = 16000; const lines = [];
+      for (const x of past) {
+        const l = `- [${x.id}] ${fmt(x.started)}${x.projects.length ? ' {' + x.projects.join(', ') + '}' : ''}: ${x.title}${x.summary ? ' — ' + x.summary : ''}`;
+        budget -= l.length; if (budget < 0) { lines.push(`- …and ${past.length - lines.length} older conversations (search them with recall)`); break; }
+        lines.push(l);
+      }
+      out.push('YOUR EARLIER CONVERSATIONS WITH HIM (newest first; read one with open_conversation, search all with recall):\n' + lines.join('\n'));
+    }
+    if (cur && cur.projects.length) out.push('This conversation belongs to: ' + cur.projects.join(', '));
+    if (contextCut > 0) out.push(`This conversation is long: its first ${contextCut} messages are not shown above but are saved${cur && cur.summary ? '. Summary so far: ' + cur.summary : ''}. Use recall to look up exact details from them.`);
+    return out.join('\n\n');
+  }
+  // PROJECTS-20261103: managed from Settings
+  function projectSet(name, status) { const p = findProject(name); if (!p) return; if (status === 'done') { p.status = 'done'; p.done_at = Date.now(); } else { p.status = 'active'; p.done_at = 0; } p.updated = Date.now(); saveProjects(); }
+  function projectAdd(name) { name = clean(name).slice(0, 60); if (!name || findProject(name)) return; projects.push({name, status: 'active', notes: '', created: Date.now(), updated: Date.now(), done_at: 0}); saveProjects(); }
+  function projectRemove(name) { projects = projects.filter(p => p.name !== name); saveProjects(); }
+  const stats = () => ({conversations: index.length, projects: projects.slice(), sessions: index.slice().sort((a, b) => b.updated - a.updated), current: cur && cur.id});
+  return {boot, saveCurrent, newSession, openSession, afterAnswer, recall, openConversation, projectUpdate, projectDone, promptBlock, stats, fmt, projectSet, projectAdd, projectRemove};
+})();
+
+// ---------- conversation ----------
+let history = MEM.boot();   // [{role, content}] user/assistant only, plus sources on assistant
+let busy = false;
+// UPDATE-20261103: a newer copy of this page arrives from the Skillvaya server - she switches over only when she is free.
+setInterval(() => { try { if (!busy && hasNative && Native.uiUpdateReady && Native.uiUpdateReady()) Native.reloadUi(); } catch (_) {} }, 60000);
+window.onAppUpdate = info => { try { showUpdateBar(JSON.parse(info)); } catch (_) {} };
+window.onUpdateStatus = t => { const g = document.getElementById('updGo'); if (g) { g.textContent = t; g.disabled = /Downloading|Installing|Starting/.test(t); } };
+function showUpdateBar(o) {
+  if (document.getElementById('updBar')) return;
+  const d = document.createElement('div'); d.id = 'updBar';
+  d.style.cssText = 'position:fixed;left:10px;right:10px;bottom:84px;z-index:30;background:var(--panel2);border:1px solid var(--accent);border-radius:14px;padding:10px 12px;display:flex;gap:8px;align-items:center;box-shadow:0 6px 20px #0008';
+  d.innerHTML = '<span style="flex:1;font-size:14px">A new version of Kaspersen is ready' + (o.version ? ' (' + esc(o.version) + ')' : '') + '. Your chats and memory stay.</span><button class="btn" id="updGo" style="padding:8px 12px">Update</button><button class="btn sec" id="updLater" style="padding:8px 10px">Later</button>';
+  document.body.appendChild(d);
+  $('#updLater').onclick = () => d.remove();
+  $('#updGo').onclick = () => { if (busy) { showError('Let her finish this job first, then tap Update.'); return; } $('#updGo').disabled = true; $('#updGo').textContent = 'Starting\u2026'; Native.installUpdate(); };
+}
+// STOP-20261103: while she works, the Send button becomes a Stop button
+let stopAsked = false, stopWake = null;
+function stopGate() { return new Promise(res => { stopWake = () => res({__stopped: true}); }); }
+function stopWork() { if (!busy) return; stopAsked = true; if (hasNative) { if (Native.stopNow) Native.stopNow(); if (Native.stopSpeaking) Native.stopSpeaking(); } if (stopWake) stopWake(); }
+function saveHistory() {
+  // keep photos only on the last few messages so the phone's storage stays small
+  let kept = 0;
+  for (let i = history.length - 1; i >= 0; i--) if (history[i].image) { kept++; if (kept > 4) { delete history[i].image; delete history[i].more; history[i].content += ' [photo]'; } }
+  MEM.saveCurrent(history);
+}
+function contextStart() {   // how much of this conversation is sent word for word (the rest is summarised + searchable)
+  let size = 0, n = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    size += (history[i].content || '').length; n++;
+    if ((size > 150000 || n > 300) && n > 6) return i + 1;
+  }
+  return 0;
+}
+function trimmed() { return history.slice(contextStart()).map(m => ({role: m.role, content: m.content})); }
+async function ask(text) {
+  if (busy || (!text.trim() && !pendingImages.length)) return;
+  busy = true; stopAsked = false; setSendMode(true); if (hasNative && Native.workStart) Native.workStart();
+  const imgs = pendingImages.slice(); clearAttach(); const img = imgs[0] || '';
+  history.push(img ? Object.assign({role: 'user', content: text.trim() || (imgs.length > 1 ? 'What do you see in these?' : 'What do you see?'), image: img}, imgs.length > 1 ? {more: imgs.slice(1)} : {}) : {role: 'user', content: text.trim()});
+  saveHistory();
+  render();
+  const working = [{role: 'system', content: systemPrompt()}, ...trimmed()];
+  if (img) { const last = working[working.length - 1]; last.content = [{type: 'text', text: last.content}].concat(imgs.map(b => ({type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + b}}))); }
+  shownPhotos = []; usedControl = false;
+  const sources = [];
+  const ind = addIndicator('Thinking…'); curInd = ind;
+  let failMsg = '';
+  try {
+    let answer = '', lastProblem = '', lastStep = '', roundsUsed = 0;
+    let maxRounds = 40;   // STEPS-20261102
+    const recentActs = []; let loopWarnings = 0;
+    for (let round = 0; round < maxRounds; round++) {
+      roundsUsed = round + 1;
+      if (stopAsked) break;
+      const msg = await Promise.race([callModel(working, true), stopGate()]);
+      if (stopAsked || msg.__stopped) break;
+      const calls = msg.tool_calls || [];
+      if (!calls.length) { answer = stripThink(msg.content); break; }
+      working.push({role: 'assistant', content: msg.content || '', tool_calls: calls});
+      for (const c of calls) {
+        let args = {}; try { args = JSON.parse(c.function.arguments || '{}'); } catch (_) {}
+        if (!/^(phone_screen|phone_look|pc_read_screen|pc_screenshot|phone_wait|pc_status|recall)$/.test(c.function.name)) {
+          const sig = c.function.name + JSON.stringify(args); recentActs.push(sig); if (recentActs.length > 10) recentActs.shift();
+          if (recentActs.filter(x => x === sig).length >= 3) {
+            recentActs.length = 0; loopWarnings++;
+            working.push({role: 'system', content: loopWarnings === 1
+              ? 'You are REPEATING the same action (' + (PHONE_LABEL[c.function.name] || c.function.name) + ') without getting anywhere. Stop. Read the whole screen carefully (scroll for Save/Done/Next), think about why it did not work, and try a DIFFERENT approach.'
+              : 'You are stuck in a loop again. Do not try any more actions: finish now and tell the user exactly which screen you are on, what you tried and what is blocking you.'});
+            if (loopWarnings >= 2) maxRounds = Math.min(maxRounds, round + 2);
+          }
+        }
+        let result;
+        if (c.function.name === 'web_search') { ind.set('Searching: ' + (args.query || '')); const r = await webSearch(args.query || ''); result = r.length ? r : {note: 'No results'}; }
+        else if (c.function.name === 'read_page') { ind.set('Reading ' + hostOf(args.url)); result = await readPage(args.url || ''); if (result.text) sources.push({title: result.title || hostOf(result.url), url: result.url}); }
+        else if (PHONE[c.function.name]) {
+          if (/^phone_|^pc_|open_app|open_url|send_sms|send_whatsapp/.test(c.function.name)) { maxRounds = 150; usedControl = /^pc_/.test(c.function.name) ? usedControl : true; }   // multi-step app tasks
+          ind.set(PHONE_LABEL[c.function.name] || 'Using the phone…'); result = await PHONE[c.function.name](args, working);
+          if (result && result.stopped) { if (hasNative) Native.controlDone(); }
+        }
+        else if (c.function.name === 'set_name') { const nm = clean(args.name).slice(0, 40); if (nm) LS.set('name', nm); result = {saved: true, name: nm}; }
+        else if (c.function.name === 'recall') { ind.set('Remembering…'); result = MEM.recall(args.query || ''); }
+        else if (c.function.name === 'open_conversation') { ind.set('Reading an earlier chat…'); result = MEM.openConversation(args.id || ''); }
+        else if (c.function.name === 'project_update') result = MEM.projectUpdate(args);
+        else if (c.function.name === 'project_done') result = MEM.projectDone(args);
+        else if (c.function.name === 'remember') { const f = clean(args.fact).slice(0, 200); if (f) { const m = memories(); if (!m.includes(f)) { m.push(f); LS.set('memories', m.slice(-400)); } } result = {saved: true}; }
+        else result = {error: 'unknown tool'};
+        if (result && (result.error || result.ok === false)) lastProblem = (PHONE_LABEL[c.function.name] || c.function.name).replace(/…$/, '') + ': ' + String(result.error || result.note || 'it did not work').slice(0, 220);
+        lastStep = (PHONE_LABEL[c.function.name] || c.function.name).replace(/…$/, '');
+        const tm = {role: 'tool', tool_call_id: c.id, content: JSON.stringify(result).slice(0, 9000)};
+        if (/^(phone_screen|pc_read_screen)$/.test(c.function.name) || (result && result.screen_now)) tm._screen = true;
+        working.push(tm);
+        if (stopAsked) break;
+      }
+      while (pendingShots.length) working.push(pendingShots.shift());
+      leanWorking(working);
+      if (round === maxRounds - 2) working.push({role: 'system', content: 'Finish now: call finish_phone_task if you were using other apps, then tell them what you did and where you got to. No more actions.'});
+    }
+    if (stopAsked && !answer) answer = 'Stopped' + (lastStep ? ' - I was busy with: ' + lastStep.toLowerCase() : '') + '. Say "carry on" if you want me to continue.';
+    if (!answer) {   // WHY-20261102: ask her for a real explanation instead of a generic apology
+      ind.set('Wrapping up…');
+      try {
+        working.push({role: 'system', content: 'STOP using tools now. Reply to the user in plain text, 1-3 short sentences: what you got done, and if you could not finish, exactly WHY (the real block or error) and what you need from them. Do not apologise vaguely and do not say "try again" without a reason.'});
+        const fin = await callModel(working, true);
+        if (!(fin.tool_calls || []).length) answer = stripThink(fin.content || '');
+      } catch (_) {}
+    }
+    if (!answer) answer = lastProblem ? "I couldn't finish this. The last problem was - " + lastProblem + (lastProblem.endsWith('.') ? '' : '.') + ' Tell me how you want me to handle it, or give me what I need, and I\'ll carry on.'
+      : roundsUsed >= maxRounds ? 'I ran out of steps before finishing (I used ' + roundsUsed + ')' + (lastStep ? ' - I was busy with: ' + lastStep : '') + '. Say "carry on" and I\'ll continue from where I stopped.'
+      : "The AI model sent back an empty reply, so I've got nothing to show you - that's on the model, not you. Ask again and I'll answer.";
+    const entry = {role: 'assistant', content: answer, sources}; if (shownPhotos.length) entry.image = shownPhotos[shownPhotos.length - 1];
+    history.push(entry); saveHistory(); MEM.afterAnswer(history);
+    if ((LS.get('speak', true) || handsFree) && hasNative) Native.speak(plain(answer)); else if (handsFree) setTimeout(listenAgain, 400);
+  } catch (e) {
+    failMsg = e.message || String(e);
+  } finally {
+    ind.remove(); busy = false; setSendMode(false); if (hasNative && Native.workEnd) Native.workEnd(); render();
+    if (failMsg && !stopAsked) { showError('Kaspersen could not answer: ' + failMsg); if (hasNative && LS.get('speak', true)) Native.speak('Sorry, I could not answer that. ' + failMsg.split(' - ')[0]); }
+    if (usedControl && hasNative) { if (stopAsked) { usedApps.clear(); Native.controlDone(); } else finishPhone(); }
+  }
+}
+function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (_) { return 'page'; } }
+
+// ---------- rendering ----------
+function esc(s) { return s.replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])); }
+function inline(s) {
+  return s.replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2">$2</a>');
+}
+function md(src) {
+  const parts = esc(src).split(/```/);
+  let html = '';
+  parts.forEach((part, i) => {
+    if (i % 2) { html += '<pre>' + part.replace(/^\w*\n/, '') + '</pre>'; return; }
+    const lines = part.split('\n'); let list = null; let para = [];
+    const flush = () => { if (para.length) { html += '<p>' + inline(para.join('<br>')) + '</p>'; para = []; } };
+    const close = () => { if (list) { html += '</' + list + '>'; list = null; } };
+    for (const raw of lines) {
+      const l = raw.trimEnd();
+      let m;
+      if (!l.trim()) { flush(); close(); continue; }
+      if ((m = l.match(/^\s*#{1,6}\s+(.*)/))) { flush(); close(); html += '<h4>' + inline(m[1]) + '</h4>'; continue; }
+      if ((m = l.match(/^\s*[-*•]\s+(.*)/))) { flush(); if (list !== 'ul') { close(); html += '<ul>'; list = 'ul'; } html += '<li>' + inline(m[1]) + '</li>'; continue; }
+      if ((m = l.match(/^\s*\d+[.)]\s+(.*)/))) { flush(); if (list !== 'ol') { close(); html += '<ol>'; list = 'ol'; } html += '<li>' + inline(m[1]) + '</li>'; continue; }
+      close(); para.push(l);
+    }
+    flush(); close();
+  });
+  return html;
+}
+function plain(s) { return s.replace(/```[\s\S]*?```/g, ' ').replace(/[*_#`>]/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/https?:\/\/\S+/g, ''); }
+function render() {
+  const log = $('#log'); log.innerHTML = '';
+  if (!history.length) {
+    const hi = userName() ? 'Hey ' + esc(userName()) + ' 👋' : 'Hi there 👋 I\'m Kaspersen, your AI assistant';
+    const chips = OWNER ? ['What\'s the best way to get Skillvaya\'s first 1,000 users?', 'Research: cheapest way to register a Pty Ltd in SA', 'Help me write a WhatsApp ad for website design']
+      : ['What can you help me with?', 'Explain something I\'m learning about', 'Help me plan my week'];
+    log.innerHTML = '<div class="hello"><b>' + hi + '</b>Ask me anything, get me to research something, or tap the mic and just talk.<div class="chips">' +
+      chips.map(t => '<button>' + esc(t) + '</button>').join('') + '</div></div>';
+    log.querySelectorAll('.chips button').forEach(b => b.onclick = () => ask(b.textContent));
+    return;
+  }
+  history.forEach((m, i) => {
+    const d = document.createElement('div');
+    d.className = 'msg ' + (m.role === 'user' ? 'me' : 'her');
+    if (m.role === 'user') { [m.image].concat(m.more || []).filter(Boolean).forEach(b => { const im = new Image(); im.className = 'pic'; im.src = 'data:image/jpeg;base64,' + b; d.appendChild(im); }); d.appendChild(document.createTextNode(m.content)); }
+    else {
+      d.innerHTML = (m.image ? '<img class="pic" src="data:image/jpeg;base64,' + m.image + '">' : '') + md(m.content) + (m.sources && m.sources.length ? '<div class="src">' + m.sources.slice(0, 5).map(s => '<a href="' + esc(s.url) + '">' + esc(hostOf(s.url)) + '</a>').join('') + '</div>' : '') +
+        '<div class="actions"><button data-a="speak">🔈 Read</button><button data-a="copy">⧉ Copy</button>' + (i === history.length - 1 ? '<button data-a="retry">↻ Retry</button>' : '') + '</div>';
+      d.querySelector('[data-a=speak]').onclick = () => hasNative && Native.speak(plain(m.content));
+      d.querySelector('[data-a=copy]').onclick = () => { try { navigator.clipboard.writeText(m.content); } catch (_) {} };
+      const rb = d.querySelector('[data-a=retry]');
+      if (rb) rb.onclick = () => { const last = history.length - 2; if (last >= 0 && history[last].role === 'user') { const t = history[last].content; if (history[last].image) { setAttach(history[last].image); (history[last].more || []).forEach(addAttach); } history = history.slice(0, last); saveHistory(); ask(t); } };
+    }
+    log.appendChild(d);
+  });
+  log.querySelectorAll('.her a').forEach(a => a.onclick = e => { e.preventDefault(); hasNative ? Native.openUrl(a.href) : window.open(a.href); });
+  log.scrollTop = log.scrollHeight;
+}
+function addIndicator(text) {
+  const d = document.createElement('div'); d.className = 'tools'; d.innerHTML = '<span class="dot"></span><span></span>';
+  d.lastChild.textContent = text; $('#log').appendChild(d); $('#log').scrollTop = 1e9;
+  return {set(t) { d.lastChild.textContent = t; $('#log').scrollTop = 1e9; }, remove() { d.remove(); }};
+}
+function showError(t) { const d = document.createElement('div'); d.className = 'err'; d.textContent = t; $('#log').appendChild(d); $('#log').scrollTop = 1e9; }
+function setStatus(t) { $('#status').textContent = t; }
+
+// ---------- composer, voice, camera, hands-free, settings ----------
+// PHOTOS-20261103: each new photo is ADDED (up to 6), each has its own remove button
+function addAttach(b64) { if (pendingImages.length >= 6) { showError('You can send up to 6 photos at a time.'); return; } pendingImages.push(b64); paintAttach(); }
+function setAttach(b64) { pendingImages = [b64]; paintAttach(); }
+function paintAttach() { const box = $('#attachList'); box.innerHTML = ''; pendingImages.forEach((b, i) => { const w = document.createElement('div'); w.className = 'thumb'; w.innerHTML = '<img src="data:image/jpeg;base64,' + b + '"><button aria-label="Remove">✕</button>'; w.querySelector('button').onclick = () => { pendingImages.splice(i, 1); paintAttach(); }; box.appendChild(w); }); $('#attachNote').textContent = pendingImages.length > 1 ? pendingImages.length + ' photos' : '1 photo'; $('#attach').classList.toggle('on', pendingImages.length > 0); }
+function clearAttach() { pendingImages = []; paintAttach(); }
+$('#attachMore').onclick = () => $('#camMenu').classList.add('on');
+const SEND_ICON = $('#send').textContent;
+function setSendMode(on) { const b = $('#send'); b.disabled = false; b.textContent = on ? '■' : SEND_ICON; b.classList.toggle('stop', on); b.title = on ? 'Stop' : 'Send'; }
+$('#attachX').onclick = clearAttach;
+$('#cam').onclick = () => $('#camMenu').classList.toggle('on');
+$('#camTake').onclick = () => { $('#camMenu').classList.remove('on'); hasNative && Native.takePhoto(); };
+$('#camPick').onclick = () => { $('#camMenu').classList.remove('on'); hasNative && Native.pickPhoto(); };
+let handsFree = false;
+// NOISEPROOF-20261102: noise-proof microphone by default (Settings > Microphone)
+function startListen() { if (Native.listen2) Native.listen2(LS.get('voice_mode', 'noise'), ACCT.tok || ''); else Native.listen(); }
+window.onSpeechStatus = t => { input.placeholder = t || 'Talk to Kaspersen…'; };
+function listenAgain() { if (handsFree && !busy && hasNative) { $('#mic').classList.add('on'); startListen(); } }
+window.onSpokenDone = () => { if (handsFree) setTimeout(listenAgain, 350); };
+$('#handsBtn').onclick = () => { handsFree = !handsFree; $('#handsBtn').classList.toggle('on', handsFree); setStatus(handsFree ? 'Hands-free: just talk' : 'GLM-5.3 · 320B'); if (handsFree) listenAgain(); else if (hasNative) Native.stopSpeaking(); };
+const input = $('#input');
+input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(140, input.scrollHeight) + 'px'; });
+$('#send').onclick = () => { if (busy) { stopWork(); return; } if ($('#mic').classList.contains('on') && hasNative) { startListen(); return; }   // NPFIX-20261102
+  const t = input.value; input.value = ''; input.style.height = 'auto'; ask(t); };
+$('#mic').onclick = () => { if (!hasNative) return; Native.stopSpeaking(); $('#mic').classList.add('on'); startListen(); };
+window.onSpeechPartial = t => { input.value = t; input.style.height = 'auto'; input.style.height = Math.min(140, input.scrollHeight) + 'px'; };
+window.onSpeech = t => { $('#mic').classList.remove('on'); input.placeholder = 'Talk to Kaspersen…'; input.value = ''; input.style.height = 'auto'; if (!t && !handsFree) { showError("I didn't catch that - please try again, a little closer to the phone."); return; } if (t) ask(t); else if (handsFree) { handsFree = false; $('#handsBtn').classList.remove('on'); setStatus('Hands-free paused'); } };
+window.onSpeechError = t => { $('#mic').classList.remove('on'); input.placeholder = 'Talk to Kaspersen…'; showError(t); };
+function paintSpeak() { $('#speakBtn').textContent = LS.get('speak', true) ? '🔊' : '🔈'; }
+$('#speakBtn').onclick = () => { LS.set('speak', !LS.get('speak', true)); if (!LS.get('speak', true) && hasNative) Native.stopSpeaking(); paintSpeak(); };
+$('#newBtn').onclick = () => { if (busy) return; if (history.length && !confirmNew()) return; history = MEM.newSession(history); render(); };
+function confirmNew() { return true; }
+function openSettings() {
+  const o = LS.get('keys', {}), au = ACCT.user();
+  paintPc();
+  $('#provList').innerHTML = (ACCT.tok
+      ? '<div class="row"><b>Account</b><span class="ok">' + esc(au.name || au.email || 'Signed in') + '</span></div><div class="row"><span id="usage">Checking today\'s use…</span><button class="btn sec" id="signOut" style="padding:7px 11px">Sign out</button></div>'
+      : '<div class="row"><b>Account</b><button class="btn" id="signIn" style="padding:7px 11px">Sign in</button></div>') +
+    [['OpenRouter (your own key)', o.openrouter], ['OrcaRouter (your own key)', o.orca], ['Vercel (your own key)', o.vercel]].filter(([, k]) => k)
+    .map(([n]) => '<div class="row"><b>' + n + '</b><span class="ok">Connected</span></div>').join('');
+  setTimeout(() => {
+    const so = $('#signOut'); if (so) so.onclick = () => { ACCT.clear(); $('#sheet').classList.remove('open'); showWelcome(''); };
+    const si = $('#signIn'); if (si) si.onclick = () => { $('#sheet').classList.remove('open'); showWelcome(''); };
+    if (ACCT.tok) siteApi('/api/kai/status').then(r => { const u = $('#usage'); if (u && r.status === 200) u.textContent = r.j.unlimited ? 'Unlimited use' : (r.j.used_today + ' of ' + r.j.daily_limit + ' requests used today'); });
+  }, 0);
+  const ctlOn = hasNative && Native.controlOn();
+  $('#provList').innerHTML += '<div class="row"><b>Phone control</b><span class="' + (ctlOn ? 'ok' : 'no') + '">' + (ctlOn ? 'On' : 'Off') + '</span></div>' +
+    (ctlOn ? '' : '<p class="note">To let Kaspersen use your apps: tap the button, open <b>Installed apps</b> (or Downloaded apps) &gt; <b>Kaspersen phone control</b> &gt; turn on. If Android says it is a restricted setting: Settings &gt; Apps &gt; Kaspersen &gt; ⋮ (top right) &gt; Allow restricted settings, then try again.</p><button class="btn sec" id="ctlBtn" style="margin-bottom:10px">Turn on phone control</button>');
+  const cb = $('#ctlBtn'); if (cb) cb.onclick = () => Native.openAccessibilitySettings();
+  if (hasNative) $('#setVoice').value = Native.getVoice();
+  try { $('#verLine').textContent = hasNative && Native.versionInfo ? Native.versionInfo() : ''; } catch (_) {}
+  $('#setMic').value = LS.get('voice_mode', 'noise'); $('#setClose').checked = LS.get('close_apps', true);
+  $('#setName').value = userName(); $('#setOpenrouter').value = o.openrouter || ''; $('#setOrca').value = o.orca || ''; $('#setVercel').value = o.vercel || '';
+  const mem = memories();
+  $('#memList').innerHTML = mem.length ? mem.map((m, i) => '<div class="mem"><span>' + esc(m) + '</span><button data-i="' + i + '">✕</button></div>').join('') : '<p class="note">Nothing yet. Tell her about yourself and she\'ll remember.</p>';
+  $('#memList').querySelectorAll('button').forEach(btn => btn.onclick = () => { const m = memories(); m.splice(+btn.dataset.i, 1); LS.set('memories', m); openSettings(); });
+  const LA = lessonsAll(), lk = Object.keys(LA).filter(k => LA[k].length);
+  $('#lessonList').innerHTML = lk.length ? lk.map(k => '<p class="note" style="margin:8px 0 2px"><b style="color:var(--text)">' + esc(k) + '</b></p>' + LA[k].map((t, i) => '<div class="mem"><span>' + esc(t) + '</span><button data-k="' + esc(k) + '" data-i="' + i + '">✕</button></div>').join('')).join('') : '<p class="note">Nothing yet. She writes notes here as she learns how your apps work.</p>';
+  $('#lessonList').querySelectorAll('button').forEach(btn => btn.onclick = () => { const all = lessonsAll(), l = all[btn.dataset.k] || []; l.splice(+btn.dataset.i, 1); if (l.length) all[btn.dataset.k] = l; else delete all[btn.dataset.k]; LS.set('lessons', all); openSettings(); });
+  const st = MEM.stats();
+  $('#projList').innerHTML = st.projects.length ? st.projects.map(p => '<div class="row"><b>' + esc(p.name) + '</b><span style="display:flex;gap:6px;align-items:center"><span class="' + (p.status === 'done' ? 'no' : 'ok') + '">' + (p.status === 'done' ? 'Finished ' + MEM.fmt(p.done_at) : esc(p.status)) + '</span><button class="btn sec pj" data-n="' + esc(p.name) + '" data-a="' + (p.status === 'done' ? 'reopen' : 'done') + '" style="padding:5px 9px;font-size:13px">' + (p.status === 'done' ? 'Reopen' : 'Finish') + '</button><button class="btn sec pj" data-n="' + esc(p.name) + '" data-a="del" style="padding:5px 9px;font-size:13px">✕</button></span></div>' + (p.notes ? '<p class="note">' + esc(p.notes) + '</p>' : '')).join('') : '<p class="note">No projects yet. Add one below, or she starts one when you work on something together.</p>';
+  $('#projList').querySelectorAll('.pj').forEach(b => b.onclick = () => { const n = b.dataset.n, act2 = b.dataset.a; if (act2 === 'del') { if (!confirm('Delete project "' + n + '"? Its chats are kept.')) return; MEM.projectRemove(n); } else MEM.projectSet(n, act2 === 'done' ? 'done' : 'active'); openSettings(); });
+  $('#sessList').innerHTML = st.sessions.filter(x => x.count).map(x => '<div class="row sess" data-id="' + x.id + '" style="cursor:pointer"><span style="color:var(--text)">' + esc(x.title || 'Chat') + (x.id === st.current ? ' <b>(open now)</b>' : '') + '</span><span>' + MEM.fmt(x.updated) + '</span></div>').join('') || '<p class="note">No conversations yet.</p>';
+  $('#sessList').querySelectorAll('.sess').forEach(r => r.onclick = () => { if (busy) return; history = MEM.openSession(r.dataset.id, history); $('#sheet').classList.remove('open'); render(); });
+  $('#sheet').classList.add('open');
+}
+$('#menuBtn').onclick = openSettings;
+$('#chkUpd').onclick = () => { if (hasNative && Native.checkUpdates) { Native.checkUpdates(); $('#chkUpd').textContent = 'Checking\u2026'; setTimeout(() => { $('#chkUpd').textContent = 'Check for updates'; }, 4000); } };
+$('#setClose').onchange = () => LS.set('close_apps', $('#setClose').checked);
+$('#projAdd').onclick = () => { MEM.projectAdd($('#projNew').value); $('#projNew').value = ''; openSettings(); };
+$('#refreshChat').onclick = () => { const was = busy; if (was) stopWork(); setTimeout(() => location.reload(), was ? 700 : 0); };
+$('#newChatSet').onclick = () => { if (busy) stopWork(); setTimeout(() => { if (busy) return; history = MEM.newSession(history); $('#sheet').classList.remove('open'); render(); }, busy ? 700 : 0); };
+if (hasNative && Native.takePhotos) setTimeout(window.flushPhotos, 400);
+$('#callsBtn').onclick = () => { if (hasNative && Native.openCalls) Native.openCalls(''); };
+$('#closeSet').onclick = () => $('#sheet').classList.remove('open');
+$('#setMic').onchange = () => LS.set('voice_mode', $('#setMic').value);
+$('#setVoice').onchange = () => { if (hasNative) Native.setVoice($('#setVoice').value); };
+$('#testVoice').onclick = () => { if (!hasNative) return; Native.setVoice($('#setVoice').value); Native.speak('Hi ' + (userName() || 'there') + ', it\'s Kaspersen. This is how I sound now. Do you like this voice?'); };
+$('#saveSet').onclick = () => {
+  LS.set('name', $('#setName').value.trim() || OWNER);
+  LS.set('keys', {openrouter: $('#setOpenrouter').value.trim(), orca: $('#setOrca').value.trim(), vercel: $('#setVercel').value.trim()});
+  $('#sheet').classList.remove('open'); render();
+};
+// ---------- link a computer (PCLINK-20261102) ----------
+async function paintPc(code) {
+  const box = $('#pcBox'); if (!box) return;
+  if (!ACCT.tok) { box.innerHTML = '<p class="note">Sign in to link your Windows computer.</p>'; return; }
+  const st = await refreshPc() || {devices: []};
+  let h = (st.devices || []).map(d => '<div class="row"><b>' + esc(d.name) + '</b><span class="' + (d.online ? 'ok' : 'no') + '">' + (d.online ? 'Online' : 'Offline') + '</span>' +
+    (d.id.startsWith('d') ? '<button class="btn sec pcUn" data-id="' + d.id + '" style="padding:5px 9px">Unlink</button>' : '') + '</div>').join('');
+  if (!h) h = '<p class="note">Let Kaspersen use your Windows computer from your phone - files, programs and commands, like Desktop Commander.</p>';
+  if (code) h += '<div style="background:var(--bg);border:1px solid var(--accent);border-radius:12px;padding:12px;margin:8px 0"><p class="note" style="margin:0 0 6px">1. On your Windows computer open <b>skillvaya.onrender.com/pclink</b> to download <b>Kaspersen PC Link</b>, then open it.<br>2. Type this code (works for 10 minutes):</p><div style="font:700 30px/1.2 monospace;letter-spacing:3px;text-align:center;color:var(--text)">' + esc(code) + '</div><p class="note" style="margin:6px 0 0">Windows may warn that the app is new - choose <b>More info &gt; Run anyway</b>.</p></div>' +
+    '<button class="btn sec" id="pcShare" style="margin-right:8px">Send the download link</button>';
+  h += '<button class="btn" id="pcLink">' + (code ? 'New code' : 'Link my computer') + '</button>';
+  box.innerHTML = h;
+  $('#pcLink').onclick = async () => { const r = await siteApi('/api/kai/pc/pair-code', {}); if (r.j.code) paintPc(r.j.code); else box.insertAdjacentHTML('beforeend', '<p class="note no">' + esc(r.j.error || 'Could not get a code.') + '</p>'); };
+  const sh = $('#pcShare'); if (sh) sh.onclick = () => act('share', {text: 'Kaspersen PC Link for Windows: https://skillvaya.onrender.com/pclink'});
+  box.querySelectorAll('.pcUn').forEach(b => b.onclick = async () => { await siteApi('/api/kai/pc/unlink', {id: b.dataset.id}); paintPc(); });
+}
+
+// ---------- account / welcome (KAI-20261102) ----------
+let wMode = 'in', wPhone = '';
+function wMsg(t, bad) { $('#wMsg').textContent = t || ''; $('#wMsg').className = 'note ' + (bad ? 'no' : ''); }
+function wTab(m) { wMode = m; $('#wTabIn').classList.toggle('on', m === 'in'); $('#wTabUp').classList.toggle('on', m === 'up');
+  $('#wUpOnly').style.display = m === 'up' ? '' : 'none'; $('#wGo').textContent = m === 'up' ? 'Create my account' : 'Sign in'; wMsg(''); }
+function showWelcome(step) {
+  $('#welcome').classList.add('open');
+  $('#wAuth').style.display = step === 'verify' ? 'none' : '';
+  $('#wVerify').style.display = step === 'verify' ? '' : 'none';
+  if (step === 'verify') { $('#wTitle').textContent = 'Confirm your number'; startVerify(); }
+  else { $('#wTitle').textContent = 'Welcome to Kaspersen 👋'; wTab(wMode); }
+}
+async function startVerify() {
+  wPhone = wPhone || ACCT.user().phone || '';
+  if (!wPhone) { wMsg('Your account has no mobile number. Add one in Future Chat (📞), then try again.', true); return; }
+  wMsg('Sending a code…');
+  const r = await siteApi('/api/phone/email-start', {phone: wPhone});
+  if (r.j.saved) return welcomeDone();
+  if (r.status === 200) { $('#wVerifyNote').textContent = 'We emailed a 6-digit code to ' + (r.j.sent_to || 'your email') + ' to confirm ' + wPhone + '.'; wMsg(''); }
+  else wMsg(r.j.error || 'Could not send the code.', true);
+}
+async function welcomeDone() {
+  $('#welcome').classList.remove('open');
+  const u = ACCT.user();
+  if (!OWNER && !userName() && u.name) LS.set('name', u.name.split(' ')[0]);
+  setStatus('GLM-5.3 · 320B'); render();
+}
+$('#wTabIn').onclick = () => wTab('in');
+$('#wTabUp').onclick = () => wTab('up');
+$('#wTermsLink').onclick = e => { e.preventDefault(); if (hasNative && Native.openCalls) Native.openCalls(SITE + '/terms'); };
+$('#wOwnKey').onclick = e => { e.preventDefault(); $('#welcome').classList.remove('open'); openSettings(); };
+$('#wGo').onclick = async () => {
+  const email = $('#wEmail').value.trim(), pw = $('#wPass').value;
+  if (!$('#wTerms').checked) return wMsg('Please tick that you accept the Skillvaya terms.', true);
+  if (!email.includes('@') || pw.length < 8) return wMsg('Enter your email and a password of 8+ characters.', true);
+  let r;
+  $('#wGo').disabled = true; wMsg(wMode === 'up' ? 'Creating your account… (the first time can take up to a minute)' : 'Signing in… (the first time can take up to a minute)');
+  try {
+    if (wMode === 'up') {
+      const name = $('#wName').value.trim(), phone = $('#wPhone').value.trim();
+      if (!name || phone.replace(/\D/g, '').length < 9) return wMsg('Enter your name and mobile number.', true);
+      r = await siteApi('/api/signup', {name, email, password: pw, phone, role: 'customer', country: 'ZA', accept_terms: true});
+    } else r = await siteApi('/api/login', {email, password: pw, accept_terms: true});
+  } finally { $('#wGo').disabled = false; }
+  if (!r.j.token) return wMsg(r.j.error || 'That didn\'t work. Please try again.', true);
+  ACCT.set(r.j.token, r.j.user); wPhone = (r.j.user && r.j.user.phone) || '';
+  const st = await siteApi('/api/kai/status');
+  if (st.status === 200 && !st.j.phone_verified) return showWelcome('verify');
+  welcomeDone();
+};
+$('#wResend').onclick = () => startVerify();
+$('#wConfirm').onclick = async () => {
+  const code = $('#wCode').value.replace(/\D/g, '');
+  if (code.length !== 6) return wMsg('Enter the 6-digit code from the email.', true);
+  const r = await siteApi('/api/phone/email-confirm', {code, phone: wPhone});
+  if (r.status === 200 && r.j.verified) { wMsg('Number confirmed ✓'); return welcomeDone(); }
+  wMsg(r.j.error || 'That code didn\'t work.', true);
+};
+
+window.onBack = () => { if ($('#welcome').classList.contains('open')) { if (hasNative) Native.exitApp(); return; } if ($('#camMenu').classList.contains('on')) $('#camMenu').classList.remove('on'); else if ($('#sheet').classList.contains('open')) $('#sheet').classList.remove('open'); else if (hasNative) Native.exitApp(); };
+paintSpeak(); render();
+if (!providers().length) showWelcome('');
+else if (ACCT.tok && hasNative && Native.setSiteLogin) Native.setSiteLogin(ACCT.tok, JSON.stringify(ACCT.user()));
+if (ACCT.tok) refreshPc();
+</script>
+</body>
+</html>
