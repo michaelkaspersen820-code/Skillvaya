@@ -59,7 +59,12 @@ def init(c):
         CREATE TABLE IF NOT EXISTS kai_secrets(name TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS kai_subs(user_id BIGINT PRIMARY KEY, paid_until TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '',
             trial_tasks INTEGER NOT NULL DEFAULT 0, trial_calls INTEGER NOT NULL DEFAULT 0);
-    """)
+        CREATE TABLE IF NOT EXISTS kai_proofs(id %s, user_id BIGINT NOT NULL, created_at TEXT NOT NULL DEFAULT '', sha TEXT NOT NULL DEFAULT '',
+            image TEXT NOT NULL DEFAULT '', amount REAL NOT NULL DEFAULT 0, months INTEGER NOT NULL DEFAULT 0, reference TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending', reason TEXT NOT NULL DEFAULT '', seen INTEGER NOT NULL DEFAULT 0);
+        CREATE INDEX IF NOT EXISTS idx_kai_proofs_user ON kai_proofs(user_id);
+        CREATE INDEX IF NOT EXISTS idx_kai_proofs_sha ON kai_proofs(sha);
+    """ % (A.WF_ID_TYPE + " PRIMARY KEY" + ("" if A.DATABASE_URL else " AUTOINCREMENT")))
     pk = A.WF_ID_TYPE + " PRIMARY KEY" + ("" if A.DATABASE_URL else " AUTOINCREMENT")
     A.execute_script(c, """
         CREATE TABLE IF NOT EXISTS kai_pc_devices(id %s, user_id BIGINT NOT NULL, name TEXT NOT NULL DEFAULT '',
@@ -176,8 +181,21 @@ def _pay_contact():
     return os.environ.get("KASPERSEN_PAY_CONTACT", "27837874569")
 
 
+def _bank():
+    return os.environ.get("KASPERSEN_BANK_DETAILS", "").strip()
+
+
 def _pay_how():
-    return os.environ.get("KASPERSEN_PAY_HOW", "Tap Pay to WhatsApp Michael Kaspersen for the payment details. As soon as he confirms your payment, I'm switched on for the month.")
+    if os.environ.get("KASPERSEN_PAY_HOW"):
+        return os.environ["KASPERSEN_PAY_HOW"]
+    if _bank():
+        return "Pay %s into this account: %s. Then send me a screenshot of your proof of payment and I'll switch on straight away." % (_price(), _bank())
+    return "Tap Pay for the payment details, pay %s, then send me a screenshot of your proof of payment and I'll switch on straight away." % _price()
+
+
+def _price_num():
+    try: return float("".join(ch for ch in _price() if ch.isdigit() or ch == ".") or 150)
+    except ValueError: return 150.0
 
 
 def _sub_state(uid, unl):
@@ -185,7 +203,7 @@ def _sub_state(uid, unl):
     paid = unl or r["paid_until"] >= today
     left = max(0, _trial_tasks() - r["trial_tasks"])
     return {"subscribed": paid, "unlimited": unl, "paid_until": r["paid_until"], "trial_tasks": _trial_tasks(),
-            "trial_left": 0 if r["paid_until"] else left, "price": _price(), "pay_contact": _pay_contact(), "pay_how": _pay_how()}
+            "trial_left": 0 if r["paid_until"] else left, "price": _price(), "pay_contact": _pay_contact(), "pay_how": _pay_how(), "bank": _bank()}
 
 
 def _paywall(uid, unl, new_task):
@@ -219,6 +237,127 @@ def _trial_count(uid, unl, new_task):
     except Exception as e:
         print("kai_subs count failed:", type(e).__name__)
     return max(0, _trial_tasks() - r["trial_tasks"] - (1 if new_task else 0)) if not r["paid_until"] else 0
+
+
+# PROOF-20261103: the customer sends Kaspersen a screenshot of their payment. She reads it; the server switches them on
+# only when it really is a payment of at least the price, recent, (to the right account when KASPERSEN_PAY_TO is set),
+# never seen before (same picture or same bank reference). Doubtful ones wait for the owner. Every proof reaches the
+# owner's Kaspersen so he can check his bank and switch anyone off.
+PROOF_PROMPT = ("You check proof-of-payment screenshots (South African bank apps, EFT, instant payment, PayShap, cash deposit, eWallet). "
+                "Look ONLY at the picture. Reply with ONLY one JSON object, no other text: "
+                '{"is_payment_proof": true/false, "amount_rand": number or null, "date": "YYYY-MM-DD" or null, "recipient": "who was paid (name/account) or empty", '
+                '"reference": "payment reference or transaction id or empty", "status_text": "e.g. Successful / Pending / Failed / empty", '
+                '"looks_edited": true/false, "notes": "one short sentence"}')
+
+
+def _vision_check(b64):
+    keys = _keys()
+    order = [(n, u, m, sec) for n, u, m, _e, sec in PROVIDERS if keys.get(sec)]
+    if keys.get("openrouter"):
+        order += [("Free " + m, FREE_URL, m, "openrouter") for m in sorted(_free["vision"] or {"nvidia/nemotron-3.5-super-vl:free"})][:3]
+    body = {"messages": [{"role": "user", "content": [{"type": "text", "text": PROOF_PROMPT},
+                          {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b64}}]}], "temperature": 0, "max_tokens": 600}
+    for name, url, model, sec in order:
+        try:
+            req = urllib.request.Request(url, data=json.dumps(dict(body, model=model)).encode(), method="POST", headers={
+                "Authorization": "Bearer " + keys[sec], "Content-Type": "application/json",
+                "HTTP-Referer": "https://skillvaya.onrender.com", "X-Title": "Kaspersen Pocket"})
+            with urllib.request.urlopen(req, timeout=90) as r:
+                j = json.loads(r.read())
+            t = (((j.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+            a, b = t.find("{"), t.rfind("}")
+            if a >= 0 and b > a:
+                return json.loads(t[a:b + 1])
+        except Exception as e:
+            print("proof check via %s failed: %s" % (name, type(e).__name__))
+    return None
+
+
+def _proof(h, d):
+    u = h.require()
+    uid = int(u["id"]); today = _today()
+    b64 = str((d or {}).get("image") or "")
+    if b64.startswith("data:"): b64 = b64.split(",", 1)[-1]
+    if len(b64) < 2000:
+        return h.sendj({"error": "Please send a clear screenshot of your proof of payment."}, 400)
+    import hashlib
+    sha = hashlib.sha256(b64.encode()).hexdigest()
+    first = (u.get("name") or "").split(" ")[0] or "there"
+    with A.conn() as c:
+        if c.execute("SELECT COUNT(*) n FROM kai_proofs WHERE user_id=? AND created_at LIKE ?", (uid, today + "%")).fetchone()["n"] >= 6:
+            return h.sendj({"ok": False, "message": "You've sent a few proofs today already. Michael will look at them and switch you on - you don't need to send more."})
+        if c.execute("SELECT 1 FROM kai_proofs WHERE sha=?", (sha,)).fetchone():
+            return h.sendj({"ok": False, "message": "I've already received this exact proof of payment before, so I can't use it again. If you made a new payment, please send the new proof."})
+    v = _vision_check(b64) or {}
+    price = _price_num()
+    try: amount = float(v.get("amount_rand") or 0)
+    except (TypeError, ValueError): amount = 0.0
+    ref = str(v.get("reference") or "").strip()[:80]
+    reasons = []
+    if not v:
+        reasons.append("I couldn't read the screenshot right now")
+    elif not v.get("is_payment_proof"):
+        status = "rejected"
+    if v and v.get("is_payment_proof"):
+        if amount < price - 0.5: reasons.append("the amount I can see is R%s, and Kaspersen is %s" % (("%.2f" % amount).rstrip("0").rstrip("."), _price()))
+        dt = str(v.get("date") or "")
+        try:
+            age = (datetime.datetime.strptime(today, "%Y-%m-%d") - datetime.datetime.strptime(dt[:10], "%Y-%m-%d")).days
+            if age > 10 or age < -1: reasons.append("the payment date (%s) isn't recent" % dt[:10])
+        except ValueError:
+            reasons.append("I can't see the payment date")
+        st = str(v.get("status_text") or "").lower()
+        if any(w in st for w in ("pending", "fail", "declin", "cancel", "reject")): reasons.append("the payment shows as '%s'" % v.get("status_text"))
+        if v.get("looks_edited"): reasons.append("parts of the screenshot look edited")
+        pay_to = os.environ.get("KASPERSEN_PAY_TO", "").strip().lower()
+        if pay_to and not any(p.strip() and p.strip() in str(v.get("recipient") or "").lower() for p in pay_to.split(",")):
+            reasons.append("I can't see that it was paid to Michael Kaspersen's account")
+        if ref:
+            with A.conn() as c:
+                if c.execute("SELECT 1 FROM kai_proofs WHERE reference=? AND status IN ('auto_ok','confirmed','pending') AND ABS(amount-?)<1", (ref, amount)).fetchone():
+                    reasons.append("this payment reference was already used")
+        status = "pending" if reasons else "auto_ok"
+    elif not v:
+        status = "pending"
+    months = max(1, min(12, int(amount // price))) if status == "auto_ok" else 0
+    new = ""
+    with A.conn() as c:
+        c.execute("INSERT INTO kai_proofs(user_id,created_at,sha,image,amount,months,reference,status,reason,seen) VALUES(?,?,?,?,?,?,?,?,?,0)",
+                  (uid, datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M"), sha, b64, amount, months, ref, status,
+                   "; ".join(reasons) or (str(v.get("notes") or "")[:200] if v else "")))
+        if status == "auto_ok":
+            cur = _paid_until(uid)
+            base = datetime.datetime.strptime(max(cur, today), "%Y-%m-%d")
+            new = (base + datetime.timedelta(days=30 * months)).strftime("%Y-%m-%d")
+            if c.execute("SELECT 1 FROM kai_subs WHERE user_id=?", (uid,)).fetchone():
+                c.execute("UPDATE kai_subs SET paid_until=?, note=?, updated_at=? WHERE user_id=?", (new, "proof of payment R%g" % amount, today, uid))
+            else:
+                c.execute("INSERT INTO kai_subs(user_id,paid_until,note,updated_at) VALUES(?,?,?,?)", (uid, new, "proof of payment R%g" % amount, today))
+    if status == "auto_ok":
+        msg = ("Thank you, %s! I can see your payment of R%g - you're switched on until **%s**. " % (first, amount, new)) + \
+              ("That covers %d months. " % months if months > 1 else "") + "What can I do for you?"
+        return h.sendj({"ok": True, "active": True, "paid_until": new, "message": msg})
+    if status == "rejected":
+        return h.sendj({"ok": False, "message": "That doesn't look like a proof of payment to me. Please send a screenshot of the payment confirmation from your banking app (it shows the amount, the date and that it was successful)."})
+    return h.sendj({"ok": False, "pending": True, "message": "Thank you, %s - I've received your proof of payment, but I can't confirm it myself because %s. I've sent it to Michael Kaspersen to check, and you'll be switched on as soon as he confirms." % (first, " and ".join(reasons) if reasons else "I couldn't read it clearly")})
+
+
+def _proofs(h):
+    u = h.require()
+    if not _unlimited(u):
+        return h.sendj({"error": "Only the owner can do this."}, 403)
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(h.path).query)
+    with A.conn() as c:
+        if q.get("id"):
+            r = c.execute("SELECT image FROM kai_proofs WHERE id=?", (int(q["id"][0]),)).fetchone()
+            return h.sendj({"ok": bool(r), "image": r["image"] if r else ""})
+        rows = c.execute("SELECT p.id,p.created_at,p.amount,p.months,p.reference,p.status,p.reason,p.seen,u.name,u.email,u.phone FROM kai_proofs p "
+                         "JOIN users u ON u.id=p.user_id ORDER BY p.id DESC LIMIT 30").fetchall()
+        unseen = [r for r in rows if not r["seen"]]
+        if q.get("mark_seen"):
+            c.execute("UPDATE kai_proofs SET seen=1 WHERE seen=0")
+    return h.sendj({"ok": True, "unseen": len(unseen), "proofs": [{"id": r["id"], "when": r["created_at"], "name": r["name"], "email": r["email"], "phone": r["phone"],
+                    "amount": r["amount"], "months": r["months"], "reference": r["reference"], "status": r["status"], "reason": r["reason"], "new": not r["seen"]} for r in rows]})
 
 
 def _find_user(c, who):
@@ -262,6 +401,11 @@ def _subs(h, d):
             base = datetime.datetime.strptime(max(cur, today) if months > 0 else (cur or today), "%Y-%m-%d")
             new = (base + datetime.timedelta(days=30 * months)).strftime("%Y-%m-%d")
         note = str(d.get("note") or "")[:200]
+        try:
+            if months > 0: c.execute("UPDATE kai_proofs SET status='confirmed', seen=1 WHERE user_id=? AND status='pending'", (uid,))
+            elif months == 0: c.execute("UPDATE kai_proofs SET status='revoked' WHERE user_id=? AND status='auto_ok'", (uid,))
+        except Exception as e:
+            print("kai_proofs settle failed:", type(e).__name__)
         if c.execute("SELECT 1 FROM kai_subs WHERE user_id=?", (uid,)).fetchone():
             c.execute("UPDATE kai_subs SET paid_until=?, note=?, updated_at=? WHERE user_id=?", (new, note, today, uid))
         else:
@@ -494,6 +638,8 @@ def handle_get(h, path):
         return h.sendj({"status": j["status"], "result": j["result"]})
     if path == "/api/kai/subs":
         return _subs(h, None)
+    if path == "/api/kai/proofs":
+        return _proofs(h)
     if path != "/api/kai/status":
         return h.sendj({"error": "Not found"}, 404)
     u = h.require()
@@ -512,6 +658,8 @@ def handle_post(h, path, d):
         return _pc_post(h, path, d)
     if path == "/api/kai/subs":
         return _subs(h, d if isinstance(d, dict) else {})
+    if path == "/api/kai/proof":
+        return _proof(h, d if isinstance(d, dict) else {})
     if path == "/api/kai/image":
         return _image(h, d)
     if path == "/api/kai/transcribe":
