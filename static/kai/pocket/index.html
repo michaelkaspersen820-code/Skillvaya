@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110301">
+<meta name="kp-ui" content="2026110302">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -747,13 +747,32 @@ let history = MEM.boot();   // [{role, content}] user/assistant only, plus sourc
 let busy = false;
 // UPDATE-20261103: a newer copy of this page arrives from the Skillvaya server - she switches over only when she is free.
 setInterval(() => { try { if (!busy && hasNative && Native.uiUpdateReady && Native.uiUpdateReady()) Native.reloadUi(); } catch (_) {} }, 60000);
+// UPDATE-20261103: Android can switch phone control off when the app is updated - notice it and offer the switch.
+setTimeout(() => { try { if (!hasNative || !Native.controlOn) return; if (Native.controlOn()) { LS.set('ctl_was_on', true); return; } if (LS.get('ctl_was_on', false)) showCtlBar(); } catch (_) {} }, 2500);
+document.addEventListener('visibilitychange', () => { try { if (!document.hidden && hasNative && Native.controlOn && Native.controlOn()) { LS.set('ctl_was_on', true); const b = document.getElementById('ctlBar'); if (b) b.remove(); } } catch (_) {} });
+function showCtlBar() {
+  if (document.getElementById('ctlBar')) return;
+  const d = document.createElement('div'); d.id = 'ctlBar';
+  d.style.cssText = 'position:fixed;left:10px;right:10px;top:76px;z-index:30;background:var(--panel2);border:1px solid var(--warn);border-radius:14px;padding:10px 12px;display:flex;gap:8px;align-items:center;box-shadow:0 6px 20px #0008';
+  d.innerHTML = '<span style="flex:1;min-width:0;font-size:14px">Phone control was switched off (this can happen after an update). Tap <b>Turn on</b>, open <b>Installed apps</b> &gt; <b>Kaspersen phone control</b> and switch it on.</span><button class="btn" id="ctlOnBtn" style="padding:8px 12px;flex:none">Turn on</button><button class="btn sec" id="ctlX" style="padding:8px 10px;flex:none">\u2715</button>';
+  document.body.appendChild(d);
+  $('#ctlOnBtn').onclick = () => Native.openAccessibilitySettings();
+  $('#ctlX').onclick = () => d.remove();
+}
 window.onAppUpdate = info => { try { showUpdateBar(JSON.parse(info)); } catch (_) {} };
-window.onUpdateStatus = t => { const g = document.getElementById('updGo'); if (g) { g.textContent = t; g.disabled = /Downloading|Installing|Starting/.test(t); } };
+window.onUpdateStatus = t => { const g = document.getElementById('updGo'), m = document.getElementById('updMsg'); if (!g) return;
+  const say = (x, b, off) => { if (m) m.textContent = x; g.textContent = b; g.disabled = !!off; };
+  if (/Allow/.test(t)) say('Android opened its "Install unknown apps" list. Switch on Kaspersen there, come back here and tap Update.', 'Update');
+  else if (/Downloading/.test(t)) say('Downloading the new version\u2026', 'Wait', true);
+  else if (/Installing|Starting/.test(t)) say('Getting the new version ready\u2026', 'Wait', true);
+  else if (/Tap Install/.test(t)) say('Tap Update (or Install) in the box Android shows. If Play Protect asks, tap Scan app - it is safe.', 'Update');
+  else if (/fail|did not/i.test(t)) say('The update did not finish. Check your internet and try again.', 'Try again');
+  else say(t, 'Update'); };
 function showUpdateBar(o) {
   if (document.getElementById('updBar')) return;
   const d = document.createElement('div'); d.id = 'updBar';
   d.style.cssText = 'position:fixed;left:10px;right:10px;bottom:84px;z-index:30;background:var(--panel2);border:1px solid var(--accent);border-radius:14px;padding:10px 12px;display:flex;gap:8px;align-items:center;box-shadow:0 6px 20px #0008';
-  d.innerHTML = '<span style="flex:1;font-size:14px">A new version of Kaspersen is ready' + (o.version ? ' (' + esc(o.version) + ')' : '') + '. Your chats and memory stay.</span><button class="btn" id="updGo" style="padding:8px 12px">Update</button><button class="btn sec" id="updLater" style="padding:8px 10px">Later</button>';
+  d.innerHTML = '<span id="updMsg" style="flex:1;min-width:0;font-size:14px">A new version of Kaspersen is ready' + (o.version ? ' (' + esc(o.version) + ')' : '') + '. Your chats and memory stay.</span><button class="btn" id="updGo" style="padding:8px 12px;flex:none;white-space:nowrap">Update</button><button class="btn sec" id="updLater" style="padding:8px 10px;flex:none">Later</button>';
   document.body.appendChild(d);
   $('#updLater').onclick = () => d.remove();
   $('#updGo').onclick = () => { if (busy) { showError('Let her finish this job first, then tap Update.'); return; } $('#updGo').disabled = true; $('#updGo').textContent = 'Starting\u2026'; Native.installUpdate(); };
