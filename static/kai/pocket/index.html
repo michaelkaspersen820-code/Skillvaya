@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110306">
+<meta name="kp-ui" content="2026110307">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -72,7 +72,7 @@ textarea:focus{border-color:var(--accent)}
   <button class="icon" id="menuBtn" title="Settings">⚙</button>
 </header>
 <div id="plan"><span id="planTxt"></span><button id="planPay">Pay</button></div>
-<div id="paySheet"><div class="box"><h2>Kaspersen subscription</h2><p class="note" id="payWhy" style="color:var(--text)"></p><div class="price" id="payPrice">R150 / month</div><p class="note">Full use of Kaspersen for one month: your assistant, phone control, photos, voice and everything else. You'll see the date your month ends right here.</p><p class="note" id="payHow"></p><button class="btn" id="payWa">Pay - WhatsApp Michael Kaspersen</button><button class="btn sec" id="payCheck">I've paid - check again</button><button class="btn sec" id="payClose">Not now</button><p class="note" id="payMsg" style="text-align:center"></p></div></div>
+<div id="paySheet"><div class="box"><h2>Kaspersen subscription</h2><p class="note" id="payWhy" style="color:var(--text)"></p><div class="price" id="payPrice">R150 / month</div><p class="note">Full use of Kaspersen for one month: your assistant, phone control, photos, voice and everything else. You'll see the date your month ends right here.</p><p class="note" id="payHow"></p><div id="payBank" style="display:none;background:#0b1626;border:1px solid var(--accent);border-radius:12px;padding:10px 12px;margin:8px 0;white-space:pre-wrap;font-size:14px"></div><button class="btn" id="payProof">Send my proof of payment</button><button class="btn sec" id="payWa">Payment details / questions - WhatsApp Michael</button><button class="btn sec" id="payCheck">I've paid - check again</button><button class="btn sec" id="payClose">Not now</button><p class="note" id="payMsg" style="text-align:center"></p></div></div>
 <main id="log"></main>
 <div id="attach"><div id="attachList"></div><span class="note" id="attachNote">1 photo</span><button id="attachMore" title="Add another photo">＋</button><button id="attachX" title="Remove all">✕</button></div>
 <div class="camMenu" id="camMenu"><button id="camTake">📷 Take a photo</button><button id="camPick">🖼 Choose from gallery</button></div>
@@ -235,7 +235,10 @@ async function refreshSub() {
 function openPay(why) {
   $('#payWhy').textContent = why || '';
   $('#payPrice').textContent = ((SUB && SUB.price) || 'R150') + ' / month';
-  $('#payHow').textContent = (SUB && SUB.pay_how) || 'Tap Pay to WhatsApp Michael Kaspersen for the payment details. As soon as he confirms your payment, I\'m switched on for the month.';
+  const bank = SUB && SUB.bank;
+  $('#payHow').textContent = bank ? 'Pay ' + ((SUB && SUB.price) || 'R150') + ' into this account, then tap "Send my proof of payment" and send me the screenshot. I check it and switch on straight away.'
+    : 'WhatsApp Michael for the payment details, pay ' + ((SUB && SUB.price) || 'R150') + ', then tap "Send my proof of payment" and send me the screenshot. I check it and switch on straight away.';
+  $('#payBank').textContent = bank || ''; $('#payBank').style.display = bank ? 'block' : 'none';
   $('#payMsg').textContent = '';
   $('#paySheet').classList.add('open');
 }
@@ -559,6 +562,8 @@ async function pcJob(kind, args, waitS) {
 const OWNER_SUB_TOOLS = [
   ['customer_paid', 'OWNER ONLY. When he says a customer paid for Kaspersen (e.g. "Thabo paid", "0825551234 paid for 2 months"), switch them on: who = their email, phone number or full name; months = how many months they paid (default 1, each adds 30 days on top of any time left). months 0 switches them OFF now. Confirm back the name and the date their month ends.', {who: {type: 'string'}, months: {type: 'integer'}, note: {type: 'string'}}, ['who']],
   ['customers_list', 'OWNER ONLY. List Kaspersen customers: who is paid up and until when, who is still on the free test tasks, and who has run out.', {}, []],
+  ['payment_proofs', 'OWNER ONLY. The latest proof-of-payment screenshots customers sent: who, amount, status (auto_ok = switched on automatically, pending = waiting for him, rejected, confirmed, revoked) and why. Tell him which ones need him to check his bank or decide.', {}, []],
+  ['view_proof', 'OWNER ONLY. SEE one proof-of-payment screenshot (id from payment_proofs) so you can read it for him.', {id: {type: 'integer'}}, ['id']],
 ].map(([name, description, props, req]) => ({type: 'function', function: {name, description, parameters: {type: 'object', properties: props, required: req}}}));
 const PC_TOOLS = [
   ['pc_status', 'Check that his PC is online and reachable (PC name, user, time).', {}, []],
@@ -578,6 +583,24 @@ const PC_TOOLS = [
 ].map(([name, description, props, req]) => ({type: 'function', function: {name, description, parameters: {type: 'object', properties: props, required: req}}}));
 let pcToolsOn = false;
 PHONE.customer_paid = async a => { const r = await siteApi('/api/kai/subs', {who: a.who || '', months: a.months === undefined ? 1 : +a.months, note: a.note || ''}); return r.status === 200 ? r.j : {ok: false, error: r.j.error || 'Could not update the customer.'}; };
+PHONE.payment_proofs = async () => { const r = await siteApi('/api/kai/proofs?mark_seen=1'); return r.status === 200 ? r.j : {ok: false, error: r.j.error || 'Could not load proofs.'}; };
+PHONE.view_proof = async a => {
+  const r = await siteApi('/api/kai/proofs?id=' + (+a.id || 0));
+  if (r.status !== 200 || !r.j.image) return {ok: false, error: 'No such proof.'};
+  pendingShots.push({role: 'user', _shot: true, content: [{type: 'text', text: '(Proof of payment #' + a.id + ')'}, {type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + r.j.image}}]});
+  return {ok: true, note: 'The proof is in the next message.'};
+};
+async function checkProofs() {   // owner: tell him when a customer sends proof of payment
+  if (!OWNER || !ACCT.tok) return;
+  const r = await siteApi('/api/kai/proofs'); if (r.status !== 200 || !r.j.unseen) return;
+  const fresh = (r.j.proofs || []).filter(p => p.new);
+  const last = LS.get('proof_alerted', 0), top = Math.max(...fresh.map(p => p.id));
+  if (top <= last) return; LS.set('proof_alerted', top);
+  const t = fresh.filter(p => p.id > last).map(p => p.name + ' sent proof of payment: R' + p.amount + ' - ' + (p.status === 'auto_ok' ? 'switched on automatically, please check your bank' : p.status === 'pending' ? 'NEEDS YOU: ' + p.reason : p.status)).join('\n');
+  showError('💳 ' + t + '\n(Ask me "show payment proofs" to see them.)');
+  if (hasNative && LS.get('speak', true)) Native.speak('Michael, ' + fresh.length + ' new proof' + (fresh.length > 1 ? 's' : '') + ' of payment came in.');
+}
+if (OWNER) { setTimeout(checkProofs, 6000); setInterval(checkProofs, 180000); }
 PHONE.customers_list = async () => { const r = await siteApi('/api/kai/subs'); return r.status === 200 ? r.j : {ok: false, error: r.j.error || 'Could not load customers.'}; };
 if (OWNER) TOOLS.push(...OWNER_SUB_TOOLS);
 function enablePcTools() { if (!pcToolsOn) { TOOLS.push(...PC_TOOLS); pcToolsOn = true; } }
@@ -912,6 +935,18 @@ async function ask(text) {
   history.push(img ? Object.assign({role: 'user', content: text.trim() || (imgs.length > 1 ? 'What do you see in these?' : 'What do you see?'), image: img}, imgs.length > 1 ? {more: imgs.slice(1)} : {}) : {role: 'user', content: text.trim()});
   saveHistory();
   render();
+  // PROOF-20261103: proof of payment - she checks it and switches herself on
+  if (imgs.length && ACCT.tok && SUB && !SUB.unlimited && (LS.get('proof_next', false) || (!SUB.subscribed && !SUB.trial_left))) {
+    LS.set('proof_next', false);
+    const ind0 = addIndicator('Checking your proof of payment…');
+    let msg = '';
+    try { const r = await siteApi('/api/kai/proof', {image: img}); msg = r.j.message || r.j.error || 'I couldn\'t check that just now - please send it again.'; }
+    catch (_) { msg = 'I couldn\'t check that just now - please send it again.'; }
+    ind0.remove(); history.push({role: 'assistant', content: msg}); saveHistory();
+    busy = false; taskStart = false; setSendMode(false); if (hasNative && Native.workEnd) Native.workEnd(); render(); refreshSub();
+    if (hasNative && LS.get('speak', true)) Native.speak(plain(msg));
+    return;
+  }
   const working = [{role: 'system', content: systemPrompt()}, ...trimmed()];
   if (img) { const last = working[working.length - 1]; last.content = [{type: 'text', text: last.content}].concat(imgs.map(b => ({type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + b}}))); }
   shownPhotos = []; usedControl = false;
@@ -1226,6 +1261,7 @@ $('#wConfirm').onclick = async () => {
 
 window.onBack = () => { if ($('#paySheet').classList.contains('open')) { $('#paySheet').classList.remove('open'); return; } if ($('#welcome').classList.contains('open')) { if (hasNative) Native.exitApp(); return; } if ($('#camMenu').classList.contains('on')) $('#camMenu').classList.remove('on'); else if ($('#sheet').classList.contains('open')) $('#sheet').classList.remove('open'); else if (hasNative) Native.exitApp(); };
 $('#planPay').onclick = () => openPay('');
+$('#payProof').onclick = () => { LS.set('proof_next', true); $('#paySheet').classList.remove('open'); $('#camMenu').classList.add('on'); showError('Choose the screenshot of your proof of payment, then tap send.'); };
 $('#payWa').onclick = () => { act('open_url', {url: payUrl()}); $('#payMsg').textContent = 'Opening WhatsApp... When Michael confirms, tap "I\'ve paid - check again".'; };
 $('#payCheck').onclick = async () => { $('#payMsg').textContent = 'Checking...'; const sb = await refreshSub(); $('#payMsg').textContent = sb && sb.subscribed ? 'You\'re switched on until ' + sb.paid_until + '. Thank you!' : 'Not switched on yet - Michael will switch you on as soon as he confirms your payment.'; if (sb && sb.subscribed) setTimeout(() => $('#paySheet').classList.remove('open'), 1500); };
 $('#payClose').onclick = () => $('#paySheet').classList.remove('open');
