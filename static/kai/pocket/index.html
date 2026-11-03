@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110305">
+<meta name="kp-ui" content="2026110306">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -27,6 +27,12 @@ header{display:flex;align-items:center;gap:4px;padding:10px 8px;border-bottom:1p
 .src{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.src a{font-size:12px;background:var(--panel2);border-radius:999px;padding:3px 9px;text-decoration:none;color:var(--dim)}
 .actions{display:flex;gap:4px;margin-top:6px}.actions button{background:none;border:0;color:var(--dim);font-size:12.5px;padding:3px 6px;border-radius:7px}.actions button:active{background:var(--panel2)}
 .err{align-self:center;color:var(--warn);font-size:13.5px;text-align:center;padding:4px 10px}
+#plan{display:none;align-items:center;gap:10px;padding:8px 14px;background:#12223A;border-bottom:1px solid #1f3a5c;font-size:13.5px;color:#cfe3ff}
+#plan.on{display:flex}#plan span{flex:1}#plan button{background:var(--accent);color:#06222a;border:0;border-radius:16px;padding:6px 14px;font-weight:700;font-size:13px}
+#paySheet{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;z-index:60}#paySheet.open{display:flex}
+#paySheet .box{background:#0f1d33;width:100%;border-radius:22px 22px 0 0;padding:22px 20px 28px;color:var(--text)}
+#paySheet h2{margin:0 0 8px;font-size:21px}#paySheet .price{font-size:30px;font-weight:800;color:var(--accent);margin:6px 0}
+#paySheet .btn{width:100%;margin-top:10px}
 .hello{margin:auto;text-align:center;color:var(--dim);padding:20px;max-width:340px}.hello b{color:var(--text);font-size:20px;display:block;margin-bottom:6px}
 .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px}.chips button{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:999px;padding:8px 12px;font-size:13.5px}
 footer{padding:8px 10px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);display:flex;gap:8px;align-items:flex-end;background:var(--bg)}
@@ -65,6 +71,8 @@ textarea:focus{border-color:var(--accent)}
   <button class="icon" id="newBtn" title="New chat">＋</button>
   <button class="icon" id="menuBtn" title="Settings">⚙</button>
 </header>
+<div id="plan"><span id="planTxt"></span><button id="planPay">Pay</button></div>
+<div id="paySheet"><div class="box"><h2>Kaspersen subscription</h2><p class="note" id="payWhy" style="color:var(--text)"></p><div class="price" id="payPrice">R150 / month</div><p class="note">Full use of Kaspersen for one month: your assistant, phone control, photos, voice and everything else. You'll see the date your month ends right here.</p><p class="note" id="payHow"></p><button class="btn" id="payWa">Pay - WhatsApp Michael Kaspersen</button><button class="btn sec" id="payCheck">I've paid - check again</button><button class="btn sec" id="payClose">Not now</button><p class="note" id="payMsg" style="text-align:center"></p></div></div>
 <main id="log"></main>
 <div id="attach"><div id="attachList"></div><span class="note" id="attachNote">1 photo</span><button id="attachMore" title="Add another photo">＋</button><button id="attachX" title="Remove all">✕</button></div>
 <div class="camMenu" id="camMenu"><button id="camTake">📷 Take a photo</button><button id="camPick">🖼 Choose from gallery</button></div>
@@ -77,7 +85,7 @@ textarea:focus{border-color:var(--accent)}
 
 <div class="sheet" id="welcome"><div class="card">
   <h3 id="wTitle">Welcome to Kaspersen 👋</h3>
-  <p class="note" id="wIntro">Kaspersen works with your free Skillvaya account, the same one you use for Future Chat. Future Chat lets her call and message for free over Wi-Fi or data.</p>
+  <p class="note" id="wIntro">Create your Kaspersen account (or sign in). The same login also works for Future Chat, which lets her call and message for free over Wi-Fi or data. New accounts get 3 free test tasks.</p>
   <div id="wAuth">
     <div class="tabs"><button id="wTabIn" class="on">I have an account</button><button id="wTabUp">Create account</button></div>
     <div id="wUpOnly" style="display:none"><label class="note">Your name</label><input type="text" id="wName" autocomplete="name">
@@ -109,7 +117,7 @@ textarea:focus{border-color:var(--accent)}
   <div id="sessList"></div>
   <h3 style="margin-top:14px">Account &amp; voice</h3>
   <div id="provList"></div>
-  <p class="note">Kaspersen runs on your Skillvaya account. Your own AI keys below are optional and stay only on this phone.</p>
+  <p class="note">Kaspersen runs on your Kaspersen account. Your own AI keys below are optional and stay only on this phone.</p>
   <label class="note">Kaspersen's voice</label><select id="setVoice" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;margin:4px 0 6px">
     <option value="en-US-JennyNeural">Jenny - warm, natural (like on the PC)</option>
     <option value="en-US-AriaNeural">Aria - bright, natural</option>
@@ -188,6 +196,50 @@ function providers() {
   return list.filter(p => p.key);
 }
 const cooldown = {};
+// SUBS-20261103: Kaspersen is R150 a month. New accounts get 3 free test tasks; the server enforces it.
+let taskStart = false, SUB = LS.get('sub', null);
+function payUrl() {
+  const u = ACCT.user(), num = (SUB && SUB.pay_contact) || '27837874569';
+  const t = 'Hi Michael, I would like to pay ' + ((SUB && SUB.price) || 'R150') + ' for my Kaspersen subscription. My Kaspersen account: ' + (u.email || u.name || '') + '.';
+  return 'https://wa.me/' + num + '?text=' + encodeURIComponent(t);
+}
+function paintPlan() {
+  const bar = $('#plan'); if (!bar) return;
+  const s = SUB;
+  if (!s || s.unlimited || !ACCT.tok) { bar.classList.remove('on'); return; }
+  let t = '';
+  if (s.subscribed) {
+    const days = Math.round((new Date(s.paid_until + 'T23:59:00+02:00') - Date.now()) / 864e5);
+    if (days > 5) { bar.classList.remove('on'); return; }
+    t = 'Your Kaspersen month ends ' + (days <= 0 ? 'today' : days === 1 ? 'tomorrow' : 'in ' + days + ' days') + ' (' + s.paid_until + '). Pay to keep going.';
+  } else if (s.paid_until) t = 'Your Kaspersen month ended on ' + s.paid_until + '. ' + s.price + ' a month to switch me back on.';
+  else if (s.trial_left > 0) t = 'Free trial: ' + s.trial_left + ' of ' + s.trial_tasks + ' test tasks left. Then ' + s.price + ' a month.';
+  else t = 'Your 3 free test tasks are used. ' + s.price + ' a month to keep using Kaspersen.';
+  $('#planTxt').textContent = t; bar.classList.add('on');
+}
+async function refreshSub() {
+  if (!ACCT.tok) return null;
+  const r = await siteApi('/api/kai/status');
+  if (r.status === 200 && r.j.sub) {
+    const was = SUB; SUB = r.j.sub; LS.set('sub', SUB); paintPlan();
+    if (was && !was.subscribed && SUB.subscribed && !SUB.unlimited) showError('Payment confirmed - Kaspersen is switched on until ' + SUB.paid_until + '. Thank you!');
+    // first open: tell a new customer about the free test tasks
+    if (!SUB.unlimited && !SUB.subscribed && !SUB.paid_until && SUB.trial_left === SUB.trial_tasks && !LS.get('trial_hello', false)) {
+      LS.set('trial_hello', true);
+      history.push({role: 'assistant', content: 'Welcome! I\'m **Kaspersen**, your assistant. You can try me with **' + SUB.trial_tasks + ' free test tasks** - ask me anything, or let me do something on your phone for you. After that, Kaspersen is **' + SUB.price + ' a month**. What shall we do first?'});
+      saveHistory(); render();
+    }
+  }
+  return SUB;
+}
+function openPay(why) {
+  $('#payWhy').textContent = why || '';
+  $('#payPrice').textContent = ((SUB && SUB.price) || 'R150') + ' / month';
+  $('#payHow').textContent = (SUB && SUB.pay_how) || 'Tap Pay to WhatsApp Michael Kaspersen for the payment details. As soon as he confirms your payment, I\'m switched on for the month.';
+  $('#payMsg').textContent = '';
+  $('#paySheet').classList.add('open');
+}
+function paywallError(j) { const e = new Error((j && (j.message || j.error)) || 'Kaspersen needs a subscription.'); e.paywall = true; return e; }
 
 // ---------- memory & persona ----------
 const OWNER = (hasNative && typeof Native.ownerName === 'function') ? (Native.ownerName() || '') : '';
@@ -503,6 +555,11 @@ async function pcJob(kind, args, waitS) {
   }
   return {ok: false, error: 'The PC did not answer in time. It may be busy, asleep or offline.'};
 }
+// SUBS-20261103: owner only - switch a customer's Kaspersen on after they pay, and see all customers.
+const OWNER_SUB_TOOLS = [
+  ['customer_paid', 'OWNER ONLY. When he says a customer paid for Kaspersen (e.g. "Thabo paid", "0825551234 paid for 2 months"), switch them on: who = their email, phone number or full name; months = how many months they paid (default 1, each adds 30 days on top of any time left). months 0 switches them OFF now. Confirm back the name and the date their month ends.', {who: {type: 'string'}, months: {type: 'integer'}, note: {type: 'string'}}, ['who']],
+  ['customers_list', 'OWNER ONLY. List Kaspersen customers: who is paid up and until when, who is still on the free test tasks, and who has run out.', {}, []],
+].map(([name, description, props, req]) => ({type: 'function', function: {name, description, parameters: {type: 'object', properties: props, required: req}}}));
 const PC_TOOLS = [
   ['pc_status', 'Check that his PC is online and reachable (PC name, user, time).', {}, []],
   ['pc_run', 'Run a PowerShell command on his Windows PC (like Desktop Commander) and get the output. Use for anything: files, folders, git, python scripts, installs, system info. Set shell "cmd" for cmd.exe. Long jobs: Start-Process them in the background.', {command: {type: 'string'}, timeout: {type: 'number', description: 'seconds, default 60, max 600'}, cwd: {type: 'string'}, shell: {type: 'string', enum: ['powershell', 'cmd']}}, ['command']],
@@ -520,6 +577,9 @@ const PC_TOOLS = [
   ['pc_done', 'Finished using his PC screen (hides the Stop button on the PC).', {summary: {type: 'string'}}, []],
 ].map(([name, description, props, req]) => ({type: 'function', function: {name, description, parameters: {type: 'object', properties: props, required: req}}}));
 let pcToolsOn = false;
+PHONE.customer_paid = async a => { const r = await siteApi('/api/kai/subs', {who: a.who || '', months: a.months === undefined ? 1 : +a.months, note: a.note || ''}); return r.status === 200 ? r.j : {ok: false, error: r.j.error || 'Could not update the customer.'}; };
+PHONE.customers_list = async () => { const r = await siteApi('/api/kai/subs'); return r.status === 200 ? r.j : {ok: false, error: r.j.error || 'Could not load customers.'}; };
+if (OWNER) TOOLS.push(...OWNER_SUB_TOOLS);
 function enablePcTools() { if (!pcToolsOn) { TOOLS.push(...PC_TOOLS); pcToolsOn = true; } }
 if (OWNER || LS.get('pc_linked', false)) enablePcTools();
 async function refreshPc() {
@@ -561,6 +621,7 @@ async function callModel(messages, useTools, quiet) {
     for (const tools of (useTools ? [true, false] : [false])) {
       const body = {model: p.model, messages: messages.map(m => { const o = {}; for (const k in m) if (k[0] !== '_') o[k] = m[k]; return o; }), temperature: 0.6, max_tokens: 8000};
       if (tools) { body.tools = TOOLS; body.tool_choice = 'auto'; }
+      if (p.cloud && taskStart) body.new_task = true;
       if (!quiet) setStatus('Thinking… (' + p.name + ')');
       let r = null;   // STALL-20261103: dropped connection / server restart -> try again, up to 3 times
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -575,8 +636,12 @@ async function callModel(messages, useTools, quiet) {
         showWelcome(r.status === 403 ? 'verify' : '');
         throw new Error(r.status === 401 ? 'Please sign in to keep using Kaspersen.' : 'Please confirm your mobile number first.');
       }
+      if (p.cloud && r.status === 402 && j && j.paywall) throw paywallError(j);
       if (p.cloud && r.status === 429) throw new Error((j && j.error) || "You've reached today's limit.");
-      if (r.status === 200 && j && j.choices && j.choices[0]) { if (!quiet) setStatus('GLM-5.3 · 320B via ' + p.name); return j.choices[0].message || {}; }
+      if (r.status === 200 && j && j.choices && j.choices[0]) {
+        if (p.cloud) { taskStart = false; if (typeof j.trial_left === 'number' && SUB) { SUB.trial_left = j.trial_left; LS.set('sub', SUB); paintPlan(); } }
+        if (!quiet) setStatus('GLM-5.3 · 320B via ' + p.name); return j.choices[0].message || {};
+      }
       const msg = (j && j.error && (j.error.message || j.error)) || r.error || ('HTTP ' + r.status);
       lastErr = p.name + ': ' + String(msg).slice(0, 160);
       if (r.status === 400 && tools && /tool|function/i.test(String(msg))) continue; // retry this provider without tools
@@ -842,7 +907,7 @@ function contextStart() {   // how much of this conversation is sent word for wo
 function trimmed() { return history.slice(contextStart()).map(m => ({role: m.role, content: m.content})); }
 async function ask(text) {
   if (busy || (!text.trim() && !pendingImages.length)) return;
-  busy = true; stopAsked = false; setSendMode(true); if (hasNative && Native.workStart) Native.workStart();
+  busy = true; stopAsked = false; taskStart = true; setSendMode(true); if (hasNative && Native.workStart) Native.workStart();
   const imgs = pendingImages.slice(); clearAttach(); const img = imgs[0] || '';
   history.push(img ? Object.assign({role: 'user', content: text.trim() || (imgs.length > 1 ? 'What do you see in these?' : 'What do you see?'), image: img}, imgs.length > 1 ? {more: imgs.slice(1)} : {}) : {role: 'user', content: text.trim()});
   saveHistory();
@@ -919,9 +984,13 @@ async function ask(text) {
     history.push(entry); saveHistory(); MEM.afterAnswer(history);
     if ((LS.get('speak', true) || handsFree) && hasNative) Native.speak(plain(answer)); else if (handsFree) setTimeout(listenAgain, 400);
   } catch (e) {
-    failMsg = e.message || String(e);
+    if (e && e.paywall) {
+      history.push({role: 'assistant', content: e.message}); saveHistory();
+      if (hasNative && LS.get('speak', true)) Native.speak(plain(e.message.split('. Tap')[0]));
+      refreshSub(); setTimeout(() => openPay(e.message.split(' I\'m sorry')[0]), 300);
+    } else failMsg = e.message || String(e);
   } finally {
-    ind.remove(); busy = false; setSendMode(false); if (hasNative && Native.workEnd) Native.workEnd(); render();
+    ind.remove(); busy = false; taskStart = false; setSendMode(false); if (hasNative && Native.workEnd) Native.workEnd(); render();
     if (failMsg && !stopAsked) { showError('Kaspersen could not answer: ' + failMsg); if (hasNative && LS.get('speak', true)) Native.speak('Sorry, I could not answer that. ' + failMsg.split(' - ')[0]); }
     if (usedControl && hasNative) { if (stopAsked) { usedApps.clear(); Native.controlDone(); } else finishPhone(); }
   }
@@ -1038,7 +1107,7 @@ function openSettings() {
   setTimeout(() => {
     const so = $('#signOut'); if (so) so.onclick = () => { ACCT.clear(); $('#sheet').classList.remove('open'); showWelcome(''); };
     const si = $('#signIn'); if (si) si.onclick = () => { $('#sheet').classList.remove('open'); showWelcome(''); };
-    if (ACCT.tok) siteApi('/api/kai/status').then(r => { const u = $('#usage'); if (u && r.status === 200) u.textContent = r.j.unlimited ? 'Unlimited use' : (r.j.used_today + ' of ' + r.j.daily_limit + ' requests used today'); });
+    if (ACCT.tok) refreshSub().then(sb => { const u = $('#usage'); if (!u || !sb) return; u.textContent = sb.unlimited ? 'Owner - unlimited use' : sb.subscribed ? 'Subscribed until ' + sb.paid_until : sb.paid_until ? 'Subscription ended ' + sb.paid_until + ' - tap Pay above' : (sb.trial_left + ' of ' + sb.trial_tasks + ' free test tasks left'); });
   }, 0);
   const ctlOn = hasNative && Native.controlOn();
   $('#provList').innerHTML += '<div class="row"><b>Phone control</b><span class="' + (ctlOn ? 'ok' : 'no') + '">' + (ctlOn ? 'On' : 'Off') + '</span></div>' +
@@ -1121,7 +1190,7 @@ async function welcomeDone() {
   $('#welcome').classList.remove('open');
   const u = ACCT.user();
   if (!OWNER && !userName() && u.name) LS.set('name', u.name.split(' ')[0]);
-  setStatus('GLM-5.3 · 320B'); render();
+  setStatus('GLM-5.3 · 320B'); render(); refreshSub();
 }
 $('#wTabIn').onclick = () => wTab('in');
 $('#wTabUp').onclick = () => wTab('up');
@@ -1129,7 +1198,7 @@ $('#wTermsLink').onclick = e => { e.preventDefault(); if (hasNative && Native.op
 $('#wOwnKey').onclick = e => { e.preventDefault(); $('#welcome').classList.remove('open'); openSettings(); };
 $('#wGo').onclick = async () => {
   const email = $('#wEmail').value.trim(), pw = $('#wPass').value;
-  if (!$('#wTerms').checked) return wMsg('Please tick that you accept the Skillvaya terms.', true);
+  if (!$('#wTerms').checked) return wMsg('Please tick that you accept the terms.', true);
   if (!email.includes('@') || pw.length < 8) return wMsg('Enter your email and a password of 8+ characters.', true);
   let r;
   $('#wGo').disabled = true; wMsg(wMode === 'up' ? 'Creating your account… (the first time can take up to a minute)' : 'Signing in… (the first time can take up to a minute)');
@@ -1155,8 +1224,13 @@ $('#wConfirm').onclick = async () => {
   wMsg(r.j.error || 'That code didn\'t work.', true);
 };
 
-window.onBack = () => { if ($('#welcome').classList.contains('open')) { if (hasNative) Native.exitApp(); return; } if ($('#camMenu').classList.contains('on')) $('#camMenu').classList.remove('on'); else if ($('#sheet').classList.contains('open')) $('#sheet').classList.remove('open'); else if (hasNative) Native.exitApp(); };
-paintSpeak(); render();
+window.onBack = () => { if ($('#paySheet').classList.contains('open')) { $('#paySheet').classList.remove('open'); return; } if ($('#welcome').classList.contains('open')) { if (hasNative) Native.exitApp(); return; } if ($('#camMenu').classList.contains('on')) $('#camMenu').classList.remove('on'); else if ($('#sheet').classList.contains('open')) $('#sheet').classList.remove('open'); else if (hasNative) Native.exitApp(); };
+$('#planPay').onclick = () => openPay('');
+$('#payWa').onclick = () => { act('open_url', {url: payUrl()}); $('#payMsg').textContent = 'Opening WhatsApp... When Michael confirms, tap "I\'ve paid - check again".'; };
+$('#payCheck').onclick = async () => { $('#payMsg').textContent = 'Checking...'; const sb = await refreshSub(); $('#payMsg').textContent = sb && sb.subscribed ? 'You\'re switched on until ' + sb.paid_until + '. Thank you!' : 'Not switched on yet - Michael will switch you on as soon as he confirms your payment.'; if (sb && sb.subscribed) setTimeout(() => $('#paySheet').classList.remove('open'), 1500); };
+$('#payClose').onclick = () => $('#paySheet').classList.remove('open');
+paintSpeak(); render(); paintPlan();
+if (ACCT.tok) refreshSub();
 if (!providers().length) showWelcome('');
 else if (ACCT.tok && hasNative && Native.setSiteLogin) Native.setSiteLogin(ACCT.tok, JSON.stringify(ACCT.user()));
 if (ACCT.tok) refreshPc();
