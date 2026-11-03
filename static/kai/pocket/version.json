@@ -1,9 +1,9 @@
 {
- "ui": 2026110308,
- "ui_sha256": "14004ccc2c173508a5cb4d9276edcc8399002112a1a4d3db10cead15d6b73532",
+ "ui": 2026110309,
+ "ui_sha256": "78198144c49595259f6d98bcf22bfbdaf192046a29c755d89a6924a5ebaf868b",
  "apk_version_code": 11,
  "apk_version": "1.8",
  "apk_url": "/downloads/Kaspersen-Pocket.apk",
  "apk_sha256": "079e4cbd0cbd6e8b175831350b470a0993980004bb6b215302057f6900b04331",
- "notes": "Owner mode needs the owner's account; anyone else is a customer"
+ "notes": "Real moving characters (flipbook frames on the PC); busy PC is not an offline PC; interruptions understood"
 }
