@@ -719,7 +719,7 @@ public class MainActivity extends Activity {
             byte[] bytes = head.contains(";base64") ? android.util.Base64.decode(dataUrl.substring(comma + 1), android.util.Base64.DEFAULT)
                     : Uri.decode(dataUrl.substring(comma + 1)).getBytes(java.nio.charset.StandardCharsets.UTF_8);
             String name = (fileName == null || fileName.trim().isEmpty() || fileName.endsWith(".bin")) ? "Skillvaya-file" : fileName.trim();
-            if (Build.VERSION.SDK_INT >= 29) {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
                 android.content.ContentValues v = new android.content.ContentValues();
                 v.put(MediaStore.Downloads.DISPLAY_NAME, name);
                 v.put(MediaStore.Downloads.MIME_TYPE, mime);
