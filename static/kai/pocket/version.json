@@ -1,9 +1,9 @@
 {
- "ui": 2026110304,
- "ui_sha256": "c2d4139bade8dc075ead8c8acaeced18f68f66aa32c9c2563132beb4cc212b15",
+ "ui": 2026110305,
+ "ui_sha256": "175e4748d1c4225e54f79bc8cb6a89536a60da2eb2de9ee8694f4af14c5b9b6e",
  "apk_version_code": 11,
  "apk_version": "1.8",
  "apk_url": "/downloads/Kaspersen-Pocket.apk",
  "apk_sha256": "079e4cbd0cbd6e8b175831350b470a0993980004bb6b215302057f6900b04331",
- "notes": "Numbered buttons on screenshots so taps never miss; never asks you to do chores"
+ "notes": "Smarter stuck-check: only nudges when an action changes nothing 3 times; never stops a job"
 }

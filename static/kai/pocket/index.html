@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110304">
+<meta name="kp-ui" content="2026110305">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -857,6 +857,10 @@ async function ask(text) {
     let answer = '', lastProblem = '', lastStep = '', roundsUsed = 0;
     let maxRounds = 40;   // STEPS-20261102
     const recentActs = []; let loopWarnings = 0;
+    // LOOP-20261103: she is only 'stuck' when the SAME action leaves the screen EXACTLY the same 3 times in a row.
+    // Repeating an action that makes progress (scrolling a list, pressing Back through screens) is normal work. Never stops the job.
+    let lastFp = '', lastSig = '', sameNoChange = 0;
+    const screenFp = sc => { try { const t = (sc.app || '') + '|' + JSON.stringify(sc.elements || []); let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return h + ':' + t.length; } catch (_) { return ''; } };
     for (let round = 0; round < maxRounds; round++) {
       roundsUsed = round + 1;
       if (stopAsked) break;
@@ -867,16 +871,6 @@ async function ask(text) {
       working.push({role: 'assistant', content: msg.content || '', tool_calls: calls});
       for (const c of calls) {
         let args = {}; try { args = JSON.parse(c.function.arguments || '{}'); } catch (_) {}
-        if (!/^(phone_screen|phone_look|pc_read_screen|pc_screenshot|phone_wait|pc_status|recall)$/.test(c.function.name)) {
-          const sig = c.function.name + JSON.stringify(args); recentActs.push(sig); if (recentActs.length > 10) recentActs.shift();
-          if (recentActs.filter(x => x === sig).length >= 3) {
-            recentActs.length = 0; loopWarnings++;
-            working.push({role: 'system', content: loopWarnings === 1
-              ? 'You are REPEATING the same action (' + (PHONE_LABEL[c.function.name] || c.function.name) + ') without getting anywhere. Stop. Read the whole screen carefully (scroll for Save/Done/Next), think about why it did not work, and try a DIFFERENT approach.'
-              : 'You are stuck in a loop again. Do not try any more actions: finish now and tell the user exactly which screen you are on, what you tried and what is blocking you.'});
-            if (loopWarnings >= 2) maxRounds = Math.min(maxRounds, round + 2);
-          }
-        }
         let result;
         if (c.function.name === 'web_search') { ind.set('Searching: ' + (args.query || '')); const r = await webSearch(args.query || ''); result = r.length ? r : {note: 'No results'}; }
         else if (c.function.name === 'read_page') { ind.set('Reading ' + hostOf(args.url)); result = await readPage(args.url || ''); if (result.text) sources.push({title: result.title || hostOf(result.url), url: result.url}); }
@@ -897,6 +891,12 @@ async function ask(text) {
         const tm = {role: 'tool', tool_call_id: c.id, content: JSON.stringify(result).slice(0, 9000)};
         if (/^(phone_screen|pc_read_screen)$/.test(c.function.name) || (result && result.screen_now)) tm._screen = true;
         working.push(tm);
+        if (result && result.screen_now) {
+          const fp = screenFp(result.screen_now), sig = c.function.name + JSON.stringify(args);
+          if (fp && fp === lastFp && sig === lastSig) sameNoChange++; else sameNoChange = 0;
+          lastFp = fp; lastSig = sig;
+          if (sameNoChange >= 2) { sameNoChange = 0; working.push({role: 'system', content: 'Note: that exact action has now changed nothing on the screen 3 times. Try a different way - another button, scroll to find it, phone_look to see the numbered boxes, or a direct route - then carry on with the job.'}); }
+        }
         if (stopAsked) break;
       }
       while (pendingShots.length) working.push(pendingShots.shift());
