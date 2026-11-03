@@ -635,7 +635,10 @@ def handle_get(h, path):
         j = PC["jobs"].get(jid)
         if not j or j["owner"] != int(u["id"]):
             return h.sendj({"error": "No such job."}, 404)
-        return h.sendj({"status": j["status"], "result": j["result"]})
+        # BUSY-20261103: say whether the PC is still checking in, so a long job reads as "busy", never "asleep"
+        seen = PC["seen"].get(j.get("device") or "", 0) or max([PC["seen"].get(x, 0) for x in PC["seen"]] or [0])
+        return h.sendj({"status": j["status"], "result": j["result"], "pc_online": time.time() - seen < 60,
+                        "running_for": int(time.time() - j.get("created", time.time()))})
     if path == "/api/kai/subs":
         return _subs(h, None)
     if path == "/api/kai/proofs":
