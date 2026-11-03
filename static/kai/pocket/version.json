@@ -1,9 +1,9 @@
 {
- "ui": 2026110307,
- "ui_sha256": "8405f1b281322ac2feb9ddacf4dbc2d63776347125a0415a571c5d7004efee88",
+ "ui": 2026110308,
+ "ui_sha256": "14004ccc2c173508a5cb4d9276edcc8399002112a1a4d3db10cead15d6b73532",
  "apk_version_code": 11,
  "apk_version": "1.8",
  "apk_url": "/downloads/Kaspersen-Pocket.apk",
  "apk_sha256": "079e4cbd0cbd6e8b175831350b470a0993980004bb6b215302057f6900b04331",
- "notes": "Send proof of payment to Kaspersen - she checks it and switches on"
+ "notes": "Owner mode needs the owner's account; anyone else is a customer"
 }
