@@ -695,6 +695,10 @@ def handle_post(h, path, d):
         return h.sendj({"error": "Confirm your mobile number for Future Chat to use Kaspersen.", "verify_phone": True}, 403)
     used, _t, total = _usage(uid, day)
     new_task = bool(d.get("new_task"))
+    # WATCH-20261104: the 24/7 assistant's background checks (emails, appointments) are for paying
+    # accounts and the owner only - they never use up a customer's free test tasks.
+    if d.pop("background", False) and not unl and _sub_row(uid)["paid_until"] < day:
+        return h.sendj({"error": "The 24/7 assistant is part of the paid month.", "paywall": True, "background": True}, 402)
     blk = _paywall(uid, unl, new_task)
     if blk:
         return h.sendj(*blk)
