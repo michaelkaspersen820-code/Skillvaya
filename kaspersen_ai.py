@@ -602,6 +602,7 @@ def _pc_post(h, path, d):
             ok = bool(j and j.get("device") == dev)
             if ok:
                 j["status"] = "done"; j["result"] = data.get("result")
+                PC["cv"].notify_all()   # SPEED-20261104: wake the phone waiting on this result
         return h.sendj({"ok": ok})
     return h.sendj({"error": "Not found"}, 404)
 
@@ -643,6 +644,17 @@ def handle_get(h, path):
         j = PC["jobs"].get(jid)
         if not j or j["owner"] != int(u["id"]):
             return h.sendj({"error": "No such job."}, 404)
+        # SPEED-20261104: ?wait=N holds the answer until the PC reports the result (max 20 s), so the phone hears
+        # back the instant a click/type finishes instead of polling every 0.9 s.
+        try:
+            wait = min(20.0, float((urllib.parse.parse_qs(urllib.parse.urlparse(h.path).query).get("wait") or ["0"])[0]))
+        except ValueError:
+            wait = 0
+        if wait > 0 and j["status"] != "done":
+            deadline = time.time() + wait
+            with PC["cv"]:
+                while j["status"] != "done" and time.time() < deadline:
+                    PC["cv"].wait(max(0.05, deadline - time.time()))
         # BUSY-20261103: say whether the PC is still checking in, so a long job reads as "busy", never "asleep"
         seen = PC["seen"].get(j.get("device") or "", 0) or max([PC["seen"].get(x, 0) for x in PC["seen"]] or [0])
         return h.sendj({"status": j["status"], "result": j["result"], "pc_online": time.time() - seen < 60,
