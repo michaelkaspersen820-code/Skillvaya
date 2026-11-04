@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110412">
+<meta name="kp-ui" content="2026110413">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -35,7 +35,8 @@ header{display:flex;align-items:center;gap:4px;padding:10px 8px;border-bottom:1p
 #paySheet .btn{width:100%;margin-top:10px}
 .hello{margin:auto;text-align:center;color:var(--dim);padding:20px;max-width:340px}.hello b{color:var(--text);font-size:20px;display:block;margin-bottom:6px}
 .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px}.chips button{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:999px;padding:8px 12px;font-size:13.5px}
-footer{padding:8px 10px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);display:flex;gap:8px;align-items:flex-end;background:var(--bg)}
+footer{padding:8px 10px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;background:var(--bg)}
+#aiNote{flex-basis:100%;margin:-3px 0 -4px;text-align:center;font-size:10px;font-weight:300;letter-spacing:.1px;line-height:1.2;color:#8a8f98;opacity:.75}
 textarea{flex:1;resize:none;max-height:140px;min-height:44px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:22px;padding:11px 15px;font:inherit;outline:none}
 textarea:focus{border-color:var(--accent)}
 .round{width:46px;height:46px;border-radius:50%;border:0;display:grid;place-items:center;font-size:20px;flex:none}
@@ -81,6 +82,7 @@ textarea:focus{border-color:var(--accent)}
   <button class="round" id="mic" title="Talk">🎤</button>
   <textarea id="input" rows="1" placeholder="Talk to Kaspersen…"></textarea>
   <button class="round" id="send" title="Send">➤</button>
+  <div id="aiNote">Kaspersen is an AI and can make mistakes.</div>
 </footer>
 
 <div class="sheet" id="welcome"><div class="card">
@@ -1447,6 +1449,7 @@ $('#payWa').onclick = () => { act('open_url', {url: payUrl()}); $('#payMsg').tex
 $('#payCheck').onclick = async () => { $('#payMsg').textContent = 'Checking...'; const sb = await refreshSub(); $('#payMsg').textContent = sb && sb.subscribed ? 'You\'re switched on until ' + sb.paid_until + '. Thank you!' : 'Not switched on yet - Michael will switch you on as soon as he confirms your payment.'; if (sb && sb.subscribed) setTimeout(() => $('#paySheet').classList.remove('open'), 1500); };
 $('#payClose').onclick = () => $('#paySheet').classList.remove('open');
 paintSpeak(); render(); paintPlan();
+try { if (OWNER) $('#aiNote').remove(); } catch (_) {}   // AINOTE-20261104: small "AI can make mistakes" line for customers only
 if (ACCT.tok) refreshSub();
 if (!providers().length) showWelcome('');
 else if (ACCT.tok && hasNative && Native.setSiteLogin) Native.setSiteLogin(ACCT.tok, JSON.stringify(ACCT.user()));
