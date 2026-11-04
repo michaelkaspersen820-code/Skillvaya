@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110405">
+<meta name="kp-ui" content="2026110406">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -967,6 +967,27 @@ function contextStart() {   // how much of this conversation is sent word for wo
   return 0;
 }
 function trimmed() { return history.slice(contextStart()).map(m => ({role: m.role, content: m.content})); }
+// ADDWHILE-20261104: talk to her while she works (like talking to a real assistant who is busy). The message shows
+// in the chat at once and she reads it at her very next step - she does NOT stop; she folds it into the job,
+// changes course if it changes the job, and answers any question in it. Stop is only when the box is empty.
+let ADDED = [];
+function addWhileBusy(text) {
+  const imgs = pendingImages.slice(); clearAttach();
+  const t = (text || '').trim() || (imgs.length ? 'Here is a picture for what you are doing.' : ''); if (!t) return;
+  history.push(imgs[0] ? {role: 'user', content: t, image: imgs[0]} : {role: 'user', content: t}); saveHistory(); render();
+  ADDED.push({text: t, imgs});
+  if (curInd) try { curInd.set('Got it - adding that in…'); } catch (_) {}
+  setSendMode(true);
+}
+function takeAdded(working) {
+  if (!ADDED.length) return false;
+  const all = ADDED.splice(0);
+  for (const a of all) {
+    const body = 'NEW MESSAGE WHILE YOU WORK (he did not stop you): "' + a.text + '". Keep going with the job - fold this in now: if it adds something, add it; if it changes the job, change course; if it asks a question, answer it in your reply. Do not start over and do not stop.';
+    working.push({role: 'user', content: a.imgs.length ? [{type: 'text', text: body}].concat(a.imgs.map(b => ({type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + b}}))) : body});
+  }
+  return true;
+}
 async function ask(text) {
   if (busy || (!text.trim() && !pendingImages.length)) return;
   busy = true; stopAsked = false; taskStart = true; setSendMode(true); if (hasNative && Native.workStart) Native.workStart();
@@ -1003,9 +1024,11 @@ async function ask(text) {
     for (let round = 0; round < maxRounds; round++) {
       roundsUsed = round + 1;
       if (stopAsked) break;
+      if (takeAdded(working)) ind.set('Adding what you said…');
       const msg = await Promise.race([callModel(working, true), stopGate()]);
       if (stopAsked || msg.__stopped) break;
       const calls = msg.tool_calls || [];
+      if (!calls.length && ADDED.length) { working.push({role: 'assistant', content: msg.content || ''}); continue; }   // ADDWHILE: he added something just as she finished
       if (!calls.length) {
         const openJobs = JOBS.open();
         if (openJobs.length && nudges < 6 && !stopAsked) { nudges++; working.push({role: 'assistant', content: msg.content || ''}); working.push({role: 'system', content: 'You still have unfinished jobs on today\'s list: ' + openJobs.map(x => x.job).join('; ') + '. Do not stop - carry straight on with them now (mark each done with jobs_today when finished). Only stop if you truly need something only they can give, and then say exactly what.'}); continue; }
@@ -1069,6 +1092,8 @@ async function ask(text) {
     } else failMsg = e.message || String(e);
   } finally {
     ind.remove(); busy = false; taskStart = false; setSendMode(false); if (hasNative && Native.workEnd) Native.workEnd(); render();
+    // ADDWHILE: something he said arrived as she was finishing - take it up straight away (shown once in the chat)
+    if (ADDED.length) { const left = ADDED.splice(0), t = left.map(a => a.text).join('\n'); for (const a of left) { for (let i = history.length - 1; i >= 0; i--) if (history[i].role === 'user' && history[i].content === a.text) { history.splice(i, 1); break; } } if (left[0].imgs.length) pendingImages = left.flatMap(a => a.imgs); setTimeout(() => ask(t), 50); }
     if (failMsg && !stopAsked) { showError('Kaspersen could not answer: ' + failMsg); if (hasNative && LS.get('speak', true)) Native.speak('Sorry, I could not answer that. ' + failMsg.split(' - ')[0]); }
     if (usedControl && hasNative) { if (stopAsked) { usedApps.clear(); Native.controlDone(); } else finishPhone(); }
   }
@@ -1163,12 +1188,14 @@ function listenAgain() { if (handsFree && !busy && hasNative) { $('#mic').classL
 window.onSpokenDone = () => { if (handsFree) setTimeout(listenAgain, 350); };
 $('#handsBtn').onclick = () => { handsFree = !handsFree; $('#handsBtn').classList.toggle('on', handsFree); setStatus(handsFree ? 'Hands-free: just talk' : 'GLM-5.3 · 320B'); if (handsFree) listenAgain(); else if (hasNative) Native.stopSpeaking(); };
 const input = $('#input');
-input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(140, input.scrollHeight) + 'px'; });
-$('#send').onclick = () => { if (busy) { stopWork(); return; } if ($('#mic').classList.contains('on') && hasNative) { startListen(); return; }   // NPFIX-20261102
+input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(140, input.scrollHeight) + 'px';
+  // ADDWHILE-20261104: while she works, typing turns Stop back into Send - the message is added to her job, not a stop
+  if (busy) { const b = $('#send'), has = !!input.value.trim(); if (!b.dataset.stopIcon || !has && b.textContent === SEND_ICON) {} if (has) { if (b.textContent !== SEND_ICON) b.dataset.stopIcon = b.textContent; b.textContent = SEND_ICON; b.classList.remove('stop'); b.title = 'Add this to what she is doing'; } else if (b.dataset.stopIcon) { b.textContent = b.dataset.stopIcon; b.classList.add('stop'); b.title = 'Stop'; } } });
+$('#send').onclick = () => { if (busy) { const t0 = input.value.trim(); if (t0 || pendingImages.length) { input.value = ''; input.style.height = 'auto'; addWhileBusy(t0); } else stopWork(); return; } if ($('#mic').classList.contains('on') && hasNative) { startListen(); return; }   // NPFIX-20261102
   const t = input.value; input.value = ''; input.style.height = 'auto'; ask(t); };
 $('#mic').onclick = () => { if (!hasNative) return; Native.stopSpeaking(); $('#mic').classList.add('on'); startListen(); };
 window.onSpeechPartial = t => { input.value = t; input.style.height = 'auto'; input.style.height = Math.min(140, input.scrollHeight) + 'px'; };
-window.onSpeech = t => { $('#mic').classList.remove('on'); input.placeholder = 'Talk to Kaspersen…'; input.value = ''; input.style.height = 'auto'; if (!t && !handsFree) { showError("I didn't catch that - please try again, a little closer to the phone."); return; } if (t) ask(t); else if (handsFree) { handsFree = false; $('#handsBtn').classList.remove('on'); setStatus('Hands-free paused'); } };
+window.onSpeech = t => { $('#mic').classList.remove('on'); input.placeholder = 'Talk to Kaspersen…'; input.value = ''; input.style.height = 'auto'; if (!t && !handsFree) { showError("I didn't catch that - please try again, a little closer to the phone."); return; } if (t) { if (busy) addWhileBusy(t); else ask(t); } else if (handsFree) { handsFree = false; $('#handsBtn').classList.remove('on'); setStatus('Hands-free paused'); } };
 window.onSpeechError = t => { $('#mic').classList.remove('on'); input.placeholder = 'Talk to Kaspersen…'; showError(t); };
 function paintSpeak() { $('#speakBtn').textContent = LS.get('speak', true) ? '🔊' : '🔈'; }
 $('#speakBtn').onclick = () => { LS.set('speak', !LS.get('speak', true)); if (!LS.get('speak', true) && hasNative) Native.stopSpeaking(); paintSpeak(); };
