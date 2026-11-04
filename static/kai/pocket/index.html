@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110411">
+<meta name="kp-ui" content="2026110412">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -1014,8 +1014,28 @@ function addWhileBusy(text) {
   ADDED.push({text: t, imgs});
   if (curInd) try { curInd.set('Got it - adding that in…'); } catch (_) {}
   setSendMode(true);
+  quickReply(t);
+}
+// TALKWHILE-20261104: like a person who is busy - she answers him RIGHT AWAY in a sentence or two (shown + spoken)
+// while the job keeps running in the background. The job itself also gets the message and what she already said.
+let LIVEJOB = null; const SAID_MIDJOB = [];
+async function quickReply(t) {
+  try {
+    const recent = history.slice(-10).filter(m => typeof m.content === 'string' && m.content).map(m => ({role: m.role, content: m.content.slice(0, 700)}));
+    const job = LIVEJOB ? ' Your job: "' + String(LIVEJOB.task || '').slice(0, 300) + '"' + (LIVEJOB.lastStep ? ' - right now you are busy with: ' + LIVEJOB.lastStep : '') + '.' : '';
+    const sys = 'You are Kaspersen, his assistant. You are IN THE MIDDLE OF A JOB and you are NOT stopping.' + job +
+      ' He just said something to you while you work. Reply to him NOW in 1-2 short, natural spoken sentences, like a person who is busy but listening: ' +
+      'answer his question if he asked one; if he gave an instruction or extra detail, say exactly what you will change or add; then say you are carrying on. ' +
+      'No tools, no lists, do not repeat earlier messages, do not ask him to wait or to repeat himself.';
+    const r = await callModel([{role: 'system', content: sys}].concat(recent), false, true);
+    const say = stripThink(r.content || '').trim(); if (!say) return;
+    SAID_MIDJOB.push(say);
+    history.push({role: 'assistant', content: say}); saveHistory(); render();
+    if (hasNative && (LS.get('speak', true) || handsFree)) Native.speak(plain(say));
+  } catch (_) {}
 }
 function takeAdded(working) {
+  while (SAID_MIDJOB.length) working.push({role: 'system', content: 'You already answered him while working: "' + SAID_MIDJOB.shift() + '". Keep to what you told him.'});
   if (!ADDED.length) return false;
   const all = ADDED.splice(0);
   for (const a of all) {
@@ -1078,9 +1098,21 @@ async function ask(text) {
     const repeatCount = new Map(), repeatNotes = [];
     working._jobStart = working.length;
     const screenFp = sc => { try { const t = (sc.app || '') + '|' + JSON.stringify(sc.elements || []); let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return h + ':' + t.length; } catch (_) { return ''; } };
+    // TALKWHILE-20261104: the live job is written down after every step, so (a) her quick replies know what she is doing,
+    // (b) a new version of this page can load BETWEEN two steps and she carries straight on, and (c) after a crash or
+    // a reopen, "carry on" continues it.
+    { const rj = RESUMING ? LS.get('resume_job', null) : null; LIVEJOB = {task: (rj && rj.task) || text.trim(), lastStep: '', big: BIGJOB}; }
+    const jobDone = () => { const done = []; for (let i = Math.max(0, working._jobStart); i < working.length; i++) for (const c of (working[i].tool_calls || [])) if (!/screen|look|status|wait/.test(c.function.name)) done.push(c.function.name.replace(/^phone_|^pc_/, '') + ' ' + String(c.function.arguments || '').slice(0, 70)); return done.slice(-25); };
     for (let round = 0; round < maxRounds; round++) {
       roundsUsed = round + 1;
       if (stopAsked) break;
+      if (round > 0) {
+        LIVEJOB.lastStep = lastStep; LIVEJOB.big = BIGJOB;
+        const cp = {task: String(LIVEJOB.task).slice(0, 1500), done: jobDone(), lastStep, problem: lastProblem || '', at: Date.now(), big: BIGJOB};
+        try { LS.set('live_job', cp); } catch (_) {}
+        try { if (!ADDED.length && hasNative && Native.uiUpdateReady && Native.uiUpdateReady()) {   // newer version is ready: switch now, between steps
+          cp.autoResume = true; LS.set('live_job', cp); ind.set('Updating myself - carrying straight on…'); Native.reloadUi(); await sleep(60000); } } catch (_) {}
+      }
       if (takeAdded(working)) ind.set('Adding what you said…');
       const msg = await Promise.race([callModel(working, true), stopGate()]);
       if (stopAsked || msg.__stopped) break;
@@ -1163,6 +1195,7 @@ async function ask(text) {
     } else failMsg = e.message || String(e);
   } finally {
     ind.remove(); busy = false; taskStart = false; setSendMode(false); if (hasNative && Native.workEnd) Native.workEnd(); render();
+    LIVEJOB = null; try { LS.set('live_job', null); } catch (_) {}   // TALKWHILE: job ended normally - nothing to pick up
     // ADDWHILE: something he said arrived as she was finishing - take it up straight away (shown once in the chat)
     if (ADDED.length) { const left = ADDED.splice(0), t = left.map(a => a.text).join('\n'); for (const a of left) { for (let i = history.length - 1; i >= 0; i--) if (history[i].role === 'user' && history[i].content === a.text) { history.splice(i, 1); break; } } if (left[0].imgs.length) pendingImages = left.flatMap(a => a.imgs); setTimeout(() => ask(t), 50); }
     if (failMsg && !stopAsked) { showError('Kaspersen could not answer: ' + failMsg); if (hasNative && LS.get('speak', true)) Native.speak('Sorry, I could not answer that. ' + failMsg.split(' - ')[0]); }
@@ -1233,8 +1266,12 @@ function render() {
 function addIndicator(text) {
   const d = document.createElement('div'); d.className = 'tools'; d.innerHTML = '<span class="dot"></span><span></span>';
   d.lastChild.textContent = text; $('#log').appendChild(d); $('#log').scrollTop = 1e9;
-  return {set(t) { d.lastChild.textContent = t; $('#log').scrollTop = 1e9; }, remove() { d.remove(); }};
+  return {el: d, set(t) { d.lastChild.textContent = t; $('#log').scrollTop = 1e9; }, remove() { d.remove(); }};
 }
+// TALKWHILE-20261104: redrawing the chat (e.g. when he adds a message mid-job) wiped her "working…" line, so it looked as
+// if she had stopped or frozen. Put it back under the newest message every time the chat is redrawn while she works.
+const renderBase = render;
+render = function () { renderBase(); try { if (busy && curInd && curInd.el && !curInd.el.isConnected) { $('#log').appendChild(curInd.el); $('#log').scrollTop = 1e9; } } catch (_) {} };
 function showError(t) { const d = document.createElement('div'); d.className = 'err'; d.textContent = t; $('#log').appendChild(d); $('#log').scrollTop = 1e9; }
 function setStatus(t) { $('#status').textContent = t; }
 
@@ -1257,7 +1294,7 @@ let handsFree = false;
 function phoneVoiceToday() { return LS.get('voice_phone_day', '') === new Date().toDateString(); }
 function startListen() { if (Native.listen2 && !phoneVoiceToday()) Native.listen2(LS.get('voice_mode', 'noise'), ACCT.tok || ''); else Native.listen(); }
 window.onSpeechStatus = t => { input.placeholder = t || 'Talk to Kaspersen…'; };
-function listenAgain() { if (handsFree && !busy && hasNative) { $('#mic').classList.add('on'); startListen(); } }
+function listenAgain() { if (handsFree && hasNative) { $('#mic').classList.add('on'); startListen(); } }   // TALKWHILE: hands-free keeps listening while she works
 window.onSpokenDone = () => { if (handsFree) setTimeout(listenAgain, 350); };
 $('#handsBtn').onclick = () => { handsFree = !handsFree; $('#handsBtn').classList.toggle('on', handsFree); setStatus(handsFree ? 'Hands-free: just talk' : 'GLM-5.3 · 320B'); if (handsFree) listenAgain(); else if (hasNative) Native.stopSpeaking(); };
 const input = $('#input');
@@ -1414,6 +1451,15 @@ if (ACCT.tok) refreshSub();
 if (!providers().length) showWelcome('');
 else if (ACCT.tok && hasNative && Native.setSiteLogin) Native.setSiteLogin(ACCT.tok, JSON.stringify(ACCT.user()));
 if (ACCT.tok) refreshPc();
+// TALKWHILE-20261104: a job that was running when the page reloaded (new version, crash, app reopened) is picked up again
+try {
+  const lj = LS.get('live_job', null);
+  if (lj && lj.task && Date.now() - lj.at < 12 * 3600 * 1000) {
+    LS.set('resume_job', {task: lj.task, done: lj.done || [], lastStep: lj.lastStep || '', problem: lj.problem || '', at: Date.now(), big: !!lj.big});
+    LS.set('live_job', null);
+    if (lj.autoResume && Date.now() - lj.at < 10 * 60 * 1000 && providers().length) setTimeout(() => { if (!busy) ask('carry on'); }, 3000);
+  }
+} catch (_) {}
 </script>
 </body>
 </html>
