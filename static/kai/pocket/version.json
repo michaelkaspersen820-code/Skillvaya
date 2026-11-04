@@ -1,9 +1,9 @@
 {
- "ui": 2026110401,
- "ui_sha256": "3f658fa5cfcbbe42b12d6012c6bd95659796283058b1b973b284211e93e41542",
+ "ui": 2026110402,
+ "ui_sha256": "a1460e9c50950848f5ced52b8e3de2f23f00c6e5a52f41146bbfae1d0f9dc3d7",
  "apk_version_code": 12,
  "apk_version": "1.9",
  "apk_url": "/downloads/Kaspersen-Pocket.apk",
  "apk_sha256": "5f809e3df5bf2e187449ec53540359509dbf2d103fb9590088d6809a278005b8",
- "notes": "Assistant mode: keeps working while other apps are open (no more pausing after sending), never re-checks a sent message, today's job list worked through without stopping, facts check (slideshow is not animation), shortest-route rule, faster taps/typing/settling and instant PC replies"
+ "notes": "Keeps her personality and chat exactly as before - the assistant rule only covers finishing jobs"
 }
