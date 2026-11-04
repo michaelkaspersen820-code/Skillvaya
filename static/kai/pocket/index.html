@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110406">
+<meta name="kp-ui" content="2026110407">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -1182,7 +1182,9 @@ $('#camTake').onclick = () => { $('#camMenu').classList.remove('on'); hasNative 
 $('#camPick').onclick = () => { $('#camMenu').classList.remove('on'); hasNative && Native.pickPhoto(); };
 let handsFree = false;
 // NOISEPROOF-20261102: noise-proof microphone by default (Settings > Microphone)
-function startListen() { if (Native.listen2) Native.listen2(LS.get('voice_mode', 'noise'), ACCT.tok || ''); else Native.listen(); }
+// VOICEFREE-20261104: when the server's voice credit runs out, the phone's own (free) speech recognition takes over for the day
+function phoneVoiceToday() { return LS.get('voice_phone_day', '') === new Date().toDateString(); }
+function startListen() { if (Native.listen2 && !phoneVoiceToday()) Native.listen2(LS.get('voice_mode', 'noise'), ACCT.tok || ''); else Native.listen(); }
 window.onSpeechStatus = t => { input.placeholder = t || 'Talk to Kaspersen…'; };
 function listenAgain() { if (handsFree && !busy && hasNative) { $('#mic').classList.add('on'); startListen(); } }
 window.onSpokenDone = () => { if (handsFree) setTimeout(listenAgain, 350); };
@@ -1196,7 +1198,8 @@ $('#send').onclick = () => { if (busy) { const t0 = input.value.trim(); if (t0 |
 $('#mic').onclick = () => { if (!hasNative) return; Native.stopSpeaking(); $('#mic').classList.add('on'); startListen(); };
 window.onSpeechPartial = t => { input.value = t; input.style.height = 'auto'; input.style.height = Math.min(140, input.scrollHeight) + 'px'; };
 window.onSpeech = t => { $('#mic').classList.remove('on'); input.placeholder = 'Talk to Kaspersen…'; input.value = ''; input.style.height = 'auto'; if (!t && !handsFree) { showError("I didn't catch that - please try again, a little closer to the phone."); return; } if (t) { if (busy) addWhileBusy(t); else ask(t); } else if (handsFree) { handsFree = false; $('#handsBtn').classList.remove('on'); setStatus('Hands-free paused'); } };
-window.onSpeechError = t => { $('#mic').classList.remove('on'); input.placeholder = 'Talk to Kaspersen…'; showError(t); };
+window.onSpeechError = t => { if (/credit|top it up/i.test(t || '') && hasNative && Native.listen && !phoneVoiceToday()) { LS.set('voice_phone_day', new Date().toDateString()); setStatus("Using the phone's own voice recognition"); $('#mic').classList.add('on'); Native.listen(); return; }
+  $('#mic').classList.remove('on'); input.placeholder = 'Talk to Kaspersen…'; showError(t); };
 function paintSpeak() { $('#speakBtn').textContent = LS.get('speak', true) ? '🔊' : '🔈'; }
 $('#speakBtn').onclick = () => { LS.set('speak', !LS.get('speak', true)); if (!LS.get('speak', true) && hasNative) Native.stopSpeaking(); paintSpeak(); };
 $('#newBtn').onclick = () => { if (busy) return; if (history.length && !confirmNew()) return; history = MEM.newSession(history); render(); };
