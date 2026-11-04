@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110407">
+<meta name="kp-ui" content="2026110408">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -568,6 +568,18 @@ function leanWorking(w) {
     if (m._shot && i !== lastShot) { m.content = '(older screenshot removed to save cost)'; m._trimmed = true; continue; }
     if (m.role === 'tool' && ++tools > 6 && typeof m.content === 'string' && m.content.length > 1500) { m.content = m.content.slice(0, 1500) + ' ...(trimmed)'; m._trimmed = true; }
   }
+  // TOKENDIET-20261104: on a long job the steps themselves pile up. When the job notes get big, fold everything but the
+  // last 10 messages into short notes IN ONE GO (one change, so the provider's cache still matches the unchanged start).
+  const size = w.reduce((s, m) => s + (typeof m.content === 'string' ? m.content.length : 3000) + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0);
+  if (size < 45000) return;
+  const first = w._jobStart; if (!(first >= 0)) return;
+  for (let i = first; i < w.length - 10; i++) {
+    const m = w[i]; if (m._folded) continue; m._folded = true;
+    if (m.role === 'tool') m.content = typeof m.content === 'string' ? m.content.slice(0, 220) + (m.content.length > 220 ? ' ...' : '') : '(picture)';
+    else if (m.tool_calls) { m.tool_calls = m.tool_calls.map(c => ({...c, function: {...c.function, arguments: (c.function.arguments || '').length > 240 ? JSON.stringify({summary: (c.function.arguments || '').slice(0, 200)}) : c.function.arguments}})); if (typeof m.content === 'string') m.content = m.content.slice(0, 300); }
+    else if (m.role === 'system' && typeof m.content === 'string' && m.content.length > 400) m.content = m.content.slice(0, 400) + ' ...';
+    else if (Array.isArray(m.content)) m.content = '(picture shown earlier)';
+  }
 }
 
 // ---------- his PC, from the phone (PCLINK-20261102) ----------
@@ -962,7 +974,7 @@ function contextStart() {   // how much of this conversation is sent word for wo
   let size = 0, n = 0;
   for (let i = history.length - 1; i >= 0; i--) {
     size += (history[i].content || '').length; n++;
-    if ((size > 150000 || n > 300) && n > 6) return i + 1;
+    if ((size > 24000 || n > 40) && n > 6) return i + 1;   // TOKENDIET-20261104: was 150000 chars on EVERY step; older talk stays searchable with recall / open_conversation
   }
   return 0;
 }
@@ -1020,6 +1032,10 @@ async function ask(text) {
     // LOOP-20261103: she is only 'stuck' when the SAME action leaves the screen EXACTLY the same 3 times in a row.
     // Repeating an action that makes progress (scrolling a list, pressing Back through screens) is normal work. Never stops the job.
     let lastFp = '', lastSig = '', sameNoChange = 0;
+    // TOKENDIET-20261104: the same action with the same input over and over (e.g. typing the same photo names into an
+    // upload box 10 times) burns money even when the screen flickers. 3rd time: change approach. 5th: stop that step and say why.
+    const repeatCount = new Map(), repeatNotes = [];
+    working._jobStart = working.length;
     const screenFp = sc => { try { const t = (sc.app || '') + '|' + JSON.stringify(sc.elements || []); let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return h + ':' + t.length; } catch (_) { return ''; } };
     for (let round = 0; round < maxRounds; round++) {
       roundsUsed = round + 1;
@@ -1054,6 +1070,9 @@ async function ask(text) {
         else result = {error: 'unknown tool'};
         if (result && (result.error || result.ok === false)) lastProblem = (PHONE_LABEL[c.function.name] || c.function.name).replace(/…$/, '') + ': ' + String(result.error || result.note || 'it did not work').slice(0, 220);
         lastStep = (PHONE_LABEL[c.function.name] || c.function.name).replace(/…$/, '');
+        if (!/screen|look|status|wait|jobs_today|recall/.test(c.function.name)) { const rk = c.function.name + '|' + JSON.stringify(args).slice(0, 400), n = (repeatCount.get(rk) || 0) + 1; repeatCount.set(rk, n);
+          if (n === 3) repeatNotes.push('You have now done exactly this ' + n + ' times (' + c.function.name + ' with the same input). It is not working - do NOT repeat it again. Use a different way: e.g. for photo uploads type ONE full path (C:\\\\...\\\\photo.jpg) in the file-name box and press Enter, or pick the file in the list; or skip the photos, finish the rest of the job, and tell him what needs his hand.');
+          if (n === 5) repeatNotes.push('STOP this step now (tried 5 times). Move on to the rest of the job and tell him in one line exactly what blocked this step.'); }
         const tm = {role: 'tool', tool_call_id: c.id, content: JSON.stringify(result).slice(0, 9000)};
         if (/^(phone_screen|pc_read_screen)$/.test(c.function.name) || (result && result.screen_now)) tm._screen = true;
         working.push(tm);
@@ -1066,6 +1085,7 @@ async function ask(text) {
         if (stopAsked) break;
       }
       while (pendingShots.length) working.push(pendingShots.shift());
+      while (repeatNotes.length) working.push({role: 'system', content: repeatNotes.shift()});
       leanWorking(working);
       if (round === maxRounds - 2) working.push({role: 'system', content: 'Finish now: call finish_phone_task if you were using other apps, then tell them what you did and where you got to. No more actions.'});
     }
