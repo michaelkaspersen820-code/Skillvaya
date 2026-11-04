@@ -312,7 +312,7 @@ def _proof(h, d):
         if any(w in st for w in ("pending", "fail", "declin", "cancel", "reject")): reasons.append("the payment shows as '%s'" % v.get("status_text"))
         if v.get("looks_edited"): reasons.append("parts of the screenshot look edited")
         # EFT-20261104: a proof only counts when it was paid to the owner's account (name or account number)
-    pay_to = (os.environ.get("KASPERSEN_PAY_TO", "").strip() or "kaspersen,1454116380,6380").lower()
+        pay_to = (os.environ.get("KASPERSEN_PAY_TO", "").strip() or "kaspersen,1454116380,6380").lower()
         if pay_to and not any(p.strip() and p.strip() in str(v.get("recipient") or "").lower() for p in pay_to.split(",")):
             reasons.append("I can't see that it was paid to Michael Kaspersen's account")
         if ref:
