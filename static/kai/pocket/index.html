@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110408">
+<meta name="kp-ui" content="2026110409">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -148,6 +148,19 @@ textarea:focus{border-color:var(--accent)}
 <script>
 'use strict';
 const $ = s => document.querySelector(s);
+// INSTANT-20261104: every button reacts the moment it is touched (no 300 ms tap delay, a visible press), and a
+// double/triple tap counts as ONE press - so Stop x3 or Update x3 never does the job three times.
+(function () {
+  const st = document.createElement('style');
+  st.textContent = 'button,.btn,[role=button]{touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:transform .06s,opacity .06s}button:active,.btn:active{transform:scale(.93);opacity:.7}button.busyTap{opacity:.55}';
+  document.head.appendChild(st);
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('button,.btn,[role=button]'); if (!b) return;
+    const now = Date.now();
+    if (b._lastTap && now - b._lastTap < 900) { e.stopImmediatePropagation(); e.preventDefault(); return; }
+    b._lastTap = now; b.classList.add('busyTap'); setTimeout(() => b.classList.remove('busyTap'), 250);
+  }, true);
+})();
 const LS = {get(k, d){try{const v=localStorage.getItem('kp_'+k);return v==null?d:JSON.parse(v)}catch(_){return d}}, set(k, v){try{localStorage.setItem('kp_'+k, JSON.stringify(v))}catch(_){}}};
 const hasNative = typeof window.Native !== 'undefined';
 
@@ -963,7 +976,9 @@ function showUpdateBar(o) {
 // STOP-20261103: while she works, the Send button becomes a Stop button
 let stopAsked = false, stopWake = null;
 function stopGate() { return new Promise(res => { stopWake = () => res({__stopped: true}); }); }
-function stopWork() { if (!busy) return; stopAsked = true; if (hasNative) { if (Native.stopNow) Native.stopNow(); if (Native.stopSpeaking) Native.stopSpeaking(); } if (stopWake) stopWake(); }
+function stopWork() { if (!busy || stopAsked) return; stopAsked = true;
+  try { const b = $('#send'); b.textContent = '…'; b.title = 'Stopping'; b.disabled = true; if (curInd) curInd.set('Stopping…'); } catch (_) {}   /* INSTANT: shows at once, and a 2nd/3rd Stop does nothing */
+  if (hasNative) { if (Native.stopNow) Native.stopNow(); if (Native.stopSpeaking) Native.stopSpeaking(); } if (stopWake) stopWake(); }
 function saveHistory() {
   // keep photos only on the last few messages so the phone's storage stays small
   let kept = 0;
@@ -982,7 +997,7 @@ function trimmed() { return history.slice(contextStart()).map(m => ({role: m.rol
 // ADDWHILE-20261104: talk to her while she works (like talking to a real assistant who is busy). The message shows
 // in the chat at once and she reads it at her very next step - she does NOT stop; she folds it into the job,
 // changes course if it changes the job, and answers any question in it. Stop is only when the box is empty.
-let ADDED = [];
+let ADDED = [], RESUMING = false;
 function addWhileBusy(text) {
   const imgs = pendingImages.slice(); clearAttach();
   const t = (text || '').trim() || (imgs.length ? 'Here is a picture for what you are doing.' : ''); if (!t) return;
@@ -1000,8 +1015,11 @@ function takeAdded(working) {
   }
   return true;
 }
+let lastAsk = {t: '', at: 0};
 async function ask(text) {
   if (busy || (!text.trim() && !pendingImages.length)) return;
+  if (text.trim() && text.trim() === lastAsk.t && Date.now() - lastAsk.at < 4000) return;   // INSTANT: the same message sent twice by a double tap counts once
+  lastAsk = {t: text.trim(), at: Date.now()};
   busy = true; stopAsked = false; taskStart = true; setSendMode(true); if (hasNative && Native.workStart) Native.workStart();
   const imgs = pendingImages.slice(); clearAttach(); const img = imgs[0] || '';
   history.push(img ? Object.assign({role: 'user', content: text.trim() || (imgs.length > 1 ? 'What do you see in these?' : 'What do you see?'), image: img}, imgs.length > 1 ? {more: imgs.slice(1)} : {}) : {role: 'user', content: text.trim()});
@@ -1020,6 +1038,20 @@ async function ask(text) {
     return;
   }
   const working = [{role: 'system', content: systemPrompt()}, ...trimmed()];
+  // RESUME-20261104 / UNDERSTAND-20261104: short replies ("carry on", "continue", "yes", "go ahead") answer what she said last.
+  RESUMING = false;
+  try {
+    const t = text.trim().toLowerCase().replace(/[.!?,]+$/g, ''), words = t.split(/\s+/).filter(Boolean).length;
+    const resume = LS.get('resume_job', null), fresh = resume && Date.now() - resume.at < 12 * 3600 * 1000;
+    const goOn = /^(ok(ay)?[, ]*)?(please )?(carry on|continue|go on|keep going|resume|proceed|finish it|finish the job|carry on please|continue please|go ahead|yes( please)?|yebo|ja|sure|do it|go|start again from where you (stopped|left))\b/.test(t) || (words <= 3 && /carry|contin|go on|resume|finish/.test(t));
+    if (fresh && goOn) {
+      RESUMING = true;
+      working.push({role: 'system', content: 'CONTINUE THE UNFINISHED JOB NOW. He said "' + text.trim() + '" - that means: carry on with the job below from where it stopped. Do NOT ask what to continue, do NOT repeat your last message, do NOT start over or redo finished steps.\nTHE JOB: ' + resume.task + '\nALREADY DONE (latest last): ' + (resume.done || []).join(' | ') + '\nSTOPPED AT: ' + (resume.lastStep || '?') + (resume.problem ? '\nLAST PROBLEM: ' + resume.problem + ' - use a different way this time.' : '') + '\nLook at the screen first to see exactly where things are, then continue.'});
+    } else if (words <= 4) {
+      const lastA = [...history].reverse().find(m => m.role === 'assistant');
+      if (lastA) working.push({role: 'system', content: 'He answered your last message ("' + String(lastA.content || '').slice(0, 300) + '") with "' + text.trim() + '". Understand it as a reply to THAT (yes = do what you offered/asked; no = don\'t; "continue" = carry on with what you were doing) and act on it. Never answer with the same message again.'});
+    }
+  } catch (_) {}
   if (img) { const last = working[working.length - 1]; last.content = [{type: 'text', text: last.content}].concat(imgs.map(b => ({type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + b}}))); }
   shownPhotos = []; usedControl = false;
   const sources = [];
@@ -1089,7 +1121,7 @@ async function ask(text) {
       leanWorking(working);
       if (round === maxRounds - 2) working.push({role: 'system', content: 'Finish now: call finish_phone_task if you were using other apps, then tell them what you did and where you got to. No more actions.'});
     }
-    if (stopAsked && !answer) answer = 'Stopped' + (lastStep ? ' - I was busy with: ' + lastStep.toLowerCase() : '') + '. Say "carry on" if you want me to continue.';
+    if (stopAsked && !answer) answer = 'Okay, I\'ve stopped' + (lastStep ? ' - I was busy with: ' + lastStep.toLowerCase() : '') + '. Just say "carry on" whenever you want me to pick it up from there.';
     if (!answer) {   // WHY-20261102: ask her for a real explanation instead of a generic apology
       ind.set('Wrapping up…');
       try {
@@ -1101,6 +1133,16 @@ async function ask(text) {
     if (!answer) answer = lastProblem ? "I couldn't finish this. The last problem was - " + lastProblem + (lastProblem.endsWith('.') ? '' : '.') + ' Tell me how you want me to handle it, or give me what I need, and I\'ll carry on.'
       : roundsUsed >= maxRounds ? 'I ran out of steps before finishing (I used ' + roundsUsed + ')' + (lastStep ? ' - I was busy with: ' + lastStep : '') + '. Say "carry on" and I\'ll continue from where I stopped.'
       : "The AI model sent back an empty reply, so I've got nothing to show you - that's on the model, not you. Ask again and I'll answer.";
+    // RESUME-20261104: an unfinished job is written down (what was asked, what's done, where it stopped) so "carry on" really continues it
+    try {
+      const unfinished = stopAsked || roundsUsed >= maxRounds || (lastProblem && /couldn't finish/.test(answer));
+      if (unfinished && working._jobStart >= 0) {
+        const done = [];
+        for (let i = working._jobStart; i < working.length; i++) for (const c of (working[i].tool_calls || [])) if (!/screen|look|status|wait/.test(c.function.name)) done.push(c.function.name.replace(/^phone_|^pc_/, '') + ' ' + String(c.function.arguments || '').slice(0, 70));
+        const prev = LS.get('resume_job', null), task = (prev && prev.task && RESUMING) ? prev.task : text.trim();
+        LS.set('resume_job', {task: task.slice(0, 1500), done: done.slice(-25), lastStep, problem: lastProblem || '', at: Date.now()});
+      } else if (usedControl || roundsUsed > 1) LS.set('resume_job', null);
+    } catch (_) {}
     const entry = {role: 'assistant', content: answer, sources}; if (shownPhotos.length) entry.image = shownPhotos[shownPhotos.length - 1];
     history.push(entry); saveHistory(); MEM.afterAnswer(history);
     if ((LS.get('speak', true) || handsFree) && hasNative) Native.speak(plain(answer)); else if (handsFree) setTimeout(listenAgain, 400);
