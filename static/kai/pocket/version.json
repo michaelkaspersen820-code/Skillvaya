@@ -1,9 +1,9 @@
 {
- "ui": 2026110402,
- "ui_sha256": "a1460e9c50950848f5ced52b8e3de2f23f00c6e5a52f41146bbfae1d0f9dc3d7",
- "apk_version_code": 12,
- "apk_version": "1.9",
+ "ui": 2026110403,
+ "ui_sha256": "53e330cb4765febf544a9902edd1e299fa8e1f3a71904d7ec8790935488074c0",
+ "apk_version_code": 13,
+ "apk_version": "2.0",
  "apk_url": "/downloads/Kaspersen-Pocket.apk",
- "apk_sha256": "5f809e3df5bf2e187449ec53540359509dbf2d103fb9590088d6809a278005b8",
- "notes": "Keeps her personality and chat exactly as before - the assistant rule only covers finishing jobs"
+ "apk_sha256": "ef47e44ece7e327a46c5c0842c0795bbcd815c690bf4fc88cf242797933e08f7",
+ "notes": "Version 2.0: 24/7 assistant - keeps an eye on new emails, messages, missed calls and appointments even when the app is closed (almost no battery); plus 1.9's assistant mode: keeps working while other apps are open, never re-checks a sent message, works through the whole day's list, faster"
 }
