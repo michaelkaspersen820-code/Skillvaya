@@ -1,9 +1,9 @@
 {
  "ui": 2026110405,
  "ui_sha256": "13bbb745e3e1c93a7f5e1bb22e00b95e36db188ce70c6a48980fe6a50f8e94c3",
- "apk_version_code": 13,
+ "apk_version_code": 14,
  "apk_version": "2.0",
  "apk_url": "/downloads/Kaspersen-Pocket.apk",
- "apk_sha256": "ef47e44ece7e327a46c5c0842c0795bbcd815c690bf4fc88cf242797933e08f7",
- "notes": "Version 2.0: 24/7 assistant; a screenshot you send to show her something is never sent on by mistake"
+ "apk_sha256": "2063af0024f908e83e6023426ecec33f57296029c30b4a7af0bec1fd768700ad",
+ "notes": "Version 2.0: 24/7 assistant (emails, messages, missed calls, appointments, almost no battery); keeps working while other apps are open; never re-checks a sent message; works through the whole day's list; never sends your reference screenshot by mistake; faster"
 }
