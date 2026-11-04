@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110413">
+<meta name="kp-ui" content="2026110414">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -41,6 +41,7 @@ textarea{flex:1;resize:none;max-height:140px;min-height:44px;background:var(--pa
 textarea:focus{border-color:var(--accent)}
 .round{width:46px;height:46px;border-radius:50%;border:0;display:grid;place-items:center;font-size:20px;flex:none}
 #mic{background:var(--panel2);color:var(--text)}#send{background:var(--accent);color:#06221f}#send:disabled{opacity:.45}
+#stopBtn{background:#c0392b;color:#fff;font-size:17px}#stopBtn:disabled{opacity:.5}
 #mic.on{background:#c0392b}
 #cam{background:var(--panel2);color:var(--text)}
 #attach{display:none;padding:6px 12px 0;align-items:center;gap:10px}#attach.on{display:flex}#attach img{height:64px;border-radius:10px;border:1px solid var(--line)}#attach button{background:none;border:0;color:var(--warn);font-size:15px}
@@ -81,6 +82,7 @@ textarea:focus{border-color:var(--accent)}
   <button class="round" id="cam" title="Camera">📷</button>
   <button class="round" id="mic" title="Talk">🎤</button>
   <textarea id="input" rows="1" placeholder="Talk to Kaspersen…"></textarea>
+  <button class="round" id="stopBtn" title="Stop" style="display:none">■</button>
   <button class="round" id="send" title="Send">➤</button>
   <div id="aiNote">Kaspersen is an AI and can make mistakes.</div>
 </footer>
@@ -988,7 +990,7 @@ function showUpdateBar(o) {
 let stopAsked = false, stopWake = null;
 function stopGate() { return new Promise(res => { stopWake = () => res({__stopped: true}); }); }
 function stopWork() { if (!busy || stopAsked) return; stopAsked = true;
-  try { const b = $('#send'); b.textContent = '…'; b.title = 'Stopping'; b.disabled = true; if (curInd) curInd.set('Stopping…'); } catch (_) {}   /* INSTANT: shows at once, and a 2nd/3rd Stop does nothing */
+  try { const b = $('#stopBtn'); b.textContent = '…'; b.title = 'Stopping'; b.disabled = true; if (curInd) curInd.set('Stopping…'); } catch (_) {}   /* INSTANT: shows at once, and a 2nd/3rd Stop does nothing */
   if (hasNative) { if (Native.stopNow) Native.stopNow(); if (Native.stopSpeaking) Native.stopSpeaking(); } if (stopWake) stopWake(); }
 function saveHistory() {
   // keep photos only on the last few messages so the phone's storage stays small
@@ -1285,7 +1287,12 @@ function paintAttach() { const box = $('#attachList'); box.innerHTML = ''; pendi
 function clearAttach() { pendingImages = []; paintAttach(); }
 $('#attachMore').onclick = () => $('#camMenu').classList.add('on');
 const SEND_ICON = $('#send').textContent;
-function setSendMode(on) { const b = $('#send'); b.disabled = false; b.textContent = on ? '■' : SEND_ICON; b.classList.toggle('stop', on); b.title = on ? 'Stop' : 'Send'; }
+// SENDSTOP-20261104: Send and Stop are TWO buttons. The arrow always sends (while she works it adds your message to the
+// job); the red square shows only while she works and is the only thing that stops her. One button doing both lost
+// messages: voice text / some keyboards never flipped it from Stop to Send, so tapping it stopped her and dropped the words.
+function setSendMode(on) { const b = $('#send'); b.disabled = false; b.textContent = SEND_ICON; b.classList.remove('stop'); b.title = on ? 'Add this to what she is doing' : 'Send';
+  const s = $('#stopBtn'); s.style.display = on ? '' : 'none'; s.disabled = false; s.textContent = '■'; s.title = 'Stop'; }
+$('#stopBtn').onclick = () => stopWork();
 $('#attachX').onclick = clearAttach;
 $('#cam').onclick = () => $('#camMenu').classList.toggle('on');
 $('#camTake').onclick = () => { $('#camMenu').classList.remove('on'); hasNative && Native.takePhoto(); };
@@ -1302,8 +1309,8 @@ $('#handsBtn').onclick = () => { handsFree = !handsFree; $('#handsBtn').classLis
 const input = $('#input');
 input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(140, input.scrollHeight) + 'px';
   // ADDWHILE-20261104: while she works, typing turns Stop back into Send - the message is added to her job, not a stop
-  if (busy) { const b = $('#send'), has = !!input.value.trim(); if (!b.dataset.stopIcon || !has && b.textContent === SEND_ICON) {} if (has) { if (b.textContent !== SEND_ICON) b.dataset.stopIcon = b.textContent; b.textContent = SEND_ICON; b.classList.remove('stop'); b.title = 'Add this to what she is doing'; } else if (b.dataset.stopIcon) { b.textContent = b.dataset.stopIcon; b.classList.add('stop'); b.title = 'Stop'; } } });
-$('#send').onclick = () => { if (busy) { const t0 = input.value.trim(); if (t0 || pendingImages.length) { input.value = ''; input.style.height = 'auto'; addWhileBusy(t0); } else stopWork(); return; } if ($('#mic').classList.contains('on') && hasNative) { startListen(); return; }   // NPFIX-20261102
+  });
+$('#send').onclick = () => { if (busy) { const t0 = input.value.trim(); if (t0 || pendingImages.length) { input.value = ''; input.style.height = 'auto'; addWhileBusy(t0); } else { input.focus(); input.placeholder = 'Type or say what to add - she keeps working'; } return; }   /* SENDSTOP: Send never stops her */ if ($('#mic').classList.contains('on') && hasNative) { startListen(); return; }   // NPFIX-20261102
   const t = input.value; input.value = ''; input.style.height = 'auto'; ask(t); };
 $('#mic').onclick = () => { if (!hasNative) return; Native.stopSpeaking(); $('#mic').classList.add('on'); startListen(); };
 window.onSpeechPartial = t => { input.value = t; input.style.height = 'auto'; input.style.height = Math.min(140, input.scrollHeight) + 'px'; };
