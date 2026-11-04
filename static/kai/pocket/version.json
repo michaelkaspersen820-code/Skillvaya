@@ -1,9 +1,9 @@
 {
- "ui": 2026110311,
- "ui_sha256": "b3f10607d31de79cfe86f190ae73661506ed08170e1723e9066ef6130ecdac2a",
- "apk_version_code": 11,
- "apk_version": "1.8",
+ "ui": 2026110401,
+ "ui_sha256": "3f658fa5cfcbbe42b12d6012c6bd95659796283058b1b973b284211e93e41542",
+ "apk_version_code": 12,
+ "apk_version": "1.9",
  "apk_url": "/downloads/Kaspersen-Pocket.apk",
- "apk_sha256": "079e4cbd0cbd6e8b175831350b470a0993980004bb6b215302057f6900b04331",
- "notes": "Never give up on a requirement; every character their own human voice; animation kit"
+ "apk_sha256": "5f809e3df5bf2e187449ec53540359509dbf2d103fb9590088d6809a278005b8",
+ "notes": "Assistant mode: keeps working while other apps are open (no more pausing after sending), never re-checks a sent message, today's job list worked through without stopping, facts check (slideshow is not animation), shortest-route rule, faster taps/typing/settling and instant PC replies"
 }
