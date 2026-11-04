@@ -182,14 +182,16 @@ def _pay_contact():
 
 
 def _bank():
-    return os.environ.get("KASPERSEN_BANK_DETAILS", "").strip()
+    # EFT-20261104 (owner): customers pay straight into this account - they never have to message the owner
+    return os.environ.get("KASPERSEN_BANK_DETAILS", "").strip() or "Capitec Bank, account number 1454116380, account holder AM Kaspersen (use your email address as the payment reference)"
 
 
 def _pay_how():
     if os.environ.get("KASPERSEN_PAY_HOW"):
         return os.environ["KASPERSEN_PAY_HOW"]
     if _bank():
-        return "Pay %s into this account: %s. Then send me a screenshot of your proof of payment and I'll switch on straight away." % (_price(), _bank())
+        return ("Pay %s by EFT into: %s. Then just send me a screenshot of your proof of payment here and I'll switch you on "
+                "straight away - you don't need to message anyone." % (_price(), _bank()))
     return "Tap Pay for the payment details, pay %s, then send me a screenshot of your proof of payment and I'll switch on straight away." % _price()
 
 
@@ -309,7 +311,8 @@ def _proof(h, d):
         st = str(v.get("status_text") or "").lower()
         if any(w in st for w in ("pending", "fail", "declin", "cancel", "reject")): reasons.append("the payment shows as '%s'" % v.get("status_text"))
         if v.get("looks_edited"): reasons.append("parts of the screenshot look edited")
-        pay_to = os.environ.get("KASPERSEN_PAY_TO", "").strip().lower()
+        # EFT-20261104: a proof only counts when it was paid to the owner's account (name or account number)
+    pay_to = (os.environ.get("KASPERSEN_PAY_TO", "").strip() or "kaspersen,1454116380,6380").lower()
         if pay_to and not any(p.strip() and p.strip() in str(v.get("recipient") or "").lower() for p in pay_to.split(",")):
             reasons.append("I can't see that it was paid to Michael Kaspersen's account")
         if ref:
@@ -719,8 +722,12 @@ def handle_post(h, path, d):
     # hiccups (rate limits, 5xx, timeouts) get one quick retry, and the person sees the real reason if all fail.
     keys = _keys(); last = "No AI provider key is set on the server."
     order = sorted([p for p in PROVIDERS if keys.get(p[4])], key=lambda p: _cool.get(p[0], 0) > time.time())
+    has_img = any(isinstance(m.get("content"), list) for m in body["messages"])
+    # BIGJOB-20261104: building / engineering jobs think with the full GLM-5.3 (text only - steps that carry a picture
+    # stay on Flash, which can see). Owner and paying customers only.
+    if d.get("big_job") and not has_img and keys.get("openrouter") and (unl or _sub_row(uid)["paid_until"] >= day):
+        order.insert(0, ("OpenRouter GLM-5.3", "https://openrouter.ai/api/v1/chat/completions", "z-ai/glm-5.3", "", "openrouter"))
     if keys.get("openrouter"):
-        has_img = any(isinstance(m.get("content"), list) for m in body["messages"])
         for mid in _free_models()[:FREE_MAX + 3]:
             order.append(("Free " + mid.split("/")[-1].replace(":free", ""), FREE_URL,
                           mid, "", "openrouter"))
