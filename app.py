@@ -4712,6 +4712,12 @@ class Handler(BaseHTTPRequestHandler):
                 size=len(POLICY_PAGE_HTML.encode("utf-8")); self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Content-Length",str(size)); self.send_header("Cache-Control","no-store"); self.end_headers(); return
             except Exception:
                 self.send_response(503); self.end_headers(); return
+        if path == "/downloads/Kaspersen-Pocket.apk":   # POCKETHEAD-20261105: browsers / download managers probe the APK with HEAD first
+            p = os.path.join(ROOT, "downloads", "Kaspersen-Pocket.apk")
+            if os.path.isfile(p):
+                self.send_response(200); self.send_header("Content-Type", "application/vnd.android.package-archive")
+                self.send_header("Content-Length", str(os.path.getsize(p))); self.send_header("Content-Disposition", 'attachment; filename="Kaspersen-Pocket.apk"')
+                self.send_header("Accept-Ranges", "bytes"); self.end_headers(); return
         if path == "/googleff34169fba370019.html":   # SEARCHCONSOLE-20261105: Google site ownership proof (Play Console website verification) - keep
             body = b"google-site-verification: googleff34169fba370019.html"
             self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
