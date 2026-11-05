@@ -669,6 +669,10 @@ def _mem_put(h, d):
         if not r or int(r["id"]) not in _owner_ids():
             return h.sendj({"error": "Not an owner account."}, 403)
         uid = int(r["id"]); d = data0
+        if d.get("list"):   # owner's PC checking what the account holds (never the contents)
+            with A.conn() as c:
+                rows = c.execute("SELECT name,stamp,updated_at,LENGTH(data) n FROM kai_memory WHERE user_id=? ORDER BY name", (uid,)).fetchall()
+            return h.sendj({"ok": True, "files": [{"name": r["name"], "stamp": int(r["stamp"] or 0), "updated_at": r["updated_at"], "size": int(r["n"] or 0)} for r in rows]})
     else:
         u = h.require(); uid = int(u["id"])
     name = str(d.get("name") or ""); data = d.get("data"); stamp = int(d.get("stamp") or 0)
