@@ -4712,6 +4712,12 @@ class Handler(BaseHTTPRequestHandler):
                 size=len(POLICY_PAGE_HTML.encode("utf-8")); self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Content-Length",str(size)); self.send_header("Cache-Control","no-store"); self.end_headers(); return
             except Exception:
                 self.send_response(503); self.end_headers(); return
+        if path == "/googleff34169fba370019.html":   # SEARCHCONSOLE-20261105: Google site ownership proof (Play Console website verification) - keep
+            body = b"google-site-verification: googleff34169fba370019.html"
+            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body))); self.end_headers()
+            if self.command != "HEAD": self.wfile.write(body)
+            return
         if path in ("/robots.txt", "/sitemap.xml"):
             body = seo_robots_body() if path == "/robots.txt" else seo_sitemap_body()
             content_type = "text/plain; charset=utf-8" if path == "/robots.txt" else "application/xml; charset=utf-8"
@@ -4762,6 +4768,11 @@ class Handler(BaseHTTPRequestHandler):
             return FC.serve_static(self,path)
         if path.startswith("/homeads/"):
             return HA.serve_static(self,path)
+        if path == "/googleff34169fba370019.html":   # SEARCHCONSOLE-20261105: Google site ownership proof - keep this file
+            body = b"google-site-verification: googleff34169fba370019.html"
+            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+            return
         if path == "/robots.txt":
             body = seo_robots_body()
             self.send_response(200)
