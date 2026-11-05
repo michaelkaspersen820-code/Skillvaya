@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110415">
+<meta name="kp-ui" content="2026110416">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -758,9 +758,85 @@ function stripThink(t) { return (t || '').replace(/<think>[\s\S]*?<\/think>/gi, 
 // end to end are forgotten 7 days after the project was marked finished. Nothing else is forgotten.
 const MEM = (() => {
   const has = hasNative && typeof Native.load === 'function';
-  const rd = (n, d) => { try { const t = has ? Native.load(n) : localStorage.getItem('kpm_' + n); return t ? JSON.parse(t) : d; } catch (_) { return d; } };
-  const wr = (n, v) => { const t = JSON.stringify(v); try { if (has) Native.store(n, t); else localStorage.setItem('kpm_' + n, t); } catch (_) {} };
-  const rm = n => { try { if (has) Native.remove(n); else localStorage.removeItem('kpm_' + n); } catch (_) {} };
+  const raw = n => { try { return (has ? Native.load(n) : localStorage.getItem('kpm_' + n)) || ''; } catch (_) { return ''; } };
+  const put = (n, t) => { try { if (has) Native.store(n, t); else localStorage.setItem('kpm_' + n, t); } catch (_) {} };
+  const rd = (n, d) => { try { const t = raw(n); return t ? JSON.parse(t) : d; } catch (_) { return d; } };
+  // MEMSYNC-20261105: her memory belongs to the ACCOUNT, not the phone. Every file written here is mirrored to the
+  // Skillvaya server under the signed-in account (sessions.json, projects.json, each conversation s_*.json), and any
+  // phone that signs in pulls everything back. A reinstall, update, new phone or lost phone never loses her memory.
+  const stamps = () => LS.get('memStamps', {});
+  const stamp = (n, s) => { const m = stamps(); m[n] = s; LS.set('memStamps', m); };
+  let pushQ = LS.get('memPush', {});
+  const queue = (n, what) => { pushQ[n] = what; LS.set('memPush', pushQ); schedulePush(); };
+  const wr = (n, v) => { const t = JSON.stringify(v); put(n, t); stamp(n, Date.now()); queue(n, 'put'); };
+  const rm = n => { try { if (has) Native.remove(n); else localStorage.removeItem('kpm_' + n); } catch (_) {} stamp(n, Date.now()); queue(n, 'del'); };
+  let pushTimer = 0, pushing = false, pulling = false;
+  function schedulePush() { if (pushTimer) return; pushTimer = setTimeout(() => { pushTimer = 0; pushNow(); }, 2500); }
+  async function pushNow() {
+    if (pushing || !ACCT.tok) return; pushing = true;
+    try {
+      for (const n of Object.keys(pushQ)) {
+        const what = pushQ[n], st = stamps()[n] || 0;
+        let r;
+        if (what === 'del') r = await siteApi('/api/kai/mem', {name: n, delete: true, stamp: st});
+        else {
+          if (n === 'sessions.json' || n === 'projects.json') {   // the two lists are always MERGED with the server copy, never replaced (a fresh phone must not wipe the list)
+            const g = await siteApi('/api/kai/mem?name=' + n); if (g.status !== 200) break;
+            if (g.j.data) { let mine = [], theirs = []; try { mine = JSON.parse(raw(n) || '[]'); } catch (_) {} try { theirs = JSON.parse(g.j.data); } catch (_) {}
+              const merged = n === 'sessions.json' ? mergeIndex(mine, theirs) : mergeProjects(mine, theirs); put(n, JSON.stringify(merged)); if (n === 'sessions.json') index = merged; else projects = merged; }
+          }
+          const t = raw(n); if (!t) { delete pushQ[n]; continue; } r = await siteApi('/api/kai/mem', {name: n, data: t, stamp: st}); }
+        if (r.status === 200 && r.j.ok) { delete pushQ[n]; LS.set('memPush', pushQ); }
+        else if (r.status === 200 && r.j.newer) { absorb(n, r.j.data, r.j.stamp); delete pushQ[n]; LS.set('memPush', pushQ); }
+        else if (r.status === 400 || r.status === 413) { delete pushQ[n]; LS.set('memPush', pushQ); }   // the server won't take it - don't loop on it
+        else break;   // no connection: keep the queue, try again later
+      }
+    } catch (_) {} finally { pushing = false; }
+  }
+  const mergeIndex = (a, b) => { const m = new Map(); for (const x of [...(a || []), ...(b || [])]) { const o = m.get(x.id); if (!o || (x.updated || 0) >= (o.updated || 0)) m.set(x.id, x); } return [...m.values()].sort((p, q) => (p.started || 0) - (q.started || 0)); };
+  const mergeProjects = (a, b) => { const m = new Map(); for (const x of [...(a || []), ...(b || [])]) { const k = (x.name || '').toLowerCase(); const o = m.get(k); if (!o || (x.updated || 0) >= (o.updated || 0)) m.set(k, x); } return [...m.values()]; };
+  function absorb(n, data, st) {   // a newer copy from the server: merge the two lists, replace a conversation file
+    let text = data || '';
+    if (n === 'sessions.json' || n === 'projects.json') {
+      let mine = [], theirs = []; try { mine = JSON.parse(raw(n) || '[]'); } catch (_) {} try { theirs = JSON.parse(text || '[]'); } catch (_) {}
+      const merged = n === 'sessions.json' ? mergeIndex(mine, theirs) : mergeProjects(mine, theirs);
+      text = JSON.stringify(merged);
+      if (text !== (data || '')) { put(n, text); stamp(n, Date.now()); queue(n, 'put'); if (n === 'sessions.json') index = merged; else projects = merged; return; }
+    }
+    put(n, text); stamp(n, st || Date.now());
+    if (n === 'sessions.json') { try { index = JSON.parse(text || '[]'); } catch (_) {} }
+    if (n === 'projects.json') { try { projects = JSON.parse(text || '[]'); } catch (_) {} }
+  }
+  async function pullNow(first) {
+    if (pulling || !ACCT.tok) return false; pulling = true; let changed = false;
+    try {
+      const r = await siteApi('/api/kai/mem'); if (r.status !== 200 || !r.j.files) return false;
+      const files = r.j.files, mine = stamps();
+      for (const n of Object.keys(files)) {
+        if (pushQ[n]) continue;   // my change is on its way up; the push answers with the newer copy if there is one
+        if ((files[n].stamp || 0) > (mine[n] || 0) || !raw(n)) {
+          const g = await siteApi('/api/kai/mem?name=' + encodeURIComponent(n)); if (g.status !== 200 || !g.j.ok) continue;
+          absorb(n, g.j.data, g.j.stamp); changed = true;
+        }
+      }
+      // files only this phone has (first sync after the update): send them up
+      const local = ['sessions.json', 'projects.json', ...index.map(x => file(x.id))];
+      for (const n of local) if (!files[n] && raw(n)) { if (!mine[n]) stamp(n, 1); queue(n, 'put'); }
+    } catch (_) {} finally { pulling = false; }
+    if (changed) {
+      const was = cur && cur.id; cur = index.find(x => x.id === was) || null;
+      if (!history.length) {   // nothing open on this phone (fresh install): carry on from the last conversation of the account
+        const last = index.filter(x => (x.count || 0) > 0 && raw(file(x.id))).sort((a, b) => b.updated - a.updated)[0];
+        if (last && (!cur || cur.id !== last.id)) {
+          if (cur && !(cur.count || 0)) index = index.filter(x => x.id !== cur.id);   // drop the empty one boot() made
+          cur = last; LS.set('curSession', last.id); history = rd(file(last.id), []); LS.set('history', history); saveIndex(); try { render(); } catch (_) {}
+        }
+      }
+    }
+    return changed;
+  }
+  setTimeout(() => { owned(); pullNow(true).then(() => pushNow()); }, 1500);
+  setInterval(() => { pullNow(); pushNow(); }, 10 * 60000);
   const DAY = 864e5, KEEP_AFTER_DONE = 7 * DAY;
   let index = rd('sessions.json', []);
   let projects = rd('projects.json', []);
@@ -903,7 +979,18 @@ const MEM = (() => {
   function projectAdd(name) { name = clean(name).slice(0, 60); if (!name || findProject(name)) return; projects.push({name, status: 'active', notes: '', created: Date.now(), updated: Date.now(), done_at: 0}); saveProjects(); }
   function projectRemove(name) { projects = projects.filter(p => p.name !== name); saveProjects(); }
   const stats = () => ({conversations: index.length, projects: projects.slice(), sessions: index.slice().sort((a, b) => b.updated - a.updated), current: cur && cur.id});
-  return {boot, saveCurrent, newSession, openSession, afterAnswer, recall, openConversation, projectUpdate, projectDone, promptBlock, stats, fmt, projectSet, projectAdd, projectRemove};
+  function owned() {   // the memory on this phone belongs to one account: another account signing in starts from ITS own memory
+    const u = ACCT.user() || {}, who = String(u.id || u.email || '').toLowerCase(); if (!who) return;
+    const prev = LS.get('memOwner', '');
+    if (prev && prev !== who) {
+      for (const x of index) { try { if (has) Native.remove(file(x.id)); else localStorage.removeItem('kpm_' + file(x.id)); } catch (_) {} }
+      index = []; projects = []; put('sessions.json', '[]'); put('projects.json', '[]'); LS.set('memStamps', {}); pushQ = {}; LS.set('memPush', {});
+      LS.set('history', []); history = []; cur = startNew(); try { render(); } catch (_) {}
+    }
+    LS.set('memOwner', who);
+  }
+  const sync = () => { owned(); return pullNow(true).then(() => pushNow()); };
+  return {boot, saveCurrent, newSession, openSession, afterAnswer, recall, openConversation, projectUpdate, projectDone, promptBlock, stats, fmt, projectSet, projectAdd, projectRemove, sync};
 })();
 
 // ---------- conversation ----------
@@ -1436,6 +1523,7 @@ $('#wGo').onclick = async () => {
   } finally { $('#wGo').disabled = false; }
   if (!r.j.token) return wMsg(r.j.error || 'That didn\'t work. Please try again.', true);
   ACCT.set(r.j.token, r.j.user); wPhone = (r.j.user && r.j.user.phone) || '';
+  MEM.sync();   // MEMSYNC-20261105: signed in - bring her memory for this account onto this phone
   const st = await siteApi('/api/kai/status');
   if (st.status === 200 && !st.j.phone_verified) return showWelcome('verify');
   welcomeDone();

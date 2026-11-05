@@ -18,7 +18,7 @@ Routes (app.py dispatches /api/kai/* here):
 Keys come from environment variables (KASPERSEN_OPENROUTER_KEY, KASPERSEN_VERCEL_KEY, KASPERSEN_ORCA_KEY) or,
 when those are absent, from the kai_secrets table filled through /api/kai/keys. Nothing secret lives in this file.
 """
-import base64, datetime, hashlib, json, os, secrets, threading, time, urllib.error, urllib.parse, urllib.request
+import base64, datetime, hashlib, json, os, re, secrets, threading, time, urllib.error, urllib.parse, urllib.request
 
 A = None
 # Public half of the owner's signing key. Only the matching private key (kept on the owner's PC) can set keys.
@@ -72,6 +72,12 @@ def init(c):
         CREATE UNIQUE INDEX IF NOT EXISTS idx_kai_pc_token ON kai_pc_devices(token_hash);
         CREATE INDEX IF NOT EXISTS idx_kai_pc_user ON kai_pc_devices(user_id);
     """ % pk)
+    # MEMSYNC-20261105: Kaspersen's memory (sessions, projects) belongs to the account, not the phone. Every change the
+    # app makes is mirrored here; a fresh install (new phone, reinstall) signs in and gets everything back.
+    A.execute_script(c, """
+        CREATE TABLE IF NOT EXISTS kai_memory(user_id BIGINT NOT NULL, name TEXT NOT NULL, data TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT '', stamp BIGINT NOT NULL DEFAULT 0, PRIMARY KEY(user_id, name));
+    """)
 
 
 def _env_int(name, default):
@@ -632,7 +638,66 @@ def serve_pclink(h, path):
     h.send_header("Cache-Control", "no-cache"); h.end_headers(); h.wfile.write(b)
 
 
+MEM_NAME = re.compile(r"^(sessions\.json|projects\.json|s_[a-z0-9]{4,24}\.json)$")   # the app's memory files
+MEM_MAX = 6 * 1024 * 1024          # per file, per account
+MEM_FILES_MAX = 5000               # files per account
+
+
+def _mem_get(h):
+    """GET /api/kai/mem?name=sessions.json  -> {ok, name, data, stamp}; no name -> stamps of everything stored."""
+    u = h.require(); uid = int(u["id"])
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(h.path).query); name = (q.get("name") or [""])[0]
+    with A.conn() as c:
+        if not name:
+            rows = c.execute("SELECT name,stamp,LENGTH(data) n FROM kai_memory WHERE user_id=?", (uid,)).fetchall()
+            return h.sendj({"ok": True, "files": {r["name"]: {"stamp": int(r["stamp"] or 0), "size": int(r["n"] or 0)} for r in rows}})
+        r = c.execute("SELECT data,stamp FROM kai_memory WHERE user_id=? AND name=?", (uid, name)).fetchone()
+    if not r:
+        return h.sendj({"ok": True, "name": name, "data": "", "stamp": 0})
+    return h.sendj({"ok": True, "name": name, "data": r["data"], "stamp": int(r["stamp"] or 0)})
+
+
+def _mem_put(h, d):
+    """POST /api/kai/mem {name, data, stamp}: stores the file for this account. A newer copy on the server (bigger
+    stamp) is never overwritten by an older one - the phone gets {ok:false, newer:true, data, stamp} to merge."""
+    if d.get("payload") and d.get("sig"):      # owner's PC, signed: may write into an owner account (used to restore memory)
+        data0 = _verify(d)
+        if not data0:
+            return h.sendj({"error": "Not authorised."}, 403)
+        with A.conn() as c:
+            r = c.execute("SELECT id FROM users WHERE lower(email)=?", (str(data0.get("email") or "").lower(),)).fetchone()
+        if not r or int(r["id"]) not in _owner_ids():
+            return h.sendj({"error": "Not an owner account."}, 403)
+        uid = int(r["id"]); d = data0
+    else:
+        u = h.require(); uid = int(u["id"])
+    name = str(d.get("name") or ""); data = d.get("data"); stamp = int(d.get("stamp") or 0)
+    if not MEM_NAME.match(name):
+        return h.sendj({"error": "Bad memory file."}, 400)
+    if d.get("delete"):
+        with A.conn() as c:
+            c.execute("DELETE FROM kai_memory WHERE user_id=? AND name=?", (uid, name))
+        return h.sendj({"ok": True, "name": name, "deleted": True})
+    if not isinstance(data, str):
+        return h.sendj({"error": "Bad memory file."}, 400)
+    if len(data.encode("utf-8")) > MEM_MAX:
+        return h.sendj({"error": "Memory file too big."}, 413)
+    with A.conn() as c:
+        n = c.execute("SELECT COUNT(*) n FROM kai_memory WHERE user_id=?", (uid,)).fetchone()
+        if int(n["n"] or 0) >= MEM_FILES_MAX and not c.execute("SELECT 1 FROM kai_memory WHERE user_id=? AND name=?", (uid, name)).fetchone():
+            return h.sendj({"error": "Memory is full."}, 413)
+        r = c.execute("SELECT stamp FROM kai_memory WHERE user_id=? AND name=?", (uid, name)).fetchone()
+        if r and int(r["stamp"] or 0) > stamp and not d.get("force"):
+            r2 = c.execute("SELECT data,stamp FROM kai_memory WHERE user_id=? AND name=?", (uid, name)).fetchone()
+            return h.sendj({"ok": False, "newer": True, "data": r2["data"], "stamp": int(r2["stamp"] or 0)})
+        c.execute("INSERT INTO kai_memory(user_id,name,data,updated_at,stamp) VALUES(?,?,?,?,?) ON CONFLICT(user_id,name) DO UPDATE SET "
+                  "data=excluded.data, updated_at=excluded.updated_at, stamp=excluded.stamp", (uid, name, data, A.now(), stamp))
+    return h.sendj({"ok": True, "name": name, "stamp": stamp})
+
+
 def handle_get(h, path):
+    if path == "/api/kai/mem":
+        return _mem_get(h)
     if path == "/api/kai/pc/status":
         u = h.require(); uid = int(u["id"]); now = time.time()
         with A.conn() as c:
@@ -680,6 +745,8 @@ def handle_get(h, path):
 def handle_post(h, path, d):
     if path == "/api/kai/keys":
         return _set_keys(h, d)
+    if path == "/api/kai/mem":
+        return _mem_put(h, d if isinstance(d, dict) else {})
     if path.startswith("/api/kai/pc/"):
         return _pc_post(h, path, d)
     if path == "/api/kai/subs":
