@@ -803,7 +803,13 @@ def handle_post(h, path, d):
             order.append(("Free " + mid.split("/")[-1].replace(":free", ""), FREE_URL,
                           mid, "", "openrouter"))
         order = order[:len([p for p in PROVIDERS if keys.get(p[4])]) + FREE_MAX]
+    # KEYFIX-20261109: a refused key (401) or empty credit (402) is the KEY's problem, not the model's. Skip the rest of
+    # that key's entries for this request only, and never put the free backup models on the 24-hour skip list for it -
+    # otherwise one credit problem took every free backup offline for a whole day.
+    dead_keys = set()
     for name, url, model, _env, sec in order:
+        if sec in dead_keys:
+            continue
         free = model.endswith(":free")
         b = dict(body, model=model)
         if free:
@@ -836,10 +842,18 @@ def handle_post(h, path, d):
                 last = "%s: %s" % (name, str(msg)[:200])
                 if e.code == 400 and body.get("tools") and ("tool" in str(msg).lower() or "function" in str(msg).lower()):
                     return h.sendj({"error": {"message": last}}, 400)  # let the phone retry without tools
-                if e.code in (401, 402, 403):
+                if e.code in (401, 402):
                     _cool[name] = time.time() + 120
                     if free:
-                        _bad[model] = time.time() + 24 * 3600
+                        dead_keys.add(sec)        # key refused / balance below zero: the other free models on this key fail the same
+                                                  # way, so skip them for THIS request only (next request tries again)
+                elif e.code == 403:
+                    _cool[name] = time.time() + 120
+                    if free:
+                        _bad[model] = time.time() + 6 * 3600   # this one model refuses us: skip it for a few hours
+                elif e.code == 404 and free:
+                    _bad[model] = time.time() + 6 * 3600       # model retired: skip it and refresh the free list
+                    _free["at"] = 0
                 else:
                     retry = e.code == 429 or e.code >= 500
             except Exception as e:
