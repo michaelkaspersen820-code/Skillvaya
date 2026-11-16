@@ -1,9 +1,9 @@
 {
- "ui": 2026111603,
- "ui_sha256": "336abd47ae11233633c33666991386a8264389a32224baee14fb4879f132e2ad",
+ "ui": 2026111604,
+ "ui_sha256": "47c1ce0252bb573bd094ab2cefae5e5b22ac99e15f3d3c00b4b844de09ef1d4b",
  "apk_version_code": 15,
  "apk_version": "2.1",
  "apk_url": "/downloads/Kaspersen-Pocket.apk",
  "apk_sha256": "d90df259e63a16a24371b64a7aff78d9992f2f4f1556106c71af8ef2038dc3d4",
- "notes": "Safety locks: private papers hidden and never shared; banking apps locked; paying, deleting and ID or card numbers need a yes; lasting action log; steadier job steps"
+ "notes": "Kaspersen is switched off for now"
 }

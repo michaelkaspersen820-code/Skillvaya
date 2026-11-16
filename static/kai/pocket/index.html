@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026111603">
+<meta name="kp-ui" content="2026111604">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -924,6 +924,7 @@ async function callModel(messages, useTools, quiet) {
         showWelcome(r.status === 403 ? 'verify' : '');
         throw new Error(r.status === 401 ? 'Please sign in to keep using Kaspersen.' : 'Please confirm your mobile number first.');
       }
+      if (p.cloud && r.status === 403 && j && j.offline) throw new Error(j.error || 'Kaspersen is switched off for now.');   // OFFLINE-20261116
       if (p.cloud && r.status === 402 && j && j.paywall) throw paywallError(j);
       if (p.cloud && r.status === 429) throw new Error((j && j.error) || "You've reached today's limit.");
       if (r.status === 200 && j && j.choices && j.choices[0]) {
