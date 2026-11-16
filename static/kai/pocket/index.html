@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026111602">
+<meta name="kp-ui" content="2026111603">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -726,6 +726,10 @@ SAFE.check = (name, a, label) => {
   if (name === 'open_url' && SAFE_BANK.test(String(a.url || '').replace(/^https?:\/\//, '').split(/[/?#]/)[0])) return SAFE.never('banking, wallet and payment sites are theirs alone.');
   if (/^phone_(tap|tap_xy|type|scroll)$/.test(name) && SAFE_BANK.test(app)) return SAFE.never('a banking, wallet or payment app is open - you never use those. Press phone_key home.');
   if (name === 'phone_type' && SAFE.privateNumber(a.text) && !SAFE.live('type a private number', 'number')) return SAFE.askFirst('type a private number', 'number', 'that text contains an ID or card number.');
+  if (name === 'phone_tap_xy' && s) {
+    const risky = (s.elements || []).map(e => String(e.text || e.desc || '')).find(t => t && t.length <= 40 && (SAFE_MONEY.test(t) || SAFE_DESTROY.test(t)));
+    if (risky) return {ok: false, error: 'This screen has a "' + risky + '" button, so tapping by position is switched off here. Read the screen (phone_screen or phone_look) and tap by element id with phone_tap.'};
+  }
   if (name === 'phone_tap' && label && label.length <= 40) {
     if (SAFE_MONEY.test(label) && !SAFE.live('pay or buy', label)) return SAFE.askFirst('pay or buy', label, '"' + label + '" spends money.');
     if (SAFE_DESTROY.test(label) && !SAFE.live('delete', label)) return SAFE.askFirst('delete', label, '"' + label + '" deletes or removes something.');
@@ -902,7 +906,7 @@ async function callModel(messages, useTools, quiet) {
   for (const p of list) {
     if (!p.cloud && (cooldown[p.name] || 0) > Date.now()) continue;
     for (const tools of (useTools ? [true, false] : [false])) {
-      const body = {model: p.model, messages: messages.map(m => { const o = {}; for (const k in m) if (k[0] !== '_') o[k] = m[k]; return o; }), temperature: 0.6, max_tokens: 8000};
+      const body = {model: p.model, messages: messages.map(m => { const o = {}; for (const k in m) if (k[0] !== '_') o[k] = m[k]; return o; }), temperature: (useTools && messages.slice(-4).some(m => m.role === 'tool')) ? 0.25 : 0.6, max_tokens: 8000};
       if (tools) { body.tools = TOOLS; body.tool_choice = 'auto'; }
       if (p.cloud && taskStart) body.new_task = true;
       if (p.cloud && BIGJOB) body.big_job = true;
