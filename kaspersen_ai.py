@@ -658,7 +658,7 @@ def serve_pclink(h, path):
     h.send_header("Cache-Control", "no-cache"); h.end_headers(); h.wfile.write(b)
 
 
-MEM_NAME = re.compile(r"^(sessions\.json|projects\.json|s_[a-z0-9]{4,24}\.json)$")   # the app's memory files
+MEM_NAME = re.compile(r"^(sessions\.json|projects\.json|actlog\.json|s_[a-z0-9]{4,24}\.json)$")   # the app's memory files
 MEM_MAX = 6 * 1024 * 1024          # per file, per account
 MEM_FILES_MAX = 5000               # files per account
 
