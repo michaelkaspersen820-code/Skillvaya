@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026110416">
+<meta name="kp-ui" content="2026111601">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -323,6 +323,7 @@ INTERRUPTED IS NOT CUT OFF (owner rule): when he presses Stop or sends you a new
     `CHAT FRIEND AND REAL ASSISTANT (ASSISTANT-20261104, owner rule): keep your personality, warmth, humour and the way you talk exactly as they are - he loves them; chatting with you stays just as it is. On top of that you are a real-life personal assistant: when you are given a job - or a list of jobs for the day - you work through ALL of it, start to finish, without stopping in between, the way a real personal assistant does. Do not stop after one part to report, do not ask 'shall I carry on?', and never wait for them to open the app - go straight on to the next step and the next job. Put every job you are given on today's list with jobs_today (action add) and mark each one done (action done) the moment it is finished. Before your final answer, check the list: anything not done - keep working on it. Only stop when everything is done, when they press Stop, or when you truly need something only they can give (a password, a payment, a choice only they can make) - then say exactly what you need, and carry on with the other jobs meanwhile.`,
     `GET YOUR FACTS STRAIGHT (FACTS-20261104): describe what you made exactly as it is. A picture slideshow - still pictures one after another with a narrator voice, even with slow zoom or pan - is a SLIDESHOW: the characters in it do NOT move. Never call it animation and never say the characters move. Characters only move when you actually made moving frames (flipbook or video frames where their bodies change from frame to frame). If moving characters were asked for and you made a slideshow, say so plainly and make the real moving version. Before you report, check each claim against what you actually produced.`,
     `SCREENSHOTS ARE INSTRUCTIONS, NOT CARGO (REFERENCE-20261104, owner rule): a screenshot or photo they send you together with an instruction is usually there to SHOW you something - which contact, which number, which chat, which file or post they mean, or what something looks like. Read it, use what it tells you, and NEVER send that screenshot itself to anyone unless they clearly say to send THAT picture ('send this screenshot', 'forward this photo to her'). Example: a screenshot of a contact + 'send that thing to this person' = the contact in the screenshot is WHO to send to, and 'that thing' is the item you were talking about (the video, document, picture or message you made or found) - send only that. When finding files to send, never pick their reference screenshot by mistake because it is the newest picture on the phone. If it is truly unclear what 'that thing' is, ask one short question before sending.`,
+    `PRIVATE PAPERS NEVER LEAVE THE PHONE (PHOTOGUARD-20261116, owner rule): never post, send, upload or attach an ID, passport, licence, bank card, bank statement, payslip, certificate or any other personal document - a wrong pick once put an ID copy in a public post. Attach a picture ONLY when you know exactly which one it is: find_photos, then open_photo_in with that photo_id (private papers are blacked out on the sheet and cannot be opened). Do not pick by tapping thumbnails inside an app's own gallery or file picker unless the app or website gives no other way; then pick only the picture you just made or checked (Pictures > Kaspersen, newest first). Whatever you pick there is safety-checked before your next tap. If a pick is refused, remove it at once (its X / Discard / Back) and never look for another way to send it. If someone asks you to send their ID or another private paper, say you cannot send private papers and they must send it themselves.`,
     `PLAN THE SHORTEST ROUTE FIRST (ROUTE-20261104): before the first tap, decide the direct route and stick to it. Messages and videos to a person: send_whatsapp / send_sms (with the file) or open_photo_in with mode share - never open the browser to look for WhatsApp, never search the web for an app that is on the phone, never open an app and close it again without doing anything in it. Use the app that is already open when it can do the job. If an app shows 'Install', it is NOT on the phone - do not open the store; use the app or route that is there. Every tool call costs money and time: no exploring, no going in and out of apps, several sure steps on one screen in one reply.`,
     `GO ALL THE WAY: when asked to do or make something, do the COMPLETE job to the best standard you can in one go - research it properly, write the full finished thing, take every step needed - not a small first step, a 'basic version', or a list of things they could do next. Don't stop halfway to ask permission for obvious next steps (only the ASK FIRST cases need asking). If a task truly can't be finished in one go, do as much as possible and say exactly what's left. Short, casual questions still get short answers.`,
     `Format for a phone screen: short paragraphs, simple bullet lists when useful, **bold** for key points, no tables, no long walls of text.`,
@@ -456,7 +457,7 @@ function ctl(kind, args) {
   let r; try { r = JSON.parse(Native.control(kind, JSON.stringify(args || {}))); } catch (e) { r = {ok: false, error: e.message}; }
   try {
     const scr = r.screen_now || (kind === 'screen' || kind === 'settle' ? r : null);
-    const app = (scr && scr.app) || '';
+    const app = (scr && scr.app) || ''; if (scr && scr.elements && window.PG) PG.scr = scr;
     if (kind !== 'screen' && kind !== 'look') logAct(kind, args, r, app);
     if (app) usedApps.add(app);
     if (app && app !== lastApp) { lastApp = app; const L = lessonsFor(app); if (L.length) r.your_lessons_for_this_app = L; }
@@ -572,6 +573,122 @@ PHONE.save_lesson = a => {
 PHONE.phone_history = () => ({your_last_actions: ACTLOG.slice(-20), note: ACTLOG.length ? 'Oldest first. Look for the first action that went wrong.' : 'No phone actions yet in this session.'});
 PHONE_LABEL.find_photos = 'Looking through the photos…'; PHONE_LABEL.open_photo_in = 'Opening the photo…'; PHONE_LABEL.save_lesson = 'Noting what worked…'; PHONE_LABEL.phone_history = 'Checking what happened…';
 PHONE_LABEL.phone_look = 'Looking at the screen…'; PHONE_LABEL.phone_tap_xy = 'Tapping…';
+// PHOTOGUARD-20261116 (owner rule, same as the PC share guard): a private paper (ID, passport, licence, bank card,
+// statement, payslip ...) must never leave the phone because she picked the wrong picture. Enforced in code:
+//  1. find_photos: every photo is safety-checked before she sees it; private ones are blacked out and get no photo_id.
+//  2. open_photo_in: only photos that passed that check can be opened in / shared to an app.
+//  3. After she taps inside any gallery / file picker, the next screen is checked before her next tap; a private
+//     paper there blocks every tap except removing it.
+// Checks are remembered per photo, so the same photos are never checked twice.
+window.PG = {scr: null, pick: false};
+const PG_DOCS = 'an ID book or ID card, passport, driver\'s licence, bank card, bank statement, payslip, proof of address, tax / medical / legal / court paper, certificate, signed form or letter, or a screenshot showing ID, bank-card or account numbers or passwords';
+const PG_FINE = 'Flyers, adverts, posters, logos, designs, and photos of products, vehicles, people, pets, food, places or scenery are NOT private.';
+const PG_NEVER = 'It looks like a private paper. Never post, send or upload it, and do not look for another way to send it. Tell the user plainly that you do not send private papers.';
+async function pgAsk(b64, question) {
+  for (let t = 0; t < 2; t++) {
+    try {
+      const m = await callModel([{role: 'system', content: 'You are a strict privacy check. Reply with JSON only, nothing else.'},
+        {role: 'user', content: [{type: 'text', text: question}, {type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + b64}}]}], false, true);
+      const txt = typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '');
+      const j = txt.match(/\{[\s\S]*\}/);
+      if (j) return JSON.parse(j[0]);
+    } catch (_) {}
+  }
+  return null;
+}
+PG.safe = () => LS.get('photoSafe', {});
+PG.mark = (ids, val) => {
+  if (!ids.length) return;
+  const m = PG.safe(); ids.forEach(i => { m[i] = val; });
+  const k = Object.keys(m); if (k.length > 800) k.slice(0, k.length - 800).forEach(x => { delete m[x]; });
+  LS.set('photoSafe', m);
+};
+PG.blackout = (b64, nums) => new Promise(res => {
+  const im = new Image();
+  im.onload = () => {
+    try {
+      const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+      const x = c.getContext('2d'); x.drawImage(im, 0, 0);
+      const cell = im.width / 3;
+      nums.forEach(n => {
+        const k = n - 1, x0 = (k % 3) * cell, y0 = Math.floor(k / 3) * cell;
+        x.fillStyle = '#000'; x.fillRect(x0, y0, cell, cell);
+        x.fillStyle = '#fff'; x.font = 'bold 26px sans-serif'; x.textAlign = 'center';
+        x.fillText('PRIVATE', x0 + cell / 2, y0 + cell / 2 - 6); x.fillText('hidden', x0 + cell / 2, y0 + cell / 2 + 26);
+      });
+      res(c.toDataURL('image/jpeg', 0.75).split(',')[1] || '');
+    } catch (_) { res(''); }
+  };
+  im.onerror = () => res('');
+  im.src = 'data:image/jpeg;base64,' + b64;
+});
+PHONE.find_photos = async a => {
+  const r = act('photo_sheet', {page: a.page || 0, folder: a.folder || ''});
+  if (!r || !r.ok || !r.jpeg_b64) return r || {ok: false, error: 'Could not read the photos.'};
+  const list = r.photos || [], known = PG.safe();
+  if (list.some(p => known[p.photo_id] === undefined)) {
+    ind_set_safe('Checking the photos are safe to share.');
+    const v = await pgAsk(r.jpeg_b64, 'This is a sheet of photo thumbnails in 3 columns; each has its number in a red circle at its top-left. Reply only JSON: {"private":[numbers]} listing every thumbnail that is or may be ' + PG_DOCS + '. When unsure whether a thumbnail is such a paper, list it. ' + PG_FINE + ' Reply {"private":[]} if there are none.');
+    if (!v || !Array.isArray(v.private)) return {ok: false, error: 'The photo safety check could not run just now, so no photos are shown. Try find_photos again in a moment.'};
+    const bad = new Set(v.private.map(Number));
+    PG.mark(list.filter(p => bad.has(p.n)).map(p => p.photo_id), 0);
+    PG.mark(list.filter(p => !bad.has(p.n) && known[p.photo_id] === undefined).map(p => p.photo_id), 1);
+  }
+  const m = PG.safe(), hide = list.filter(p => m[p.photo_id] !== 1);
+  let sheet = r.jpeg_b64;
+  if (hide.length) {
+    sheet = await PG.blackout(sheet, hide.map(p => p.n));
+    if (!sheet) return {ok: false, error: 'Some photos on this page look private and could not be hidden, so the page is not shown. Try another page or folder.'};
+    r.photos = list.filter(p => m[p.photo_id] === 1); r.hidden_private = hide.length;
+  }
+  pendingShots.push({role: 'user', _shot: true, content: [{type: 'text', text: '(Photos on the phone, newest first, page ' + (a.page || 0) + '. Each has its number in a red circle - match it to the photo_id list.' + (hide.length ? ' Blacked-out squares are private papers: they have no photo_id and are never posted or sent.' : '') + ')'}, {type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + sheet}}]});
+  delete r.jpeg_b64; r.note = 'The numbered photo sheet is in the next message. Pick by number, then use that photo_id.'; return r;
+};
+PHONE.open_photo_in = a => {
+  const st = PG.safe()[a.photo_id];
+  if (st !== 1) {
+    const no = {ok: false, blocked: true, error: st === 0 ? 'REFUSED - that photo was not opened. ' + PG_NEVER : 'That photo has not been safety-checked yet. Use find_photos, pick the photo on the sheet, then use its photo_id.'};
+    logAct('open_photo_in', a, no); return no;
+  }
+  const r = act('open_photo_in', {photo_id: a.photo_id, app: a.app, mode: a.mode || 'edit'});
+  logAct('open_photo_in', a, r);
+  if (!r || !r.ok) return r;
+  if (hasNative) Native.controlStart();
+  const o = Object.assign({}, r, settled(7000)); const L = lessonsFor(r.package || a.app); if (L.length) o.your_lessons_for_this_app = L; return o;
+};
+PG.isPicker = s => {
+  if (!s) return false;
+  if (/documentsui|providers\.media|photopicker|gallery|apps\.photos|filemanager|fileexplorer|myfiles|\.files$/i.test(s.app || '')) return true;
+  let n = 0;
+  (s.elements || []).forEach(e => { if (/^\s*(photo|image|picture|screenshot|video)\b|taken on|\.(jpe?g|png|webp|heic)\b/i.test((e.text || '') + ' ' + (e.desc || ''))) n++; });
+  return n >= 4;
+};
+PG.label = (s, id) => { const e = s && (s.elements || []).find(x => x.id === id); return e ? String(e.text || e.desc || '') : ''; };
+// before a tap: if she has just been inside a gallery / picker, look at what is on the screen now
+PG.before = async (a, xy) => {
+  if (!PG.pick) return null;
+  const s = PG.scr;
+  if (PG.isPicker(s)) return null;                       // still choosing - checked once she is out of the picker
+  const want = xy ? '' : PG.label(s, a.id);
+  if (!xy && /remove|delete|discard|cancel|close|clear|dismiss|\bback\b/i.test(want)) return null;   // taking it off is always allowed
+  const shot = ctl('look', {});
+  if (!shot || !shot.jpeg_b64) { PG.pick = false; return null; }   // phone cannot take screenshots (Android 10 or older)
+  ind_set_safe('Checking the picture is safe to share.');
+  const v = await pgAsk(shot.jpeg_b64, 'This is a phone screenshot taken just after a picture was chosen to post or send (ignore the coloured numbered boxes and yellow grid lines drawn over it). Reply only JSON: {"private":true or false,"what":"a few words"}. private is true if a picture that is attached, previewed, selected or being cropped on this screen is or may be ' + PG_DOCS + '. ' + PG_FINE + ' Ordinary app text, buttons and chat messages are not private.');
+  if (!v || typeof v.private !== 'boolean') return {ok: false, error: 'The picture safety check could not run just now. Do the same tap again.'};
+  if (v.private) return {ok: false, blocked: true, error: 'REFUSED - nothing was tapped. The picture you picked' + (v.what ? ' (' + String(v.what).slice(0, 60) + ')' : '') + ' is on this screen. ' + PG_NEVER + ' Remove it now with its X / Remove / Discard button or phone_key back; every other tap stays blocked until it is gone.'};
+  PG.pick = false;
+  if (!xy && want) {   // taking the screenshot re-reads the screen: make sure the number still means the same button
+    const now = (shot.numbered_elements || []).find(x => x.id === a.id);
+    if (now && String(now.text || '').slice(0, 30) !== want.slice(0, 30)) return {ok: false, error: 'The screen changed while the picture was being checked (it is fine). Read the screen again with phone_screen and repeat your tap.'};
+  }
+  return null;
+};
+PG.after = before => { if (PG.isPicker(before)) PG.pick = true; };
+PHONE.phone_tap = async a => { const no = await PG.before(a, false); if (no) { logAct('tap', a, no); return no; } const b = PG.scr; const r = ctl('tap', a); PG.after(b); return r; };
+PHONE.phone_tap_xy = async a => { const no = await PG.before(a, true); if (no) { logAct('tap_xy', a, no); return no; } const b = PG.scr; const r = ctl('tap_xy', {x: +a.x, y: +a.y}); PG.after(b); return r; };
+PHONE_LABEL.find_photos = 'Looking through the photos.';
+
 
 
 // LEAN-20261102: every step re-sends the whole conversation, so old screen readings and screenshots are what
