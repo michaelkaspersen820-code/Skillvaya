@@ -94,6 +94,26 @@ def _unlimited(u):
     return u.get("role") == "admin" or str(u.get("email", "")).lower() in {e.strip().lower() for e in emails.split(",") if e.strip()}
 
 
+# PRIVATE-20261116 (owner): Kaspersen is no longer sold - she is the owner's own. She keeps working for the owner
+# accounts and on the phones she is already on (accounts that used her before the cut-off day); nobody new can
+# start using her. Set KASPERSEN_PRIVATE=0 on Render to open her up again.
+PRIVATE_CUTOFF = "2026-11-17"
+_private_ok = {}
+
+
+def _private_block(u):
+    if os.environ.get("KASPERSEN_PRIVATE", "1") != "1" or _unlimited(u):
+        return None
+    uid = int(u["id"])
+    if uid not in _private_ok:
+        with A.conn() as c:
+            r = c.execute("SELECT calls FROM kai_usage WHERE user_id=? AND day<? LIMIT 1", (uid, PRIVATE_CUTOFF)).fetchone()
+        _private_ok[uid] = bool(r)
+    if _private_ok[uid]:
+        return None
+    return {"error": "Kaspersen is a private assistant and is not open to new users.", "private": True}, 403
+
+
 def _keys():
     if time.time() - _cache["at"] < 60:
         return _cache["keys"]
@@ -764,6 +784,9 @@ def handle_post(h, path, d):
     if path != "/api/kai/chat/completions":
         return h.sendj({"error": "Not found"}, 404)
     u = h.require()
+    prv = _private_block(u)
+    if prv:
+        return h.sendj(*prv)
     uid = int(u["id"]); unl = _unlimited(u); day = _today()
     if not unl and not _phone_ok(uid):
         return h.sendj({"error": "Confirm your mobile number for Future Chat to use Kaspersen.", "verify_phone": True}, 403)
@@ -873,6 +896,9 @@ _img_used = {}
 
 def _image(h, d):
     u = h.require()
+    prv = _private_block(u)
+    if prv:
+        return h.sendj(*prv)
     uid = int(u["id"]); unl = _unlimited(u); day = _today()
     if not unl and not _phone_ok(uid):
         return h.sendj({"error": "Confirm your mobile number for Future Chat to use Kaspersen.", "verify_phone": True}, 403)
@@ -932,6 +958,9 @@ _stt_used = {}
 
 def _transcribe(h, d):
     u = h.require()
+    prv = _private_block(u)
+    if prv:
+        return h.sendj(*prv)
     uid = int(u["id"]); unl = _unlimited(u); day = _today()
     if not unl and not _phone_ok(uid):
         return h.sendj({"error": "Confirm your mobile number for Future Chat to use Kaspersen.", "verify_phone": True}, 403)
