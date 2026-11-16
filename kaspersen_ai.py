@@ -102,6 +102,11 @@ _private_ok = {}
 
 
 def _private_block(u):
+    # OFFLINE-20261116 (owner): "keep her offline for now - no money for her brain". While this is on, nobody's
+    # Kaspersen (the owner's included) can spend anything: no chat, pictures or voice go to the paid models.
+    # To switch her back on: set KASPERSEN_OFFLINE=0 on Render, or change the default below to "0" and deploy.
+    if os.environ.get("KASPERSEN_OFFLINE", "1") == "1":
+        return {"error": "Kaspersen is switched off for now. Michael will switch her back on when she is ready.", "offline": True}, 403
     if os.environ.get("KASPERSEN_PRIVATE", "1") != "1" or _unlimited(u):
         return None
     uid = int(u["id"])
