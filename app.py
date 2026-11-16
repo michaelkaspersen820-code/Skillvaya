@@ -36,6 +36,7 @@ def _sv_dl_get(tk):
         return v[0], v[1], v[2]
 import futurechat as FC
 import kaspersen_ai as KAI
+import ownlink as OWN
 import homeads as HA
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -4756,6 +4757,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(404); self.end_headers()
     def do_GET(self):
         path=urlparse(self.path).path
+        if path.startswith("/mcp/"):
+            return OWN.handle_get(self,path)
         if path in ("/pclink","/downloads/KaspersenPCLink.exe","/downloads/KaspersenPCLink.json"):
             return KAI.serve_pclink(self,path)
         if path == "/forgot-password":
@@ -5572,6 +5575,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 self.rfile.read(int(self.headers.get("Content-Length","0")))
                 return self.sendj({"error":"PayFast is paused. PayPal is the only supported checkout provider."},410)
             d=self.body()
+            if path.startswith("/mcp/"):
+                return OWN.handle_mcp(self,path,d)
+            if path.startswith("/api/own/"):
+                return OWN.handle_agent(self,path,d)
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
                 return FC.handle_post(self,path,d)
             if path.startswith("/api/kai/"):
@@ -6853,6 +6860,7 @@ def fc_setup():
     HA.bind(globals())
     with conn() as c: HA.init(c)
     KAI.bind(globals())
+    OWN.bind(KAI.A, KAI._verify)
     with conn() as c: KAI.init(c)
     threading.Thread(target=lambda:FC.migrate_legacy(True),name="futurechat-migrate",daemon=True).start()
 def main():
