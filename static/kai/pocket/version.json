@@ -1,9 +1,9 @@
 {
- "ui": 2026111601,
- "ui_sha256": "7843ca474838961de5cbbc7258b786f182a1ee0f7e92e7fe60b73c21c3fa513c",
+ "ui": 2026111602,
+ "ui_sha256": "8268f54cd20a6b5257054d04f9dc6311b77af6ff0c6472f3910a873dae848c41",
  "apk_version_code": 15,
  "apk_version": "2.1",
  "apk_url": "/downloads/Kaspersen-Pocket.apk",
  "apk_sha256": "d90df259e63a16a24371b64a7aff78d9992f2f4f1556106c71af8ef2038dc3d4",
- "notes": "Private-paper guard: IDs, passports, licences, bank cards and other private papers are hidden from her photo sheet, cannot be opened or shared, and anything she picks in a gallery is checked before she can post it"
+ "notes": "Safety locks: private papers hidden and never shared; banking apps locked; paying, deleting and ID or card numbers need a yes; lasting action log; adverts given as a job are posted without asking"
 }
