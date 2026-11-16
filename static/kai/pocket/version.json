@@ -1,9 +1,9 @@
 {
- "ui": 2026111604,
- "ui_sha256": "47c1ce0252bb573bd094ab2cefae5e5b22ac99e15f3d3c00b4b844de09ef1d4b",
+ "ui": 2026111605,
+ "ui_sha256": "6265a5f8a687f798534ea99960030096eba31cd3685723d2bf333e8908abddc1",
  "apk_version_code": 15,
  "apk_version": "2.1",
  "apk_url": "/downloads/Kaspersen-Pocket.apk",
  "apk_sha256": "d90df259e63a16a24371b64a7aff78d9992f2f4f1556106c71af8ef2038dc3d4",
- "notes": "Kaspersen is switched off for now"
+ "notes": "Self-check: she corrects her report when an action did not go through, and will not send the same thing twice"
 }

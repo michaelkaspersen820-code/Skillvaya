@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Kaspersen</title>
-<meta name="kp-ui" content="2026111604">
+<meta name="kp-ui" content="2026111605">
 <style>
 :root{--bg:#0b1626;--panel:#12223a;--panel2:#18304f;--line:#22406a;--text:#e9f1fb;--dim:#9db3cf;--accent:#2ec4b6;--accent2:#1a9c92;--me:#1f5f8b;--warn:#ffb454}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -715,6 +715,7 @@ SAFE.privateNumber = t => {
 };
 // what they say next decides a waiting lock: a clear yes opens that one action, anything else cancels it
 SAFE.heard = text => {
+  SAFE.jobStart();
   const p = SAFE.pending; SAFE.pending = null;
   if (!p || Date.now() - p.at > 30 * 60000) return;
   const t = String(text || '').trim().toLowerCase();
@@ -729,6 +730,11 @@ SAFE.check = (name, a, label) => {
   if (name === 'phone_tap_xy' && s) {
     const risky = (s.elements || []).map(e => String(e.text || e.desc || '')).find(t => t && t.length <= 40 && (SAFE_MONEY.test(t) || SAFE_DESTROY.test(t)));
     if (risky) return {ok: false, error: 'This screen has a "' + risky + '" button, so tapping by position is switched off here. Read the screen (phone_screen or phone_look) and tap by element id with phone_tap.'};
+  }
+  if (name === 'phone_tap' && label && SAFE_PUBLISH.test(label.trim()) && SAFE.lastTyped) {
+    const k = SAFE.pubKey(s), at = SAFE.published[k];
+    if (at && Date.now() - at < 30 * 60000 && !SAFE.live('send again', label)) return SAFE.askFirst('send again', label, 'you already pressed "' + label + '" for this same text in this same place at ' + new Date(at).toTimeString().slice(0, 5) + ', so it has gone out once.');
+    SAFE.pendingPub = k;
   }
   if (name === 'phone_tap' && label && label.length <= 40) {
     if (SAFE_MONEY.test(label) && !SAFE.live('pay or buy', label)) return SAFE.askFirst('pay or buy', label, '"' + label + '" spends money.');
@@ -750,15 +756,38 @@ SAFE.send = () => { SAFE.unsent = 0; try { siteApi('/api/kai/mem', {name: 'actlo
 SAFE.run = async (name, a, working) => {
   a = a || {};
   const s = window.PG && PG.scr, app = (s && s.app) || '', label = name === 'phone_tap' && window.PG ? PG.label(s, a.id) : '';
+  SAFE.pendingPub = null;
   let r = SAFE.check(name, a, label);
   if (!r) {
     // his PC enforces its own locks; a yes he gave is passed along with the call
     if (/^pc_(run|click|type)$/.test(name) && SAFE.grant && SAFE.grant.exp > Date.now()) a = Object.assign({}, a, {his_yes: SAFE.grant.label});
     r = await PHONE[name](a, working);
     if (r && r.needs_his_yes) SAFE.pending = {kind: r.kind || 'risky action', label: r.label || '', at: Date.now()};
+    const fine = !(r && (r.ok === false || r.error));
+    if (name === 'phone_type' && fine) SAFE.lastTyped = String(a.text || '');
+    if (name === 'phone_tap' && SAFE.pendingPub && fine) { SAFE.published[SAFE.pendingPub] = Date.now(); const ks = Object.keys(SAFE.published); if (ks.length > 200) ks.sort((x, y) => SAFE.published[x] - SAFE.published[y]).slice(0, ks.length - 200).forEach(x => { delete SAFE.published[x]; }); LS.set('published', SAFE.published); }
   }
   try { SAFE.record(name, a, r, label, app); } catch (_) {}
   return r;
+};
+// SELFCHECK-20261116: never report 'done' when the log says otherwise; never send the same thing twice.
+SAFE.job = {from: 0, checked: false}; SAFE.lastTyped = ''; SAFE.pendingPub = null; SAFE.published = LS.get('published', {});
+const SAFE_PUBLISH = /^(post|publish|send|share now|share|submit|tweet|reply|list item|post ad|send message)$/i;
+SAFE.hash = t => { t = String(t || ''); let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return h.toString(36) + '.' + t.length; };
+SAFE.pubKey = s => (s && s.app || '') + '|' + SAFE.hash(SAFE.lastTyped) + '|' + SAFE.hash(((s && s.elements) || []).map(e => String(e.text || e.desc || '')).filter(Boolean).slice(0, 5).join('|'));
+SAFE.jobStart = () => { SAFE.job = {from: SAFE.log.length, checked: false}; };
+SAFE.reportCheck = answer => {
+  if (SAFE.job.checked) return null;
+  const t = String(answer || '');
+  if (!/\b(posted|published|sent|uploaded|delivered|deleted|paid|listed|submitted|it'?s done|all done|is live|went out)\b/i.test(t)) return null;
+  if (/\b(not|n't|could ?n[o']t|unable|failed|blocked|locked|refused|did ?n[o']t|was ?n[o']t|won'?t|need your yes|needs your yes)\b/i.test(t)) return null;
+  const mine = SAFE.log.slice(SAFE.job.from).filter(e => /^(phone_tap|phone_tap_xy|phone_type|open_photo_in|open_app|open_url|send_|pc_click|pc_type|pc_run|pc_write_file|call_number)/.test(e.tool));
+  const bad = mine.filter(e => e.blocked).concat(mine.length && !mine[mine.length - 1].ok && !mine[mine.length - 1].blocked ? [mine[mine.length - 1]] : []);
+  if (!bad.length) return null;
+  SAFE.job.checked = true;
+  return 'CHECK YOUR REPORT before it goes out (owner rule: never say something is done when it is not). Your own action log for this job shows ' + bad.length + ' action(s) that did NOT go through: ' +
+    bad.slice(-3).map(e => e.tool + (e.on ? ' on "' + e.on + '"' : '') + (e.blocked ? ' (blocked by a lock)' : e.err ? ' (' + e.err + ')' : ' (failed)')).join('; ') +
+    '. Rewrite your answer now, without tools: say exactly what was done, what was not, and why. If everything really did go through another way, say how you know.';
 };
 PHONE.phone_history = () => ({your_last_actions: SAFE.log.slice(-20), note: SAFE.log.length ? 'Oldest first. Look for the first action that went wrong.' : 'No actions logged yet.'});
 
@@ -1403,6 +1432,7 @@ async function ask(text) {
       if (!calls.length) {
         const openJobs = JOBS.open();
         if (openJobs.length && nudges < 6 && !stopAsked) { nudges++; working.push({role: 'assistant', content: msg.content || ''}); working.push({role: 'system', content: 'You still have unfinished jobs on today\'s list: ' + openJobs.map(x => x.job).join('; ') + '. Do not stop - carry straight on with them now (mark each done with jobs_today when finished). Only stop if you truly need something only they can give, and then say exactly what.'}); continue; }
+        { const fix = SAFE.reportCheck(msg.content); if (fix && !stopAsked) { working.push({role: 'assistant', content: msg.content || ''}); working.push({role: 'system', content: fix}); continue; } }   // SELFCHECK-20261116
         answer = stripThink(msg.content); break;
       }
       working.push({role: 'assistant', content: msg.content || '', tool_calls: calls});
