@@ -223,3 +223,10 @@ html.fc-app #fcaPanel input::placeholder,html.fc-app #fcaPanel textarea::placeho
 html.fc-app #fcaPanel select option,html.fc-app .fc-sheet select option{background:#0f2b45;color:#fff}
 html.fc-app .fc-pill .fc-ib{background:transparent!important;box-shadow:none!important;border:0!important}
 html.fc-app .fca-row.danger,html.fc-app .fc-act.danger{background:transparent!important;box-shadow:none!important;border-color:var(--fca-line)!important}html.fc-app .fca-row.danger .tx b,html.fc-app .fc-act.danger{color:#ff9a9a!important}html.fc-app .fca-row.danger .tx small{color:#c99!important}
+html.fc-app .fc-recbar{background:#12324c;--fc-wave:#1ed6c8}html.fc-app .fc-rech{color:#9cb7cc}
+/* FCAPP-PICK-01: upload button instead of the browser's file box */
+html.fc-app input[type=file]{display:none!important}
+.fca-pick{display:flex;align-items:center;gap:12px;width:100%;padding:14px;border-radius:15px;border:1.5px dashed rgba(30,214,200,.55);background:rgba(30,214,200,.08);color:#fff;text-align:left;font:inherit;cursor:pointer}
+.fca-pick i{width:44px;height:44px;border-radius:50%;background:#1ed6c8;color:#05283a;display:grid;place-items:center;font-style:normal;font-size:21px;flex:none}
+.fca-pick span{min-width:0;flex:1}.fca-pick b{display:block;font-size:15.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fca-pick small{display:block;color:#9cb7cc;font-size:12.5px;margin-top:2px}
+.fca-prev img,.fca-prev video{display:block;width:100%;max-height:260px;object-fit:cover;border-radius:15px;margin-top:10px;background:#071a2c}

@@ -662,7 +662,8 @@
       '<label class="fca-field"><span>Business name</span><input id="fcaAdA" maxlength="60" value="' + esc(me.business_name || me.name || '') + '"></label>' +
       '<label class="fca-field"><span>Headline</span><input id="fcaAdH" maxlength="60" placeholder="e.g. Fresh cakes delivered in Bellville"></label>' +
       '<label class="fca-field"><span>Short message (optional)</span><textarea id="fcaAdB" rows="2" maxlength="180"></textarea></label>' +
-      '<label class="fca-field" id="fcaAdFRow" style="display:none"><span id="fcaAdFL">Photo</span><input id="fcaAdF" type="file"></label>' +
+      '<div class="fca-field" id="fcaAdFRow" style="display:none"><span id="fcaAdFL">Photo</span><input id="fcaAdF" type="file" hidden>' +
+      '<button type="button" class="fca-pick" id="fcaAdPick"><i>📎</i><span><b id="fcaAdPN">Add your photo</b><small id="fcaAdPS">Tap to choose from your phone</small></span></button><div class="fca-prev" id="fcaAdPrev"></div></div>' +
       '<label class="fca-field"><span>When people tap your ad</span><select id="fcaAdTo"><option value="tel">Call my number</option><option value="web">Open my website or page</option><option value="none">Nothing (just show the ad)</option></select></label>' +
       '<label class="fca-field" id="fcaAdLRow"><span id="fcaAdLL">Phone number</span><input id="fcaAdL" inputmode="tel" placeholder="082 123 4567" value="' + esc((X.me || {}).phone || '') + '"></label>' +
       '<label class="fca-field"><span>How long</span><select id="fcaAdP"></select></label>' +
@@ -673,7 +674,18 @@
     const drawPlans = () => { const tier = kind === 'video' ? 'video' : 'word'; $$('#fcaAdP').innerHTML = plans.filter(p => p.tier === tier).map(p => '<option value="' + p.product_id + '">' + (p.days === 7 ? '1 week' : '1 month') + ' · ' + esc(p.price) + '</option>').join(''); };
     bd.querySelectorAll('#fcaAdK button').forEach(b => b.onclick = () => { kind = b.dataset.k; bd.querySelectorAll('#fcaAdK button').forEach(x => x.classList.toggle('on', x === b));
       $$('#fcaAdFRow').style.display = kind === 'word' ? 'none' : 'block'; $$('#fcaAdFL').textContent = kind === 'photo' ? 'Photo (JPG, PNG or WebP, up to 2 MB)' : 'Video (MP4, up to 12 MB, about 30 seconds)';
-      $$('#fcaAdF').accept = kind === 'photo' ? 'image/jpeg,image/png,image/webp' : 'video/mp4,video/webm,video/quicktime'; $$('#fcaAdF').value = ''; drawPlans(); });
+      $$('#fcaAdF').accept = kind === 'photo' ? 'image/jpeg,image/png,image/webp' : 'video/mp4,video/webm,video/quicktime'; $$('#fcaAdF').value = ''; showPick(); drawPlans(); });
+    // FCAPP-PICK-01: a proper upload button (paperclip) with a preview instead of the browser's grey "Choose file" box
+    const showPick = () => {
+      const f = $$('#fcaAdF').files && $$('#fcaAdF').files[0], prev = $$('#fcaAdPrev');
+      $$('#fcaAdPN').textContent = f ? f.name : (kind === 'video' ? 'Add your video' : 'Add your photo');
+      $$('#fcaAdPS').textContent = f ? (f.size / 1048576).toFixed(1) + ' MB · tap to change' : 'Tap to choose from your phone';
+      if (prev.dataset.url) { URL.revokeObjectURL(prev.dataset.url); delete prev.dataset.url; }
+      prev.innerHTML = '';
+      if (f) { const u = URL.createObjectURL(f); prev.dataset.url = u; prev.innerHTML = /^video\//.test(f.type) ? '<video src="' + u + '" muted playsinline controls></video>' : '<img src="' + u + '" alt="Your ad picture">'; }
+    };
+    $$('#fcaAdPick').onclick = () => $$('#fcaAdF').click();
+    $$('#fcaAdF').onchange = showPick;
     $$('#fcaAdTo').onchange = () => { const v = $$('#fcaAdTo').value; $$('#fcaAdLRow').style.display = v === 'none' ? 'none' : 'block'; $$('#fcaAdLL').textContent = v === 'tel' ? 'Phone number' : 'Website or page link'; $$('#fcaAdL').inputMode = v === 'tel' ? 'tel' : 'url'; $$('#fcaAdL').placeholder = v === 'tel' ? '082 123 4567' : 'www.mybusiness.co.za'; if (v === 'web') $$('#fcaAdL').value = ''; };
     drawPlans();
     bind(bd, {

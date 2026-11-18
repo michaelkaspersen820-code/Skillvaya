@@ -130,3 +130,13 @@
 .fc-filterbar span{flex:1}
 .fc-filterbar button{border:0;background:#fff;border-radius:8px;padding:6px 10px;font-weight:700;color:#0b766e}
 @media (min-width:900px){#fcRoot{left:auto;width:min(560px,100%);right:0;box-shadow:-8px 0 30px #0b1d3333}}
+/* FC-VOICE-02: live recording bar */
+.fc-pill{position:relative}
+.fc-recbar{--fc-wave:#0b766e;position:absolute;inset:0;z-index:2;display:flex;align-items:center;gap:8px;padding:0 10px 0 4px;border-radius:24px;background:#fff}
+.fc-recx{width:40px;height:40px;border:0;border-radius:50%;background:transparent;font-size:19px;flex:none;cursor:pointer}
+.fc-recdot{width:10px;height:10px;border-radius:50%;background:#e5484d;flex:none;animation:fcblink 1s infinite}
+@keyframes fcblink{50%{opacity:.25}}
+.fc-rect{font-variant-numeric:tabular-nums;font-size:15px;min-width:38px;color:#e5484d;flex:none}
+.fc-recw{flex:1;min-width:0;height:34px;display:block}
+.fc-rech{flex:none;font-size:11px;color:#55667d;white-space:nowrap}
+@media (max-width:360px){.fc-rech{display:none}}

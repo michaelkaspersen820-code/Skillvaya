@@ -470,13 +470,44 @@
       const type = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '');
       const rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined); const chunks = []; const startT = Date.now();
       rec.ondataavailable = e => e.data.size && chunks.push(e.data);
-      rec.onstop = async () => { stream.getTracks().forEach(t => t.stop()); S.rec = null; const btn = $('#fcSend', root); if (btn) btn.classList.remove('rec'); sync && sync();
+      const ui = recBar(stream, startT, () => { ui.cancelled = true; try { rec.stop(); } catch (_) {} });
+      rec.onstop = async () => { stream.getTracks().forEach(t => t.stop()); S.rec = null; ui.close(); const btn = $('#fcSend', root); if (btn) btn.classList.remove('rec'); sync && sync();
+        if (ui.cancelled) { toast('Voice note deleted'); return; }
         if (Date.now() - startT < 800) { toast('Hold on a little longer to record'); return; }
         const mime = (rec.mimeType || 'audio/webm').split(';')[0]; const blob = new Blob(chunks, { type: mime });
         await sendFiles([new File([blob], 'Voice note.' + (mime.includes('mp4') ? 'm4a' : 'webm'), { type: mime })]); };
       rec.start(); S.rec = rec; const btn = $('#fcSend', root); btn.classList.add('rec'); sync && sync(); toast('Recording… tap again to send');
       setTimeout(() => { if (S.rec === rec) rec.stop(); }, 5 * 60 * 1000);
     } catch (e) { toast('Microphone permission is needed for voice notes'); }
+  }
+  // Live recording bar: red dot, timer, moving sound wave from the microphone, bin to cancel
+  function recBar(stream, startT, onCancel) {
+    const pill = $('.fc-pill', root); const out = { cancelled: false, close() {} }; if (!pill) return out;
+    const bar = document.createElement('div'); bar.className = 'fc-recbar'; bar.setAttribute('role', 'status');
+    bar.innerHTML = '<button type="button" class="fc-recx" aria-label="Delete voice note">🗑️</button><span class="fc-recdot"></span><b class="fc-rect">0:00</b><canvas class="fc-recw" aria-hidden="true"></canvas><small class="fc-rech">Tap ■ to send</small>';
+    pill.appendChild(bar);
+    bar.querySelector('.fc-recx').onclick = e => { e.preventDefault(); onCancel(); };
+    const cv = bar.querySelector('canvas'), tm = bar.querySelector('.fc-rect');
+    let ac = null, an = null, buf = null, raf = 0; const lv = [];
+    try { const AC = window.AudioContext || window.webkitAudioContext; ac = new AC(); const src = ac.createMediaStreamSource(stream); an = ac.createAnalyser(); an.fftSize = 512; src.connect(an); buf = new Uint8Array(an.fftSize); if (ac.state === 'suspended') ac.resume(); } catch (_) {}
+    let last = 0;
+    const draw = t => {
+      raf = requestAnimationFrame(draw);
+      const s = Math.floor((Date.now() - startT) / 1000); tm.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      if (t - last < 60) return; last = t;
+      let v = 0.04;
+      if (an) { an.getByteTimeDomainData(buf); let sum = 0; for (let i = 0; i < buf.length; i++) { const x = (buf[i] - 128) / 128; sum += x * x; } v = Math.min(1, Math.sqrt(sum / buf.length) * 4.5); }
+      lv.push(Math.max(0.06, v));
+      const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return;
+      if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+      const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+      const step = 5, n = Math.floor(w / step); while (lv.length > n) lv.shift();
+      g.fillStyle = getComputedStyle(bar).getPropertyValue('--fc-wave').trim() || '#12a8d0';
+      lv.forEach((a, i) => { const bh = Math.max(3, a * (h - 4)); const x = w - (lv.length - i) * step; g.beginPath(); if (g.roundRect) g.roundRect(x, (h - bh) / 2, 3, bh, 1.5); else g.rect(x, (h - bh) / 2, 3, bh); g.fill(); });
+    };
+    raf = requestAnimationFrame(draw);
+    out.close = () => { cancelAnimationFrame(raf); try { ac && ac.close(); } catch (_) {} bar.remove(); };
+    return out;
   }
   function attachSheet() {
     const tiles = [['📷', 'Photos & videos', '#7c3aed', () => pickFiles('image/*,video/*', '', true)], ['✨', 'Lens camera', '#0b766e', camera],
