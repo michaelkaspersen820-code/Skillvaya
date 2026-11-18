@@ -104,6 +104,8 @@
     const fab = document.createElement('button'); fab.className = 'fc-fab'; fab.setAttribute('aria-label', 'Start a new chat'); fab.innerHTML = ICON.plus; fab.onclick = newChat; bodyEl.appendChild(fab);
     $('#fcNew', root).onclick = newChat;
     $('#fcClose', root).onclick = () => close();
+    // FCAPP-01: in the stand-alone Future Chat app the top-left button opens Account & settings instead of leaving Future Chat.
+    if (window.SV_FC_APP) { const cb = $('#fcClose', root); cb.innerHTML = '<span style="display:inline-grid;width:26px;height:26px">' + cmSvg('smile') + '</span>'; cb.setAttribute('aria-label', 'Account and settings'); cb.title = 'Account and settings'; cb.onclick = () => { if (window.fcAppMenu) window.fcAppMenu(); }; const sm = root.querySelector('.fc-ttl small'); if (sm) sm.textContent = 'Chats, calls and Chatmoji'; }
     $('#fcQ', root).oninput = e => { S.q = e.target.value; drawList(); };
     root.querySelectorAll('.fc-chip').forEach(b => b.onclick = () => { S.filter = b.dataset.f; root.querySelectorAll('.fc-chip').forEach(x => x.classList.toggle('on', x === b)); drawList(); });
     if (load) await loadList(); else drawList();

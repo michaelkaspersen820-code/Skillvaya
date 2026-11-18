@@ -4146,7 +4146,7 @@ function svAfterLogin(){svFutureChatStatus();svRefreshProviderTools()}
 function check(tag){try{if(sent>=3)return;var nav=document.querySelector('.bottom-tabbar');if(!nav)return;var hidden=[].filter.call(nav.children,function(c){var r=c.getBoundingClientRect(),s=getComputedStyle(c);return !(r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden')});if(!hidden.length)return;sent++;var rep={tag:tag,path:location.pathname,ua:navigator.userAgent,lang:document.documentElement.lang,dir:document.documentElement.dir,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,body:document.body.className,signedIn:!!(window.me),role:window.me&&window.me.role||'',hasSvLang:typeof svLang==='function',sw:!!(navigator.serviceWorker&&navigator.serviceWorker.controller),count:nav.children.length,hidden:hidden.map(function(c){return {id:c.id,why:why(c)}})};fetch('/api/diag/tabs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rep).slice(0,20000)}).catch(function(){})}catch(_){}}
 setTimeout(function(){check('load+6s')},6000);document.addEventListener('click',function(e){if(e.target&&e.target.closest&&e.target.closest('.bottom-tabbar button'))setTimeout(function(){check('tap:'+(e.target.closest('button').id||''))},1500)},true)})();
 try{if(typeof closeSkillvayaVideoCall==='function'&&!closeSkillvayaVideoCall.__fx){const o=closeSkillvayaVideoCall;closeSkillvayaVideoCall=function(){try{svFxStop();svFx.id='none';if(window.svLens){window.svLens.i=-1;window.svLens.e=-1}}catch(_){}return o.apply(this,arguments)};closeSkillvayaVideoCall.__fx=1}if(typeof svAttachCallMedia==='function'&&!svAttachCallMedia.__fx){const a=svAttachCallMedia;svAttachCallMedia=async function(call,stream){const prev=svFx.id;svFxStop();const ok=await a.apply(this,arguments);if(ok&&prev&&prev!=='none'){try{await svApplyCallFx(prev)}catch(_){}}return ok};svAttachCallMedia.__fx=1}}catch(_){}
-</script><script src="/futurechat/chatmoji.js?v=2" defer></script><script src="/futurechat/calllens.js?v=8" defer></script><script src="/futurechat/fc.js?v=9" defer></script><script src="/homeads/ha.js?v=1" defer></script></body></html>'''
+</script><script src="/futurechat/chatmoji.js?v=2" defer></script><script src="/futurechat/calllens.js?v=8" defer></script><script src="/futurechat/fc.js?v=10" defer></script><script src="/homeads/ha.js?v=1" defer></script></body></html>'''
 SV_DIAG_TABS=[]
 SESSIONS={}
 def issue_session(user):
@@ -5085,6 +5085,17 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         updated_at TEXT NOT NULL, UNIQUE(user_id,kind,record_key))""")
                     rows=c.execute("SELECT record_key,payload FROM workfinder_records WHERE user_id=? AND kind=? ORDER BY updated_at DESC LIMIT 500",(u["id"],kind)).fetchall()
                 return self.sendj({"items":[{"key":r["record_key"],**json.loads(r["payload"])} for r in rows if not (kind=="saved" and json.loads(r["payload"]).get("removed"))]})
+            if path=="/futurechat-app":
+                # FCAPP-01: the stand-alone Future Chat app (Google Play) opens this. Same page, accounts, chats and calls as
+                # Future Chat inside Skillvaya; fcapp.js only changes the frame (full-screen Future Chat, own sign-in, Account menu).
+                fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=10" defer></script>', '<script src="/futurechat/fc.js?v=10" defer></script><script src="/futurechat/fcapp.js?v=1" defer></script>', 1)
+                fc_html = fc_page.encode("utf-8")
+                self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(fc_html))); self.end_headers(); self.wfile.write(fc_html); return
+            if path=="/customer-app" and "FutureChatNative" in self.headers.get("User-Agent",""):
+                # Notifications carry /customer-app?fc=... links; inside the Future Chat app keep people in Future Chat.
+                qs=urlparse(self.path).query
+                self.send_response(302); self.send_header("Location","/futurechat-app"+("?"+qs if qs else "")); self.send_header("Cache-Control","no-store"); self.end_headers(); return
             if path in ("/customer","/customer-app"):
                 # Customer browsing is public; account creation and sign-in live in Profile.
                 customer_page = HTML
