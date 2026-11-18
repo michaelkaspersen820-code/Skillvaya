@@ -197,7 +197,8 @@
   FCX.convActs = function (c) {
     const acts = [], p = X.peers[String(c.id)] || {};
     if (c.kind !== 'group' && p.user_id) acts.unshift(['👤', 'View profile', () => { openPanel(); push(() => scrPeer(p.user_id, c.id)); }]);
-    acts.push(['✅', 'Tasks, polls and meetings', () => { openPanel(); push(() => scrCircle(c.id, c.title)); }]);
+    if (c.kind === 'group') acts.push(['🏡', 'Family Circle home', () => { openPanel(); push(() => scrCircle(c.id, c.title)); }]);
+    acts.push(['✅', 'Tasks, polls and meetings', () => { openPanel(); push(() => scrCirclePlans(c.id, c.title)); }]);
     if (c.kind !== 'group' && p.user_id) acts.push(['🚫', p.blocked ? 'Unblock' : 'Block', () => blockUser(p.user_id, !p.blocked, c.title)]);
     acts.push(['💾', 'Save a copy of this chat', () => saveCopy(c.id, c.title)]);
     acts.push(['🧹', 'Clear chat', () => clearChats(c.id, c.title), 'danger']);
@@ -362,14 +363,15 @@
     bind(bd, { new: () => FC().newGroup(), tasks: () => push(scrTasks), stokvel: () => toast(groups.length ? 'Open a circle, then choose Stokvel in its chat menu' : 'Create a circle first, then start a stokvel in it') });
     bd.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { const g = groups.find(x => x.id === Number(b.dataset.g)); push(() => scrCircle(g.id, g.title)); });
   }
-  async function scrCircle(id, title) {
+  function scrCircle(id, title) { return FCX.circleHome ? FCX.circleHome(id, title) : scrCirclePlans(id, title); }
+  async function scrCirclePlans(id, title) {
     const self = X.stack[X.stack.length - 1];
     const bd = frame(title || 'Circle', 'Tasks, polls and meetings');
     bd.innerHTML = '<div class="fca-acts"><button class="fca-act" data-a="chat"><i>💬</i>Open chat</button><button class="fca-act" data-a="poll"><i>📊</i>Poll</button><button class="fca-act" data-a="task"><i>✅</i>Task</button><button class="fca-act" data-a="event"><i>📅</i>Meeting</button><button class="fca-act" data-a="reminder"><i>⏰</i>Reminder</button><button class="fca-act" data-a="call"><i>📞</i>Call</button></div><div id="fcaItems"><div class="fca-empty">Loading…</div></div>';
-    bind(bd, { chat: () => FC().openConv(id), call: () => FC().callConv(id, 'voice'), poll: () => itemForm('poll', id, () => scrCircle(id, title)), task: () => itemForm('task', id, () => scrCircle(id, title)), event: () => itemForm('event', id, () => scrCircle(id, title)), reminder: () => itemForm('reminder', id, () => scrCircle(id, title)) });
+    bind(bd, { chat: () => FC().openConv(id), call: () => FC().callConv(id, 'voice'), poll: () => itemForm('poll', id, () => scrCirclePlans(id, title)), task: () => itemForm('task', id, () => scrCirclePlans(id, title)), event: () => itemForm('event', id, () => scrCirclePlans(id, title)), reminder: () => itemForm('reminder', id, () => scrCirclePlans(id, title)) });
     let items = []; try { items = (await api('/api/fcx/items?c=' + id)).items || []; } catch (e) { $('#fcaItems', bd).innerHTML = '<div class="fca-empty"><b>Couldn\'t load</b>' + esc(e.message) + '</div>'; return; }
     if (X.stack[X.stack.length - 1] !== self) return;
-    itemList($('#fcaItems', bd), items, () => scrCircle(id, title), 'Nothing planned here yet. Add a poll, task, meeting proposal or reminder — everyone in the chat sees it.');
+    itemList($('#fcaItems', bd), items, () => scrCirclePlans(id, title), 'Nothing planned here yet. Add a poll, task, meeting proposal or reminder — everyone in the chat sees it.');
   }
 
   // ---------------------------------------------------------------- tasks / reminders / meetings / polls
@@ -498,6 +500,7 @@
       invite: () => { try { FC().inviteFriends(); } catch (_) {} }, help: () => push(scrHelp), terms: () => push(scrTerms), about: () => push(scrAbout),
       signout: signOut, delete: deleteAccount
     });
+    if (FCX.youExtra) { try { FCX.youExtra(bd); } catch (_) {} }
   }
   function appVersion() { const m = navigator.userAgent.match(/FutureChatApp\/([\d.]+)/); return m ? m[1] : '1.1'; }
   // profile picture: choose from the phone or take one with the camera; resized on the phone before upload
@@ -863,6 +866,7 @@
     bind(bd, { mine: () => push(scrMyBirthday), pick: () => push(scrPickCelebs) });
     bd.querySelectorAll('[data-b]').forEach(b => b.onclick = () => { const p = X.bdays.find(x => x.user_id === Number(b.dataset.b)); bdayCard(p); });
     bd.querySelectorAll('[data-c]').forEach(b => b.onclick = () => cardSheet({ kind: 'holiday', celeb: CELEB.find(x => x[0] === b.dataset.c) }));
+    if (FCX.celebExtra) { try { FCX.celebExtra(bd); } catch (_) {} }
   }
   function scrMyBirthday() {
     const bd = frame('My birthday', 'So friends can celebrate you'); const b = (X.prefs && X.prefs.birthday) || {};
@@ -1187,6 +1191,8 @@
   window.confirm = m => _confirm.call(window, String(m == null ? '' : m).replace(/Skillvaya/g, 'Future Chat'));
   const _title = Object.getOwnPropertyDescriptor(Document.prototype, 'title');
   try { Object.defineProperty(document, 'title', { get() { return _title.get.call(document); }, set(v) { _title.set.call(document, String(v).replace(/Skillvaya/g, 'Future Chat')); } }); } catch (_) {}
+
+  FCX.kit = { api, post, esc, $, toast, sheet, avatar, when, dueText, localInput, frame, push, pop, draw, go, row, bind, openPanel, X, FC, toggles, bindToggles, choiceRows, bindChoices, savePrefs, loadMe, itemForm, itemList, itemSheet, scrCirclePlans, scrTasks, scrCelebrations, confetti, redraw, SVG };
 
   // ---------------------------------------------------------------- start
   function boot() {

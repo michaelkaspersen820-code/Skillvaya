@@ -141,6 +141,15 @@ def _business_conversation(c, business_id, customer_id, owner_id, stamp=None):
 
 
 # ---------------------------------------------------------------- helpers
+def _teen_ok(c, adder, target):
+    """FCF-TEEN: 13-17 year olds can only be added to groups by people they already chat with (or a linked parent)."""
+    try:
+        import fcfamily
+        return fcfamily.can_add(c, adder, target)
+    except Exception:
+        return True
+
+
 def normalize_phone(raw, country="ZA"):
     s = re.sub(r"[^\d+]", "", str(raw or ""))
     if not s: return ""
@@ -658,19 +667,20 @@ def handle_post(h, path, d):
                 title = str(d.get("group_title") or "").strip()[:60]
                 if not title: return h.sendj({"error": "Give the group a name."}, 400)
                 if not _phone_verified(uid): return h.sendj({"error": "Verify your phone number first.", "verify_required": True}, 403)
-                ids = {uid}
+                ids = {uid}; private = 0
                 for p in (d.get("phones") or [])[:255]:
                     country = "ZA"
                     ph = normalize_phone(p, country)
                     r = c.execute("SELECT id FROM users WHERE phone_e164=? AND phone_verified_at<>''", (ph,)).fetchone() if ph else None
-                    if r: ids.add(int(r["id"]))
+                    if r and _teen_ok(c, uid, int(r["id"])): ids.add(int(r["id"]))   # FCF-TEEN
+                    elif r: private += 1
                 cid = c.execute("INSERT INTO fc_conversations(kind,title,pair_key,created_by,created_at,updated_at) VALUES('group',?,NULL,?,?,?) RETURNING id",
                                 (title, uid, stamp, stamp)).fetchone()["id"]
                 for m in ids: c.execute("INSERT INTO fc_members(conversation_id,user_id,role,joined_at) VALUES(?,?,?,?)", (cid, m, "admin" if m == uid else "member", stamp))
                 mid = c.execute("INSERT INTO fc_messages(conversation_id,sender_id,body,kind,created_at) VALUES(?,?,?,?,?) RETURNING id",
                                 (cid, uid, "%s created the group “%s”" % (u["name"], title), "system", stamp)).fetchone()["id"]
                 c.execute("UPDATE fc_conversations SET last_message_id=? WHERE id=?", (mid, cid))
-                return h.sendj({"conversation_id": int(cid), "added": len(ids) - 1})
+                return h.sendj({"conversation_id": int(cid), "added": len(ids) - 1, "private": private})
         return h.sendj({"error": "Choose who to chat with."}, 400)
     if path == "/api/fc/send":
         conv_id = int(d.get("c") or 0)
@@ -762,17 +772,18 @@ def handle_post(h, path, d):
             m = _require_member(c, conv_id, u)
             conv = c.execute("SELECT kind FROM fc_conversations WHERE id=?", (conv_id,)).fetchone()
             if not conv or conv["kind"] != "group": return h.sendj({"error": "Only groups can have members added."}, 400)
-            added = []
+            added = []; private = []
             for p in (d.get("phones") or [])[:100]:
                 ph = normalize_phone(p)
                 r = c.execute("SELECT id,name FROM users WHERE phone_e164=? AND phone_verified_at<>''", (ph,)).fetchone() if ph else None
+                if r and not _member(c, conv_id, int(r["id"])) and not _teen_ok(c, uid, int(r["id"])): private.append(r["name"]); continue   # FCF-TEEN
                 if r and not _member(c, conv_id, int(r["id"])):
                     c.execute("INSERT INTO fc_members(conversation_id,user_id,joined_at) VALUES(?,?,?)", (conv_id, int(r["id"]), stamp)); added.append(r["name"])
             if added:
                 mid = c.execute("INSERT INTO fc_messages(conversation_id,sender_id,body,kind,created_at) VALUES(?,?,?,?,?) RETURNING id",
                                 (conv_id, uid, u["name"] + " added " + ", ".join(added), "system", stamp)).fetchone()["id"]
                 c.execute("UPDATE fc_conversations SET last_message_id=?,updated_at=? WHERE id=?", (mid, stamp, conv_id))
-        return h.sendj({"ok": True, "added": added})
+        return h.sendj({"ok": True, "added": added, "private": private})
     if path == "/api/fc/report":
         conv_id = int(d.get("c") or 0); reason = str(d.get("reason") or "Report")[:80]
         with A.conn() as c:

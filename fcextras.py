@@ -21,9 +21,10 @@ PREF_DEFAULTS = {
     "notify_messages": True, "notify_groups": True, "notify_calls": True, "notify_previews": True,
     "data_saver": False, "language": "English", "translate": True, "biz": {}, "app_lang": "en",
     "birthday": {}, "birthday_vis": "contacts", "celebrate": ["*"], "notify_celeb": True,
+    "sos": [], "gogo": False, "teen_safe": False, "gogo_people": [],
 }
 CHOICES = {"last_seen": ("contacts", "nobody"), "photo": ("contacts", "nobody"), "status": ("contacts", "nobody"), "birthday_vis": ("contacts", "nobody")}
-BOOLS = ("notify_messages", "notify_groups", "notify_calls", "notify_previews", "data_saver", "translate", "notify_celeb")
+BOOLS = ("notify_messages", "notify_groups", "notify_calls", "notify_previews", "data_saver", "translate", "notify_celeb", "gogo", "teen_safe")
 LANGS = ["English", "Afrikaans", "isiZulu", "isiXhosa", "Sesotho", "Setswana", "Sepedi", "Xitsonga", "French", "Portuguese",
          "Spanish", "German", "Swahili", "Arabic", "Hindi", "Chinese"]
 ITEM_KINDS = ("task", "reminder", "event", "poll")
@@ -85,6 +86,7 @@ def _now():
     return datetime.datetime.now(datetime.timezone.utc)
 
 
+# FCF-KINDS: family items (list/chore/reward/game) live in fcfamily.py
 def _iso(v):
     """Client times arrive as ISO strings (toISOString). Store them as UTC isoformat, or '' when missing/bad."""
     s = str(v or "").strip()
@@ -682,14 +684,14 @@ def handle_get(h, path):
         with A.conn() as c:
             if conv:
                 if not _member(c, conv, uid): return h.sendj({"error": "You are not part of this chat."}, 403)
-                rows = c.execute("SELECT * FROM fcx_items WHERE conversation_id=? AND deleted_at='' ORDER BY done, CASE WHEN due_at='' THEN 1 ELSE 0 END, due_at, id DESC LIMIT 300", (conv,)).fetchall()
+                rows = c.execute("SELECT * FROM fcx_items WHERE conversation_id=? AND kind IN ('task','reminder','event','poll') AND deleted_at='' ORDER BY done, CASE WHEN due_at='' THEN 1 ELSE 0 END, due_at, id DESC LIMIT 300", (conv,)).fetchall()
             elif (q.get("all") or [""])[0]:
                 # Everything I can see: my own list plus items in the chats / Circles I'm in.
-                rows = c.execute("SELECT i.* FROM fcx_items i WHERE i.deleted_at='' AND ((i.conversation_id=0 AND i.owner_id=?) OR "
+                rows = c.execute("SELECT i.* FROM fcx_items i WHERE i.kind IN ('task','reminder','event','poll') AND i.deleted_at='' AND ((i.conversation_id=0 AND i.owner_id=?) OR "
                                  "i.conversation_id IN (SELECT conversation_id FROM fc_members WHERE user_id=?)) "
                                  "ORDER BY i.done, CASE WHEN i.due_at='' THEN 1 ELSE 0 END, i.due_at, i.id DESC LIMIT 400", (uid, uid)).fetchall()
             else:
-                rows = c.execute("SELECT * FROM fcx_items WHERE conversation_id=0 AND owner_id=? AND deleted_at='' ORDER BY done, CASE WHEN due_at='' THEN 1 ELSE 0 END, due_at, id DESC LIMIT 300", (uid,)).fetchall()
+                rows = c.execute("SELECT * FROM fcx_items WHERE conversation_id=0 AND owner_id=? AND kind IN ('task','reminder','event','poll') AND deleted_at='' ORDER BY done, CASE WHEN due_at='' THEN 1 ELSE 0 END, due_at, id DESC LIMIT 300", (uid,)).fetchall()
             items = [_item_out(c, r, uid) for r in rows]
             titles = {}
             for it in items:
@@ -785,6 +787,8 @@ def handle_post(h, path, d):
                             datetime.date(2000, mm, dd)   # valid day for that month (29 Feb allowed)
                             p["birthday"] = {"d": dd, "m": mm, "y": yy if 1900 <= yy <= _now().year else 0}
                     except (ValueError, TypeError): pass
+                elif k in ("sos", "gogo_people") and isinstance(v, list):
+                    p[k] = [int(x) for x in v if str(x).isdigit()][:12]
                 elif k == "celebrate" and isinstance(v, list):
                     p["celebrate"] = [str(x)[:24] for x in v if re.fullmatch(r"[\w*-]{1,24}", str(x))][:80]
                 elif k == "biz" and isinstance(v, dict):

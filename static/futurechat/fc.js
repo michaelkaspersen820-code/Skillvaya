@@ -353,7 +353,9 @@
           '<div class="tot"><span>Total</span><span>R' + tot.toLocaleString('en-ZA') + '</span></div>' + (m.meta.valid ? '<small style="color:#55667d">Valid ' + esc(m.meta.valid) + '</small>' : '') +
           (!m.mine ? '<button class="pri" data-acceptq="' + m.id + '">Accept quote</button>' : '') + '</div>';
       }
-      if (m.meta && m.meta.card && window.FCX && window.FCX.greet) inner += window.FCX.greet(m);
+      const sp = m.meta && window.FCX && window.FCX.special ? (function () { try { return window.FCX.special(m); } catch (_) { return ''; } })() : '';
+      if (sp) inner += sp;
+      else if (m.meta && m.meta.card && window.FCX && window.FCX.greet) inner += window.FCX.greet(m);
       else if (m.meta && m.meta.fcx && window.FCX && window.FCX.card) inner += window.FCX.card(m);
       else if (m.body) inner += (inner ? '<div style="margin-top:4px">' : '<div>') + rich(m.body) + '</div>';
     }
