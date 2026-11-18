@@ -100,6 +100,7 @@
   // ------------------------------------------------------------ advertiser: create + pay
   const CTAS = ['Learn more', 'Call now', 'Book now', 'Get a quote', 'Visit website', 'Shop now', 'Message us'];
   let ME = null, PLANS = [], PLAY = {};
+  const dayWord = n => n === 1 ? '1 day' : n === 7 ? '1 week' : n === 30 ? '1 month' : n + ' days';
   window.haAdProducts = (json) => { try { (JSON.parse(json || '[]') || []).forEach(p => { PLAY[p.productId] = p.price; }); } catch (_) {} document.querySelectorAll('[data-haprice]').forEach(el => { const pr = PLAY[el.dataset.haprice]; if (pr) el.textContent = pr; }); };
   window.haAdError = (msg) => { toast(msg || 'Google Play payment did not complete.'); const b = document.getElementById('haPay'); if (b) { b.disabled = false; b.textContent = b.dataset.label || 'Pay with Google Play'; } };
   window.haAdResult = (json) => { let d = {}; try { d = typeof json === 'string' ? JSON.parse(json) : (json || {}); } catch (_) {} document.querySelectorAll('.fc-dim').forEach(x => { if (x.querySelector('#haForm')) x.remove(); }); if (d.ok) { toast(d.message || 'Payment received. Your ad is waiting for approval.'); openMine(); } else if (d.cancelled) toast('Payment cancelled. You were not charged.'); else toast(d.message || 'The payment could not be confirmed yet.'); };
@@ -111,7 +112,7 @@
     if (native()) { try { window.SkillvayaBilling.queryAdProducts(); window.SkillvayaBilling.restoreAdPurchases(String(ME.id), token()); } catch (_) {} }
     const owner = ME.role === 'admin';
     const price = id => { const p = PLANS.find(x => x.product_id === id); return PLAY[id] || (p ? p.price : ''); };
-    sheet('<h3>📣 Advertise on the Skillvaya homepage</h3><p>Your ad shows in the big block at the top of the Skillvaya homepage, rotating with other ads. It\'s marked <b>Sponsored</b> and checked by Skillvaya before it goes live. Your week or month starts when it goes live.</p>' +
+    sheet('<h3>📣 Advertise on the Skillvaya homepage</h3><p>Your ad shows in the big block at the top of the Skillvaya homepage, rotating with other ads. It\'s marked <b>Sponsored</b> and checked by Skillvaya before it goes live. Your days start when it goes live. Short on money? Try 1 day.</p>' +
       '<form id="haForm" onsubmit="return false">' +
       '<div class="fc-chips" style="margin:6px 0 10px" id="haKind"><button type="button" class="fc-chip on" data-k="word">✍️ Words</button><button type="button" class="fc-chip" data-k="photo">🖼️ Photo</button><button type="button" class="fc-chip" data-k="video">🎬 Video</button></div>' +
       '<input id="haAdv" maxlength="60" placeholder="Business name" value="' + esc(ME.business_name || ME.name || '') + '">' +
@@ -128,9 +129,9 @@
       const $ = s => el.querySelector(s);
       const drawPlans = () => {
         const tier = kind === 'video' ? 'video' : 'word';
-        const list = PLANS.filter(p => p.tier === tier);
+        const list = PLANS.filter(p => p.tier === tier).sort((a, b) => a.days - b.days);
         if (!list.some(p => p.product_id === product)) product = list[0] ? list[0].product_id : '';
-        $('#haPlans').innerHTML = list.map(p => '<button type="button" class="fc-act" data-p="' + p.product_id + '" style="' + (p.product_id === product ? 'border:2px solid #0b766e;background:#e7f6f4' : '') + '"><i>' + (p.days === 7 ? '📅' : '🗓️') + '</i><span>' + (p.days === 7 ? '1 week' : '1 month') + ' · <b data-haprice="' + p.product_id + '">' + esc(price(p.product_id)) + '</b><br><small style="color:#55667d">' + esc(p.label) + '</small></span></button>').join('');
+        $('#haPlans').innerHTML = list.map(p => '<button type="button" class="fc-act" data-p="' + p.product_id + '" style="' + (p.product_id === product ? 'border:2px solid #0b766e;background:#e7f6f4' : '') + '"><i>' + (p.days === 7 ? '📅' : '🗓️') + '</i><span>' + dayWord(p.days) + ' · <b data-haprice="' + p.product_id + '">' + esc(price(p.product_id)) + '</b><br><small style="color:#55667d">' + esc(p.label) + '</small></span></button>').join('');
         $('#haPlans').querySelectorAll('[data-p]').forEach(b => b.onclick = () => { product = b.dataset.p; drawPlans(); });
         const pay = $('#haPay');
         pay.textContent = owner ? 'Publish now (free for the owner)' : native() ? 'Pay ' + price(product) + ' with Google Play' : 'Pay in the Skillvaya Android app';

@@ -15,7 +15,43 @@ PLANS = {
     "skillvaya_ad_word_month": ("word", 30, 49900, "Word or photo ad · 1 month"),
     "skillvaya_ad_video_week": ("video", 7, 24900, "Video ad · 1 week"),
     "skillvaya_ad_video_month": ("video", 30, 79900, "Video ad · 1 month"),
+    # FC-ADS-02 (2026-11-19): short, cheap runs so anyone can advertise
+    "skillvaya_ad_word_1d": ("word", 1, 2500, "Word or photo ad · 1 day"),
+    "skillvaya_ad_word_3d": ("word", 3, 6500, "Word or photo ad · 3 days"),
+    "skillvaya_ad_video_1d": ("video", 1, 4000, "Video ad · 1 day"),
+    "skillvaya_ad_video_3d": ("video", 3, 10500, "Video ad · 3 days"),
+    # Future Chat Status ads (bought in the Future Chat app)
+    "futurechat_ad_photo_1d": ("word", 1, 500, "Picture ad · 1 day"),
+    "futurechat_ad_photo_3d": ("word", 3, 1500, "Picture ad · 3 days"),
+    "futurechat_ad_photo_5d": ("word", 5, 2500, "Picture ad · 5 days"),
+    "futurechat_ad_photo_7d": ("word", 7, 3500, "Picture ad · 1 week"),
+    "futurechat_ad_video_1d": ("video", 1, 2000, "Video ad · 1 day"),
+    "futurechat_ad_video_3d": ("video", 3, 5000, "Video ad · 3 days"),
+    "futurechat_ad_video_5d": ("video", 5, 7500, "Video ad · 5 days"),
+    "futurechat_ad_video_7d": ("video", 7, 10000, "Video ad · 1 week"),
 }
+# Future Chat Status: each "Sponsored" status holds up to RING_SIZE ads (about 5 minutes at 30 s each); the app adds
+# another Sponsored status as more ads run, up to MAX_RINGS. When all are full, a new paid ad waits for the next free place.
+RING_SIZE, MAX_RINGS = 10, 5
+FC_CAPACITY = RING_SIZE * MAX_RINGS
+SHOWS_PER_PERSON = {"word": 2, "photo": 2, "video": 3}   # most times one person sees the same ad in a day
+
+
+def is_fc(product_id): return str(product_id or "").startswith("futurechat_")
+def _pkg(product_id):
+    if is_fc(product_id): return os.environ.get("FUTURECHAT_PLAY_PACKAGE_NAME", "za.co.futurechat.app").strip()
+    return os.environ.get("GOOGLE_PLAY_PACKAGE_NAME", "za.co.skillvaya.app").strip()
+def _fc_active(c):
+    return int(c.execute("SELECT COUNT(*) AS n FROM home_ads WHERE status='active' AND product_id LIKE 'futurechat_%%'").fetchone()["n"])
+def _activate_queued(c):
+    """Starts waiting Future Chat ads, oldest first, as places free up."""
+    free = FC_CAPACITY - _fc_active(c)
+    if free <= 0: return
+    start = _now_dt()
+    for r in c.execute("SELECT id,product_id FROM home_ads WHERE status='queued' ORDER BY paid_at, id LIMIT ?", (free,)).fetchall():
+        days = PLANS.get(r["product_id"], ("", 1))[1]
+        c.execute("UPDATE home_ads SET status='active',starts_at=?,ends_at=?,updated_at=? WHERE id=? AND status='queued'",
+                  (_iso(start), _iso(start + datetime.timedelta(days=days)), A.now(), int(r["id"])))
 PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
 VIDEO_TYPES = {"video/mp4", "video/webm", "video/quicktime"}
 MAX_PHOTO = 2 * 1024 * 1024
@@ -56,11 +92,13 @@ def _iso(dt):
 
 def _expire(c):
     c.execute("UPDATE home_ads SET status='expired',updated_at=? WHERE status='active' AND ends_at<>'' AND ends_at<?", (A.now(), _iso(_now_dt())))
+    try: _activate_queued(c)
+    except Exception as exc: print("Future Chat ad queue skipped:", type(exc).__name__)
 
 
 def _public(r, with_owner=False):
     d = {"id": int(r["id"]), "kind": r["kind"], "headline": r["headline"], "body": r["body"], "cta": r["cta"],
-         "target": r["target"], "advertiser": r["advertiser"], "mime": r["media_mime"],
+         "target": r["target"], "advertiser": r["advertiser"], "mime": r["media_mime"], "fc": is_fc(r["product_id"]),
          "media": ("/api/home-ads/media/%d?v=%s" % (int(r["id"]), hashlib.sha1((r["updated_at"] or "").encode()).hexdigest()[:8])) if r["media_mime"] else ""}
     if with_owner:
         plan = PLANS.get(r["product_id"] or "")
@@ -127,7 +165,7 @@ def handle_get(h, path):
         item = _media_bytes(ad_id, (q.get("v", [""])[0])[:12])
         if not item: return h.sendj({"error": "Not found"}, 404)
         mime, data, status = item
-        if status not in ("active", "pending_review", "approved", "paused", "expired", "draft", "pending_payment"): return h.sendj({"error": "Not found"}, 404)
+        if status not in ("active", "queued", "pending_review", "approved", "paused", "expired", "draft", "pending_payment"): return h.sendj({"error": "Not found"}, 404)
         total = len(data); start, end = 0, total - 1
         rng = h.headers.get("Range", "")
         m = re.match(r"bytes=(\d*)-(\d*)$", rng.strip())
@@ -143,13 +181,15 @@ def handle_get(h, path):
         h.send_header("Content-Type", mime); h.send_header("Accept-Ranges", "bytes")
         h.send_header("Cache-Control", "public, max-age=86400"); h.send_header("Content-Length", str(len(chunk)))
         h.end_headers(); h.wfile.write(chunk); return
+    if path == "/api/home-ads/reach":
+        return h.sendj(reach())
     if path == "/api/home-ads/mine":
         u = h.require()
         with A.conn() as c:
             _expire(c)
             rows = c.execute("SELECT " + COLS + " FROM home_ads WHERE user_id=? AND status<>'deleted' ORDER BY id DESC LIMIT 50", (int(u["id"]),)).fetchall()
             biz = c.execute("SELECT id,name FROM businesses WHERE user_id=? ORDER BY id DESC LIMIT 1", (int(u["id"]),)).fetchone()
-        return h.sendj({"items": [_public(r, True) for r in rows], "plans": _plans(),
+        return h.sendj({"items": [_public(r, True) for r in rows], "plans": _plans(_from_fc_app(h)), "reach": reach() if _from_fc_app(h) else None,
                         "me": {"id": int(u["id"]), "name": u.get("name") or "", "role": u.get("role"), "business_id": int(biz["id"]) if biz else 0,
                                "business_name": biz["name"] if biz else ""}})
     if path == "/api/admin/home-ads":
@@ -157,7 +197,7 @@ def handle_get(h, path):
         if u.get("role") != "admin": return h.sendj({"error": "Owner only."}, 403)
         with A.conn() as c:
             _expire(c)
-            rows = c.execute("SELECT a." + COLS.replace(",", ",a.") + ",u.name owner_name,u.email owner_email FROM home_ads a LEFT JOIN users u ON u.id=a.user_id WHERE a.status NOT IN ('draft','deleted','pending_payment') ORDER BY CASE a.status WHEN 'pending_review' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, a.id DESC LIMIT 200").fetchall()
+            rows = c.execute("SELECT a." + COLS.replace(",", ",a.") + ",u.name owner_name,u.email owner_email FROM home_ads a LEFT JOIN users u ON u.id=a.user_id WHERE a.status NOT IN ('draft','deleted','pending_payment') ORDER BY CASE a.status WHEN 'pending_review' THEN 0 WHEN 'active' THEN 1 WHEN 'queued' THEN 2 ELSE 3 END, a.id DESC LIMIT 200").fetchall()
         out = []
         for r in rows:
             d = _public(r, True); d["owner_name"] = r["owner_name"] or ""; d["owner_email"] = r["owner_email"] or ""; out.append(d)
@@ -165,8 +205,26 @@ def handle_get(h, path):
     return h.sendj({"error": "Not found"}, 404)
 
 
-def _plans():
-    return [{"product_id": k, "tier": v[0], "days": v[1], "price": "R%d" % (v[2] // 100), "label": v[3]} for k, v in PLANS.items()]
+def _plans(fc=False):
+    return [{"product_id": k, "tier": v[0], "days": v[1], "price": "R%d" % (v[2] // 100), "label": v[3]} for k, v in PLANS.items() if is_fc(k) == bool(fc)]
+
+
+def _from_fc_app(h):
+    q = A.urllib.parse.parse_qs(A.urlparse(h.path).query)
+    return (q.get("app") or [""])[0] == "futurechat" or "FutureChatApp/" in (h.headers.get("User-Agent") or "")
+
+
+def reach():
+    """What a Future Chat advertiser can expect today (shown before paying)."""
+    since = (_now_dt() - datetime.timedelta(hours=24)).isoformat()
+    with A.conn() as c:
+        _expire(c)
+        try: people = int(c.execute("SELECT COUNT(*) AS n FROM fcx_prefs WHERE last_seen>=?", (since,)).fetchone()["n"])
+        except Exception: people = 0
+        active = _fc_active(c)
+        queued = int(c.execute("SELECT COUNT(*) AS n FROM home_ads WHERE status='queued'").fetchone()["n"])
+    return {"people_today": people, "active_ads": active, "capacity": FC_CAPACITY, "places_left": max(0, FC_CAPACITY - active - queued),
+            "sponsored_statuses": max(1, min(MAX_RINGS, -(-active // RING_SIZE))), "shows_per_person": SHOWS_PER_PERSON, "seconds_per_ad": 30}
 
 
 def _clean_target(t):
@@ -229,7 +287,7 @@ def handle_post(h, path, d):
         cta = str(d.get("cta") or "Learn more").strip()[:24]
         advertiser = str(d.get("advertiser") or u.get("name") or "").strip()[:60]
         product_id = str(d.get("product_id") or "")
-        if product_id not in PLANS: return h.sendj({"error": "Choose 1 week or 1 month."}, 400)
+        if product_id not in PLANS: return h.sendj({"error": "Choose how long your ad should run."}, 400)
         if (PLANS[product_id][0] == "video") != (kind == "video"): return h.sendj({"error": "Video ads use the video price; word and photo ads use the standard price."}, 400)
         if len(headline) < 3: return h.sendj({"error": "Add a short headline (at least 3 characters)."}, 400)
         try: target = _clean_target(d.get("target"))
@@ -270,7 +328,7 @@ def handle_post(h, path, d):
         try:
             pub = _publisher()
             if pub is None: return h.sendj({"error": "Google Play has your payment, but Skillvaya couldn't confirm it yet. Reopen Advertise here and it will retry automatically, or contact Skillvaya."}, 503)
-            pkg = os.environ.get("GOOGLE_PLAY_PACKAGE_NAME", "za.co.skillvaya.app").strip()
+            pkg = _pkg(product_id)
             v = pub.purchases().products().get(packageName=pkg, productId=product_id, token=token).execute()
         except Exception:
             return h.sendj({"error": "Google Play could not confirm this payment yet. Keep the app open; it will retry."}, 503)
@@ -287,7 +345,7 @@ def handle_post(h, path, d):
                       (product_id, token, str(v.get("orderId") or d.get("order_id") or ""), stamp, stamp, ad_id))
         _notify_owners("New homepage ad to approve", (ad["headline"] or "An ad") + " is paid and waiting for your approval.")
         return h.sendj({"ok": True, "id": ad_id, "status": "pending_review", "consume": True,
-                        "message": "Payment received. Your ad will go live as soon as Skillvaya approves it (usually within a day). Your week or month starts when it goes live."})
+                        "message": "Payment received. Your ad will go live as soon as Skillvaya approves it (usually within a day). Your days start when it goes live."})
     if path == "/api/admin/home-ads":
         if u.get("role") != "admin": return h.sendj({"error": "Owner only."}, 403)
         try: ad_id = int(d.get("id") or 0)
@@ -310,7 +368,7 @@ def handle_post(h, path, d):
         if action == "reject" and ad["order_id"]:
             try:
                 pub = _publisher()
-                pkg = os.environ.get("GOOGLE_PLAY_PACKAGE_NAME", "za.co.skillvaya.app").strip()
+                pkg = _pkg(ad["product_id"])
                 pub.orders().refund(packageName=pkg, orderId=ad["order_id"]).execute()
                 refund = "refunded"
             except Exception:
@@ -330,8 +388,16 @@ def _approve(h, u, ad_id):
         if not ad: return h.sendj({"error": "Ad not found."}, 404)
         if ad["status"] not in ("pending_review", "paused"): return h.sendj({"error": "Only paid ads waiting for approval can be approved."}, 409)
         days = PLANS.get(ad["product_id"], ("", 7))[1]
-        c.execute("UPDATE home_ads SET status='active',starts_at=?,ends_at=?,updated_at=? WHERE id=?",
-                  (_iso(start), _iso(start + datetime.timedelta(days=days)), A.now(), ad_id))
+        if is_fc(ad["product_id"]) and ad["status"] == "pending_review" and _fc_active(c) >= FC_CAPACITY:
+            c.execute("UPDATE home_ads SET status='queued',updated_at=? WHERE id=?", (A.now(), ad_id))
+            queued = True
+        else:
+            c.execute("UPDATE home_ads SET status='active',starts_at=?,ends_at=?,updated_at=? WHERE id=?",
+                      (_iso(start), _iso(start + datetime.timedelta(days=days)), A.now(), ad_id))
+            queued = False
+    if queued:
+        if int(ad["user_id"]) != int(u["id"]): _notify(ad["user_id"], "Your ad is approved", (ad["headline"] or "Your ad") + " is approved and starts as soon as a Sponsored place opens (usually within a day). Your days start then.")
+        return h.sendj({"ok": True, "id": ad_id, "status": "queued", "days": days})
     if int(ad["user_id"]) != int(u["id"]):
-        _notify(ad["user_id"], "Your ad is live", (ad["headline"] or "Your ad") + " is now showing on the Skillvaya homepage for %d days." % days)
+        _notify(ad["user_id"], "Your ad is live", (ad["headline"] or "Your ad") + " is now showing " + ("in Future Chat Status" if is_fc(ad["product_id"]) else "on the Skillvaya homepage") + " for %d %s." % (days, "day" if days == 1 else "days"))
     return h.sendj({"ok": True, "id": ad_id, "status": "active", "days": days})

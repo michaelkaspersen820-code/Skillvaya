@@ -268,3 +268,6 @@ html.fc-app .fca-chk{color:#f4f9ff;font-weight:600}html.fc-app .fca-chk input{ac
   .fca-prof .fca-av.xl{width:72px;height:72px}
   .fcf-sos{width:150px!important;height:150px!important}
 }
+
+/* FC-ADS-02 plan picker */
+.fcaad-plans{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}.fcaad-plans button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 8px;border-radius:16px;border:1px solid var(--fca-line);background:var(--fca-card2);color:#fff;font:inherit}.fcaad-plans button b{font-size:15px}.fcaad-plans button em{font-style:normal;font-size:20px;font-weight:900;color:var(--fca-teal)}.fcaad-plans button.on{border:2px solid var(--fca-teal);background:rgba(30,214,200,.14)}

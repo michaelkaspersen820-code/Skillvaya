@@ -178,7 +178,7 @@
       else if (/^\+?[0-9 ]{7,}$/.test(t)) location.href = 'tel:' + t.replace(/\s+/g, '');
       else if (t.indexOf('@') > 0) location.href = 'mailto:' + t;
     };
-    if (!ad.house) api('/api/home-ads/event', { id: ad.id, ev: 'view' }).catch(() => {});
+    if (!ad.house) api('/api/fc/status/adseen', { id: ad.id }).catch(() => {});   // FC-ADS-02: counts a showing for this person
     const bar = V.el.querySelectorAll('.bar i')[V.ii];
     const vid = V.el.querySelector('video');
     const run = ms => { const t0 = performance.now(); const tick = () => { if (!V) return; const f = Math.min(1, (performance.now() - t0) / ms); bar.style.width = (f * 100) + '%'; if (f < 1) V.raf = requestAnimationFrame(tick); }; tick(); V.t = setTimeout(() => adStep(1), ms); };

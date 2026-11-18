@@ -292,12 +292,13 @@
     await FS.load(true); await loadBirthdays(); if (X.stack[X.stack.length - 1] !== scrStatus) return;
     const bdayIds = bdayToday().map(b => b.user_id);
     const d = FS.data() || { mine: [], others: [], sponsored: [] }; const me = X.me || {};
-    const ads = d.sponsored && d.sponsored.length ? d.sponsored : [FS.house()];
+    const rings = d.sponsored_rings && d.sponsored_rings.length ? d.sponsored_rings : [d.sponsored && d.sponsored.length ? d.sponsored : [FS.house()]];   // FC-ADS-02
+    const ads = rings[0];
     const views = (d.mine || []).reduce((a, s) => a + (s.views || 0), 0);
     let h = '<div class="fca-card"><button type="button" class="fca-row" data-a="mine"><span class="fca-sp"><span class="fca-ring ' + (d.mine.length ? 'seen' : 'none') + '">' + avatar(me.name, me.photo) + '<span class="plus">+</span></span></span><span class="tx"><b>My status</b><small>' +
       (d.mine.length ? d.mine.length + (d.mine.length === 1 ? ' update' : ' updates') + ' · ' + views + (views === 1 ? ' view' : ' views') : 'Tap to add a photo, video or text') + '</small></span><span class="chev">›</span></button>' +
       '<button type="button" class="fca-row" data-a="add"><span class="ic">✎</span><span class="tx"><b>Add to my status</b><small>Photo, video or text · visible for 24 hours</small></span><span class="chev">›</span></button></div>';
-    h += '<div class="fca-gl">Sponsored</div><div class="fca-card"><button type="button" class="fca-row" data-a="ads"><span class="fca-sp"><span class="fca-ring ad"><div class="fca-av" style="background:#3a2a00;font-size:12px">AD</div></span></span><span class="tx"><b>Sponsored</b><small>' + ads.length + (ads.length === 1 ? ' business' : ' businesses') + ' · only when you open it</small></span><span class="chev">›</span></button></div>';
+    h += '<div class="fca-gl">Sponsored</div><div class="fca-card">' + rings.map((r, i) => '<button type="button" class="fca-row" data-ring="' + i + '"><span class="fca-sp"><span class="fca-ring ad"><div class="fca-av" style="background:#3a2a00;font-size:12px">AD</div></span></span><span class="tx"><b>Sponsored' + (rings.length > 1 ? ' ' + (i + 1) : '') + '</b><small>' + r.length + (r.length === 1 ? ' business' : ' businesses') + ' · only when you open it</small></span><span class="chev">›</span></button>').join('') + '</div>';
     const unseen = (d.others || []).map((p, i) => [p, i]).filter(x => x[0].unseen), seen = (d.others || []).map((p, i) => [p, i]).filter(x => !x[0].unseen);
     const list = arr => arr.map(([p, i]) => '<button type="button" class="fca-row" data-a="p" data-i="' + i + '"><span class="fca-sp"><span class="fca-ring ' + (p.unseen ? '' : 'seen') + '">' + avatar(p.name, peerPhotoByUser(p.user_id)) + '</span></span><span class="tx"><b>' + esc(p.name) + (bdayIds.indexOf(p.user_id) >= 0 ? ' 🎂' : '') + '</b><small>' + esc(when(p.latest)) + ' · ' + p.items.length + (p.items.length === 1 ? ' update' : ' updates') + '</small></span></button>').join('');
     if (unseen.length) h += '<div class="fca-gl">Recent updates</div><div class="fca-card">' + list(unseen) + '</div>';
@@ -306,7 +307,7 @@
     const vis = X.prefs && X.prefs.status === 'nobody' ? 'Nobody (your status is hidden)' : 'The people you chat with';
     h += '<div class="fca-card">' + row('🔒', 'Who sees my status', vis, { data: 'data-a="privacy"' }) + '</div>';
     bd.innerHTML = h;
-    bind(bd, { mine: () => d.mine.length ? FS.view([{ name: 'My status', items: d.mine, mine: true }], 0) : FS.compose(), add: () => FS.compose(), ads: () => FS.ads(ads),
+    bind(bd, { mine: () => d.mine.length ? FS.view([{ name: 'My status', items: d.mine, mine: true }], 0) : FS.compose(), add: () => FS.compose(),
       p: b => FS.view(d.others.map(p => ({ name: p.name, items: p.items })), Number(b.dataset.i)), privacy: () => push(scrPrivacy) });
   }
   function peerPhotoByUser(uid) { for (const k in X.peers) if (X.peers[k].user_id === uid && X.peers[k].photo) return X.peers[k].photo; return ''; }
@@ -335,6 +336,7 @@
     bd.querySelectorAll('.fca-seg button').forEach(b => b.onclick = () => { bd.querySelectorAll('.fca-seg button').forEach(x => x.classList.toggle('on', x === b)); paint(b.dataset.f); });
     paint('all');
   }
+  document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#fcaPanel [data-ring]'); if (!b) return; const d = (window.FutureChatStatus && window.FutureChatStatus.data()) || {}; const rings = d.sponsored_rings && d.sponsored_rings.length ? d.sponsored_rings : [d.sponsored && d.sponsored.length ? d.sponsored : [window.FutureChatStatus.house()]]; window.FutureChatStatus.ads(rings[Number(b.dataset.ring)] || rings[0]); });
   function callSheet(c) {
     sheet('<h3>' + esc(c.name) + '</h3><p>' + esc(when(c.at)) + '</p><div class="fc-acts">' +
       (c.conversation_id ? '<button class="fc-act" data-a="voice"><i>📞</i>Voice call</button><button class="fc-act" data-a="video"><i>🎥</i>Video call</button><button class="fc-act" data-a="msg"><i>💬</i>Message</button>' : '<p>This call was made before Future Chat calls had chats.</p>') +
@@ -985,43 +987,63 @@
     });
   }
 
-  // ---------------------------------------------------------------- Advertise with us (the Sponsored status "Advertise here" card)
+  // ---------------------------------------------------------------- Advertise with us (FC-ADS-02: cheap day prices, paid in this app)
+  const payReady = () => !!(window.SkillvayaBilling && typeof window.SkillvayaBilling.purchaseAd === 'function');
+  const PLAY_PRICE = {};
   FCX.advertise = async function () {
-    let me = {}, plans = [];
-    try { const d = await api('/api/home-ads/mine'); me = d.me || {}; plans = d.plans || []; } catch (_) {}
+    let d = {};
+    try { d = await api('/api/home-ads/mine?app=futurechat'); } catch (_) {}
     if (!X.stack.length) { openPanel(); }
-    push(() => scrAdvertise(me, plans));
+    if (payReady()) { try { window.SkillvayaBilling.queryAdProducts(); if (d.me) window.SkillvayaBilling.restoreAdPurchases(String(d.me.id), tok()); } catch (_) {} }
+    push(() => scrAdvertise(d.me || {}, d.plans || [], d.reach || null));
   };
-  function scrAdvertise(me, plans) {
-    const bd = frame('Advertise with us', 'Reach people on Future Chat');
+  function adHooks(after) {
+    window.haAdProducts = json => { try { (JSON.parse(json || '[]') || []).forEach(p => { PLAY_PRICE[p.productId] = p.price; }); } catch (_) {} document.querySelectorAll('[data-fcprice]').forEach(el => { const pr = PLAY_PRICE[el.dataset.fcprice]; if (pr) el.textContent = pr; }); };
+    window.haAdError = msg => { toast(msg || 'Google Play payment did not complete.'); if (after) after(false); };
+    window.haAdResult = json => { let r = {}; try { r = typeof json === 'string' ? JSON.parse(json) : (json || {}); } catch (_) {}
+      if (r.ok) { toast(r.message || 'Payment received ✓ Your ad is waiting for approval.'); if (after) after(true); }
+      else { toast(r.cancelled ? 'Payment cancelled. You were not charged.' : (r.message || 'The payment could not be confirmed yet.')); if (after) after(false); } };
+  }
+  function scrAdvertise(me, plans, reach) {
+    const bd = frame('Advertise with us', 'From R5 a day');
     const owner = me.role === 'admin';
-    const price = (tier, days) => { const p = plans.find(x => x.tier === tier && x.days === days); return p ? p.price : ''; };
-    bd.innerHTML = '<div class="fca-hero"><small>SPONSORED STATUS</small><b>Your business in Status</b><p>Your ad shows in the one Sponsored status everyone sees at the top of Status — only when they choose to open it. Never a pop-up, never in chats. Every ad is checked before it goes live.</p></div>' +
-      '<div class="fca-gl">Prices</div><div class="fca-card">' +
-      row('✍️', 'Words or photo ad', '1 week ' + price('word', 7) + ' · 1 month ' + price('word', 30), {}, '') +
-      row('🎬', 'Video ad (up to 30 seconds)', '1 week ' + price('video', 7) + ' · 1 month ' + price('video', 30), {}, '') + '</div>' +
+    const pr = id => PLAY_PRICE[id] || ((plans.find(p => p.product_id === id) || {}).price || '');
+    const dayWord = n => n === 7 ? '1 week' : n === 1 ? '1 day' : n + ' days';
+    const R = reach || {}; const ppl = R.people_today || 0;
+    bd.innerHTML = '<div class="fca-hero"><small>SPONSORED STATUS</small><b>Your business in Status, from R5 a day</b><p>Your ad shows in Sponsored at the top of Status — only when people choose to open it. Never a pop-up, never in chats. Every ad is checked before it goes live, and you get your money back if it isn\'t approved.</p></div>' +
+      '<div class="fca-gl">How many people see it</div><div class="fca-card">' +
+      row('👥', ppl ? ppl + (ppl === 1 ? ' person' : ' people') + ' on Future Chat today' : 'Future Chat is growing every day', 'Each person can see your picture up to 2 times a day, a video up to 3 times', {}, '') +
+      row('🔁', 'Fair turns for every ad', 'Ads take turns of about 30 seconds. When there are more ads, more Sponsored statuses appear (up to ' + ((R.capacity || 50) / 10) + ')', {}, '') +
+      (R.places_left === 0 ? row('⏳', 'All places are taken today', 'Your ad starts as soon as a place opens — your days only start then', {}, '') : '') + '</div>' +
       '<div class="fca-gl">Your ad</div>' +
-      '<div class="fca-seg" style="margin-bottom:10px" id="fcaAdK"><button class="on" data-k="word">✍️ Words</button><button data-k="photo">🖼️ Photo</button><button data-k="video">🎬 Video</button></div>' +
+      '<div class="fca-seg" style="margin-bottom:10px" id="fcaAdK"><button class="on" data-k="photo">🖼️ Picture</button><button data-k="word">✍️ Words only</button><button data-k="video">🎬 Video</button></div>' +
       '<label class="fca-field"><span>Business name</span><input id="fcaAdA" maxlength="60" value="' + esc(me.business_name || me.name || '') + '"></label>' +
       '<label class="fca-field"><span>Headline</span><input id="fcaAdH" maxlength="60" placeholder="e.g. Fresh cakes delivered in Bellville"></label>' +
       '<label class="fca-field"><span>Short message (optional)</span><textarea id="fcaAdB" rows="2" maxlength="180"></textarea></label>' +
-      '<div class="fca-field" id="fcaAdFRow" style="display:none"><span id="fcaAdFL">Photo</span><input id="fcaAdF" type="file" hidden>' +
-      '<button type="button" class="fca-pick" id="fcaAdPick"><i>📎</i><span><b id="fcaAdPN">Add your photo</b><small id="fcaAdPS">Tap to choose from your phone</small></span></button><div class="fca-prev" id="fcaAdPrev"></div></div>' +
+      '<div class="fca-field" id="fcaAdFRow"><span id="fcaAdFL">Picture (JPG, PNG or WebP, up to 2 MB)</span><input id="fcaAdF" type="file" hidden accept="image/jpeg,image/png,image/webp">' +
+      '<button type="button" class="fca-pick" id="fcaAdPick"><i>📎</i><span><b id="fcaAdPN">Add your picture</b><small id="fcaAdPS">Tap to choose from your phone</small></span></button><div class="fca-prev" id="fcaAdPrev"></div></div>' +
       '<label class="fca-field"><span>When people tap your ad</span><select id="fcaAdTo"><option value="tel">Call my number</option><option value="web">Open my website or page</option><option value="none">Nothing (just show the ad)</option></select></label>' +
       '<label class="fca-field" id="fcaAdLRow"><span id="fcaAdLL">Phone number</span><input id="fcaAdL" inputmode="tel" placeholder="082 123 4567" value="' + esc((X.me || {}).phone || '') + '"></label>' +
-      '<label class="fca-field"><span>How long</span><select id="fcaAdP"></select></label>' +
-      '<p class="fca-note">Ads must be honest and legal: no adult content, weapons, gambling, scams, misleading claims or other people\'s trademarks. If your ad isn\'t approved, you get your money back.</p>' +
-      '<button class="fca-btn" data-a="go">' + (owner ? 'Publish my ad (free for the owner)' : 'Send my ad for approval') + '</button><button class="fca-btn sec" data-a="mine">My ads</button>';
-    let kind = 'word';
+      '<div class="fca-gl">How long</div><div class="fcaad-plans" id="fcaAdP"></div>' +
+      '<p class="fca-note">Ads must be honest and legal: no adult content, weapons, gambling, scams, misleading claims or other people\'s trademarks. Payment is through Google Play.</p>' +
+      '<button class="fca-btn" data-a="go" id="fcaAdGo"></button><button class="fca-btn sec" data-a="mine">My ads</button>';
+    let kind = 'photo', product = '';
     const $$ = s => $(s, bd);
-    const drawPlans = () => { const tier = kind === 'video' ? 'video' : 'word'; $$('#fcaAdP').innerHTML = plans.filter(p => p.tier === tier).map(p => '<option value="' + p.product_id + '">' + (p.days === 7 ? '1 week' : '1 month') + ' · ' + esc(p.price) + '</option>').join(''); };
+    const label = () => owner ? 'Publish my ad (free for the owner)' : payReady() ? 'Pay ' + pr(product) + ' with Google Play' : 'Send my ad';
+    const drawPlans = () => {
+      const tier = kind === 'video' ? 'video' : 'word', list = plans.filter(p => p.tier === tier).sort((a, b) => a.days - b.days);
+      if (!list.some(p => p.product_id === product)) product = list[0] ? list[0].product_id : '';
+      $$('#fcaAdP').innerHTML = list.map(p => '<button type="button" data-p="' + p.product_id + '" class="' + (p.product_id === product ? 'on' : '') + '"><b>' + dayWord(p.days) + '</b><em data-fcprice="' + p.product_id + '">' + esc(pr(p.product_id)) + '</em></button>').join('') ||
+        '<div class="fca-empty" style="padding:14px">Prices are loading. Try again in a moment.</div>';
+      $$('#fcaAdP').querySelectorAll('[data-p]').forEach(b => b.onclick = () => { product = b.dataset.p; drawPlans(); });
+      $$('#fcaAdGo').textContent = label();
+    };
     bd.querySelectorAll('#fcaAdK button').forEach(b => b.onclick = () => { kind = b.dataset.k; bd.querySelectorAll('#fcaAdK button').forEach(x => x.classList.toggle('on', x === b));
-      $$('#fcaAdFRow').style.display = kind === 'word' ? 'none' : 'block'; $$('#fcaAdFL').textContent = kind === 'photo' ? 'Photo (JPG, PNG or WebP, up to 2 MB)' : 'Video (MP4, up to 12 MB, about 30 seconds)';
+      $$('#fcaAdFRow').style.display = kind === 'word' ? 'none' : 'block'; $$('#fcaAdFL').textContent = kind === 'photo' ? 'Picture (JPG, PNG or WebP, up to 2 MB)' : 'Video (MP4, up to 12 MB, about 30 seconds)';
       $$('#fcaAdF').accept = kind === 'photo' ? 'image/jpeg,image/png,image/webp' : 'video/mp4,video/webm,video/quicktime'; $$('#fcaAdF').value = ''; showPick(); drawPlans(); });
-    // FCAPP-PICK-01: a proper upload button (paperclip) with a preview instead of the browser's grey "Choose file" box
     const showPick = () => {
       const f = $$('#fcaAdF').files && $$('#fcaAdF').files[0], prev = $$('#fcaAdPrev');
-      $$('#fcaAdPN').textContent = f ? f.name : (kind === 'video' ? 'Add your video' : 'Add your photo');
+      $$('#fcaAdPN').textContent = f ? f.name : (kind === 'video' ? 'Add your video' : 'Add your picture');
       $$('#fcaAdPS').textContent = f ? (f.size / 1048576).toFixed(1) + ' MB · tap to change' : 'Tap to choose from your phone';
       if (prev.dataset.url) { URL.revokeObjectURL(prev.dataset.url); delete prev.dataset.url; }
       prev.innerHTML = '';
@@ -1031,39 +1053,44 @@
     $$('#fcaAdF').onchange = showPick;
     $$('#fcaAdTo').onchange = () => { const v = $$('#fcaAdTo').value; $$('#fcaAdLRow').style.display = v === 'none' ? 'none' : 'block'; $$('#fcaAdLL').textContent = v === 'tel' ? 'Phone number' : 'Website or page link'; $$('#fcaAdL').inputMode = v === 'tel' ? 'tel' : 'url'; $$('#fcaAdL').placeholder = v === 'tel' ? '082 123 4567' : 'www.mybusiness.co.za'; if (v === 'web') $$('#fcaAdL').value = ''; };
     drawPlans();
+    const reset = b => { b.disabled = false; b.textContent = label(); };
     bind(bd, {
       mine: () => push(scrMyAds),
       go: async b => {
+        if (!product) { toast('Choose how long'); return; }
         const headline = $$('#fcaAdH').value.trim(); if (headline.length < 3) { toast('Add a short headline'); return; }
         const to = $$('#fcaAdTo').value, link = $$('#fcaAdL').value.trim();
         if (to !== 'none' && !link) { toast(to === 'tel' ? 'Add your phone number' : 'Add your website link'); return; }
         const target = to === 'none' ? '' : to === 'tel' ? 'tel:' + link.replace(/[^\d+]/g, '') : (/^https?:\/\//i.test(link) ? link : 'https://' + link);
         let media = null;
         if (kind !== 'word') {
-          const f = $$('#fcaAdF').files[0]; if (!f) { toast('Add your ' + kind); return; }
-          if (kind === 'photo' && f.size > 2 * 1024 * 1024) { toast('Photos must be 2 MB or smaller'); return; }
+          const f = $$('#fcaAdF').files[0]; if (!f) { toast(kind === 'video' ? 'Add your video' : 'Add your picture'); return; }
+          if (kind === 'photo' && f.size > 2 * 1024 * 1024) { toast('Pictures must be 2 MB or smaller'); return; }
           if (kind === 'video' && f.size > 12 * 1024 * 1024) { toast('Videos must be 12 MB or smaller'); return; }
           media = { mime: f.type, data_base64: await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(new Error('That file could not be read.')); r.readAsDataURL(f); }) };
         }
         b.disabled = true; b.textContent = 'Uploading your ad…';
         try {
-          const d = await post('/api/home-ads/create', { kind, headline, body: $$('#fcaAdB').value.trim(), cta: to === 'tel' ? 'Call now' : to === 'web' ? 'Visit' : 'Learn more', target, advertiser: $$('#fcaAdA').value.trim(), product_id: $$('#fcaAdP').value, media });
-          if (owner || d.status === 'active' || d.status === 'pending_review') {
-            toast(d.status === 'active' ? 'Your ad is live in Sponsored status ✓' : 'Your ad is saved and waiting for approval ✓');
+          const d = await post('/api/home-ads/create', { kind, headline, body: $$('#fcaAdB').value.trim(), cta: to === 'tel' ? 'Call now' : to === 'web' ? 'Visit' : 'Learn more', target, advertiser: $$('#fcaAdA').value.trim(), product_id: product, media });
+          if (owner || d.status === 'active' || d.status === 'queued') {
+            toast(d.status === 'queued' ? 'Approved — it starts as soon as a place opens ✓' : 'Your ad is live in Sponsored status ✓');
             try { window.FutureChatStatus && window.FutureChatStatus.refresh(true); } catch (_) {} pop(); return;
           }
-          sheet('<h3>Your ad is saved ✓</h3><p data-keep-brand>Ads are paid securely with Google Play. Payment inside the Future Chat app opens soon; until then, open the <b>Skillvaya</b> app on this phone, tap <b>Advertise here</b> on its home screen and pay there — the same ad shows in Future Chat\'s Sponsored status and on the Skillvaya home screen.</p><a class="fc-btn" data-keep-brand style="display:block;text-align:center;text-decoration:none" href="https://play.google.com/store/apps/details?id=za.co.skillvaya.app">Open Skillvaya on Google Play</a>');
-          b.disabled = false; b.textContent = 'Send my ad for approval';
-        } catch (e) { toast(e.message); b.disabled = false; b.textContent = owner ? 'Publish my ad (free for the owner)' : 'Send my ad for approval'; }
+          if (!payReady()) { toast('Update Future Chat from Google Play to pay for ads in the app'); reset(b); return; }
+          b.textContent = 'Opening Google Play…';
+          adHooks(ok => { if (ok) { pop(); push(scrMyAds); } else reset(b); });
+          window.SkillvayaBilling.purchaseAd(d.product_id, String(d.id), String(me.id), tok());
+        } catch (e) { toast(e.message); reset(b); }
       }
     });
+    adHooks(null);
   }
   async function scrMyAds() {
     const self = X.stack[X.stack.length - 1];
     const bd = frame('My ads', 'Your Sponsored status ads'); bd.innerHTML = '<div class="fca-empty">Loading…</div>';
-    let d; try { d = await api('/api/home-ads/mine'); } catch (e) { bd.innerHTML = '<div class="fca-empty">' + esc(e.message) + '</div>'; return; }
+    let d; try { d = await api('/api/home-ads/mine?app=futurechat'); } catch (e) { bd.innerHTML = '<div class="fca-empty">' + esc(e.message) + '</div>'; return; }
     if (X.stack[X.stack.length - 1] !== self) return;
-    const ST = { pending_payment: 'Not paid yet', pending_review: 'Waiting for approval', active: 'Live', paused: 'Paused', rejected: 'Not approved', expired: 'Ended' };
+    const ST = { pending_payment: 'Not paid yet', pending_review: 'Waiting for approval', queued: 'Approved · starts when a place opens', active: 'Live', paused: 'Paused', rejected: 'Not approved', expired: 'Ended' };
     const items = d.items || [];
     bd.innerHTML = items.length ? '<div class="fca-card">' + items.map(a => row(a.status === 'active' ? '🟢' : '📣', a.headline, (ST[a.status] || a.status) + ' · ' + (a.plan || '') + (a.status === 'active' || a.status === 'expired' ? ' · shown ' + a.views + ' times, ' + a.clicks + ' taps' : '') + (a.ends_at ? ' · until ' + new Date(a.ends_at).toLocaleDateString() : ''), {}, '')).join('') + '</div>'
       : '<div class="fca-empty"><span class="big">📣</span><b>No ads yet</b>Create your first ad and reach people in Status.</div>';

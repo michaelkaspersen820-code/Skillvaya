@@ -5,7 +5,7 @@
 * ONE "Sponsored" status in everyone's list rotates through the approved, paid business ads (home_ads, bought through
   Google Play and approved by the owner), so ads never clog the status list. Ads are the same for everyone: no tracking.
 """
-import base64, datetime, json, re, urllib.parse
+import base64, hashlib, datetime, json, re, urllib.parse
 
 A = None
 MAX_MEDIA = 3 * 1024 * 1024
@@ -31,6 +31,7 @@ def init(c):
         CREATE INDEX IF NOT EXISTS idx_fc_status_user ON fc_statuses(user_id, expires_at);
         CREATE INDEX IF NOT EXISTS idx_fc_status_exp ON fc_statuses(expires_at);
         CREATE TABLE IF NOT EXISTS fc_status_views(status_id BIGINT NOT NULL, user_id BIGINT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(status_id, user_id));
+        CREATE TABLE IF NOT EXISTS fc_ad_seen(user_id BIGINT NOT NULL, ad_id BIGINT NOT NULL, day TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, ad_id, day));
     """ % {"pk": pk})
 
 
@@ -60,16 +61,34 @@ def _item(r, mine=False, viewed=False, views=0):
     return d
 
 
-def _sponsored():
+def _sponsored(uid=0):
+    """FC-ADS-02: every person gets the running ads in a fair order of their own (it changes daily), split into
+    Sponsored statuses of up to 10 ads each (max 5). An ad stops showing to a person once they have seen it
+    2 times that day (videos 3), so paid ads share the space evenly."""
     try:
         import homeads as HA
+        day = _now().date().isoformat()
         with A.conn() as c:
             HA._expire(c)
-            rows = c.execute("SELECT " + HA.COLS + " FROM home_ads WHERE status='active' ORDER BY starts_at DESC LIMIT 20").fetchall()
-        return [HA._public(r) for r in rows]
+            rows = c.execute("SELECT " + HA.COLS + " FROM home_ads WHERE status='active' ORDER BY starts_at DESC LIMIT 200").fetchall()
+            seen = {int(r["ad_id"]): int(r["n"]) for r in c.execute("SELECT ad_id,n FROM fc_ad_seen WHERE user_id=? AND day=?", (uid, day)).fetchall()} if uid else {}
+        ads = []
+        for r in rows:
+            cap = HA.SHOWS_PER_PERSON.get(r["kind"], 2)
+            if seen.get(int(r["id"]), 0) >= cap: continue
+            ads.append(HA._public(r))
+        key = lambda a: hashlib.sha1(("%s:%s:%s" % (uid, day, a["id"])).encode()).hexdigest()
+        fc = sorted([a for a in ads if a.get("fc")], key=key); other = sorted([a for a in ads if not a.get("fc")], key=key)
+        ads = (fc + other)[:HA.FC_CAPACITY]
+        return ads
     except Exception as exc:
         print("Future Chat sponsored status skipped:", type(exc).__name__)
         return []
+
+
+def _rings(ads):
+    import homeads as HA
+    return [ads[i:i + HA.RING_SIZE] for i in range(0, len(ads), HA.RING_SIZE)][:HA.MAX_RINGS]
 
 
 def handle_get(h, path):
@@ -106,7 +125,8 @@ def handle_get(h, path):
             p["latest"] = max(p["latest"], r["created_at"])
         others = sorted(people.values(), key=lambda p: p["latest"], reverse=True)   # newest first
         others.sort(key=lambda p: p["unseen"] == 0)                                  # then unseen before seen (stable)
-        return h.sendj({"me": {"id": uid, "name": u["name"]}, "mine": mine, "others": others, "sponsored": _sponsored()})
+        sp = _sponsored(uid)
+        return h.sendj({"me": {"id": uid, "name": u["name"]}, "mine": mine, "others": others, "sponsored": sp, "sponsored_rings": _rings(sp)})
     m = re.fullmatch(r"/api/fc/status/media/(\d+)", path)
     if m:
         sid = int(m.group(1))
@@ -123,6 +143,19 @@ def handle_get(h, path):
 
 def handle_post(h, path, d):
     u = h.require(); uid = int(u["id"])
+    if path == "/api/fc/status/adseen":   # FC-ADS-02: count a showing of a paid ad for this person today
+        try: ad_id = int(d.get("id") or 0)
+        except (TypeError, ValueError): ad_id = 0
+        day = _now().date().isoformat()
+        with A.conn() as c:
+            if not c.execute("SELECT 1 FROM home_ads WHERE id=? AND status='active'", (ad_id,)).fetchone(): return h.sendj({"ok": False})
+            if c.execute("SELECT 1 FROM fc_ad_seen WHERE user_id=? AND ad_id=? AND day=?", (uid, ad_id, day)).fetchone():
+                c.execute("UPDATE fc_ad_seen SET n=n+1 WHERE user_id=? AND ad_id=? AND day=?", (uid, ad_id, day))
+            else:
+                c.execute("INSERT INTO fc_ad_seen(user_id,ad_id,day,n) VALUES(?,?,?,1)", (uid, ad_id, day))
+            c.execute("UPDATE home_ads SET views=views+1 WHERE id=?", (ad_id,))
+            c.execute("DELETE FROM fc_ad_seen WHERE day<?", ((_now() - datetime.timedelta(days=3)).date().isoformat(),))
+        return h.sendj({"ok": True})
     if path == "/api/fc/status":
         body = str(d.get("body") or "").strip()[:700]
         bg = str(d.get("bg") or "#0b2447")

@@ -34,7 +34,8 @@ public final class PlayBillingBridge implements PurchasesUpdatedListener {
     private String pendingAuthToken = "";
     private boolean restoreAfterConnect = false;
     // SV92: homepage ads are one-time ("in-app") products, consumed after the server verifies them.
-    private static final List<String> AD_PRODUCTS = Arrays.asList("skillvaya_ad_word_week", "skillvaya_ad_word_month", "skillvaya_ad_video_week", "skillvaya_ad_video_month");
+    private static final List<String> AD_PRODUCTS = Arrays.asList("skillvaya_ad_word_week", "skillvaya_ad_word_month", "skillvaya_ad_video_week", "skillvaya_ad_video_month",
+        "skillvaya_ad_word_1d", "skillvaya_ad_word_3d", "skillvaya_ad_video_1d", "skillvaya_ad_video_3d");
     private final List<ProductDetails> adProducts = new ArrayList<>();
 
     public PlayBillingBridge(Activity activity, String baseUrl) {
