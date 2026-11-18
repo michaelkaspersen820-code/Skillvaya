@@ -157,6 +157,10 @@
     top.querySelector('#fcaNewChat').onclick = () => FC().newChat && FC().newChat();
     const q = hdr.querySelector('#fcQ'); if (q) q.placeholder = 'Search messages';
     paintMe();
+    // FCA-HDR-02: the big top part folds away as you scroll the chats, so the list gets the whole screen
+    const body = root.querySelector('#fcBody');
+    if (body) { let coll = false; body.addEventListener('scroll', () => { const y = body.scrollTop;
+      if (!coll && y > 48) { coll = true; hdr.classList.add('fca-hcoll'); } else if (coll && y < 6) { coll = false; hdr.classList.remove('fca-hcoll'); } }, { passive: true }); }
   };
   FCX.afterList = function (body, items, S) {
     paintPeers();

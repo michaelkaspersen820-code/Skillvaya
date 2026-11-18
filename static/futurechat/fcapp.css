@@ -271,3 +271,16 @@ html.fc-app .fca-chk{color:#f4f9ff;font-weight:600}html.fc-app .fca-chk input{ac
 
 /* FC-ADS-02 plan picker */
 .fcaad-plans{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}.fcaad-plans button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 8px;border-radius:16px;border:1px solid var(--fca-line);background:var(--fca-card2);color:#fff;font:inherit}.fcaad-plans button b{font-size:15px}.fcaad-plans button em{font-style:normal;font-size:20px;font-weight:900;color:var(--fca-teal)}.fcaad-plans button.on{border:2px solid var(--fca-teal);background:rgba(30,214,200,.14)}
+
+/* FCA-HDR-02: tighter top, and it folds away while scrolling the chat list */
+html.fc-app .fc-hdr{gap:8px;padding-bottom:8px}
+html.fc-app .fc-hdr .fca-title h1{font-size:24px}
+html.fc-app .fc-hdr .fca-brand,html.fc-app .fc-hdr .fca-title p,html.fc-app .fc-hdr #fcStatusStrip{max-height:150px;transition:max-height .22s ease,opacity .18s ease,margin .22s ease,padding .22s ease}
+html.fc-app .fc-hdr .fca-brand,html.fc-app .fc-hdr .fca-title p{overflow:hidden}
+html.fc-app .fc-hdr #fcStatusStrip{overflow-y:hidden}
+html.fc-app .fc-hdr.fca-hcoll .fca-brand,html.fc-app .fc-hdr.fca-hcoll .fca-title p,html.fc-app .fc-hdr.fca-hcoll #fcStatusStrip{max-height:0;opacity:0;padding-top:0;padding-bottom:0;margin-top:0;pointer-events:none}
+html.fc-app .fc-hdr.fca-hcoll .fca-brand{margin-bottom:-8px}
+html.fc-app .fc-hdr.fca-hcoll #fcStatusStrip{margin-top:-8px}
+html.fc-app .fc-hdr.fca-hcoll .fca-title{margin-top:0!important}
+html.fc-app .fc-hdr.fca-hcoll .fca-title h1{font-size:21px}
+html.fc-app .fc-hdr.fca-hcoll .fca-title .fca-ib{width:40px;height:40px}
