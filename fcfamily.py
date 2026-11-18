@@ -197,8 +197,9 @@ def handle_get(h, path):
         with A.conn() as c:
             r = c.execute("SELECT * FROM fcx_items WHERE id=? AND kind='list' AND deleted_at=''", (int(m.group(1)),)).fetchone()
             if not r or not _member(c, int(r["conversation_id"]), uid): return h.sendj({"error": "This list was removed."}, 404)
+            adm = bool(c.execute("SELECT 1 FROM fc_members WHERE conversation_id=? AND user_id=? AND role='admin'", (int(r["conversation_id"]), uid)).fetchone())
             es = c.execute("SELECT e.*,u.name FROM fcf_list_entries e LEFT JOIN users u ON u.id=e.added_by WHERE e.item_id=? ORDER BY e.done, e.id", (int(r["id"]),)).fetchall()
-        return h.sendj({"id": int(r["id"]), "title": r["title"], "conversation_id": int(r["conversation_id"]), "mine": int(r["owner_id"]) == uid,
+        return h.sendj({"id": int(r["id"]), "title": r["title"], "conversation_id": int(r["conversation_id"]), "mine": int(r["owner_id"]) == uid or adm,
                         "entries": [{"id": int(e["id"]), "text": e["text"], "done": bool(e["done"]), "by": e["name"] or ""} for e in es]})
     m = re.fullmatch(r"/api/fcf/game/(\d+)", path)
     if m:
@@ -296,6 +297,14 @@ def handle_post(h, path, d):
                 else: c.execute("DELETE FROM fcf_list_entries WHERE id=?", (int(e["id"]),))
                 note = ""
         if note: _push(cidl, u, "\U0001f6d2 " + note)
+        return h.sendj({"ok": True})
+    if path == "/api/fcf/list/delete":   # the person who made it, or a Circle admin (e.g. mom), can delete a whole list
+        with A.conn() as c:
+            r = c.execute("SELECT * FROM fcx_items WHERE id=? AND kind='list' AND deleted_at=''", (int(d.get("id") or 0),)).fetchone()
+            if not r or not _member(c, int(r["conversation_id"]), uid): return h.sendj({"error": "This list was removed."}, 404)
+            adm = c.execute("SELECT 1 FROM fc_members WHERE conversation_id=? AND user_id=? AND role='admin'", (int(r["conversation_id"]), uid)).fetchone()
+            if int(r["owner_id"]) != uid and not adm: return h.sendj({"error": "Only the person who made this list or a Circle admin can delete it."}, 403)
+            c.execute("UPDATE fcx_items SET deleted_at=? WHERE id=?", (A.now(), int(r["id"])))
         return h.sendj({"ok": True})
     if path == "/api/fcf/chore/done":
         with A.conn() as c:

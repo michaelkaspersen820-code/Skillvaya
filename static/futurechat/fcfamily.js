@@ -154,16 +154,16 @@
     const self = top();
     let d; try { d = await api('/api/fcf/list/' + id); } catch (e) { const bd = frame('List', ''); bd.innerHTML = '<div class="fca-empty">' + esc(e.message) + '</div>'; return; }
     if (top() !== self) return;
-    const bd = frame(d.title, 'Shared list · updates live', d.mine ? { action: ['🗑️', 'Delete list', async () => { if (!confirm('Delete this list for everyone?')) return; try { await post('/api/fcx/item/delete', { id }); toast('List deleted'); pop(); if (after) after(); } catch (e) { toast(e.message); } }] } : null);
+    const bd = frame(d.title, 'Shared list · updates live', d.mine ? { action: ['🗑️', 'Delete list', async () => { if (!confirm('Delete this list for everyone?')) return; try { await post('/api/fcf/list/delete', { id }); toast('List deleted'); pop(); if (after) after(); } catch (e) { toast(e.message); } }] } : null);
     const paint = () => {
       const open = d.entries.filter(e => !e.done), got = d.entries.filter(e => e.done);
       const one = e => '<div class="fca-item' + (e.done ? ' done' : '') + '"><button class="ck' + (e.done ? ' on' : '') + '" data-t="' + e.id + '">' + (e.done ? '✓' : '') + '</button><div class="tx"><b>' + esc(e.text) + '</b><small>' + esc(e.by) + '</small></div><button class="fcf-x" data-r="' + e.id + '" aria-label="Remove">✕</button></div>';
       $('#fcfLB', bd).innerHTML = (open.length ? '<div class="fca-card">' + open.map(one).join('') + '</div>' : '<div class="fca-empty" style="padding:16px">Nothing on the list. Add the first thing above.</div>') + (got.length ? '<div class="fca-gl">Got it</div><div class="fca-card">' + got.map(one).join('') + '</div>' : '');
       bd.querySelectorAll('[data-t]').forEach(b => b.onclick = async () => { try { await post('/api/fcf/list/toggle', { entry: Number(b.dataset.t) }); reload(); } catch (e) { toast(e.message); } });
-      bd.querySelectorAll('[data-r]').forEach(b => b.onclick = async () => { try { await post('/api/fcf/list/remove', { entry: Number(b.dataset.r) }); reload(); } catch (e) { toast(e.message); } });
+      bd.querySelectorAll('[data-r]').forEach(b => b.onclick = async () => { const e = d.entries.find(x => x.id === Number(b.dataset.r)); if (e && e.by && e.by !== (X.me || {}).name && !confirm('Take "' + e.text + '" off the list? ' + first(e.by) + ' added it.')) return; try { await post('/api/fcf/list/remove', { entry: Number(b.dataset.r) }); reload(); } catch (e) { toast(e.message); } });
     };
     const reload = async () => { try { d = await api('/api/fcf/list/' + id); if (top() === self) paint(); } catch (_) {} };
-    bd.innerHTML = '<div class="fcf-add"><input id="fcfLI" maxlength="200" placeholder="Add something… e.g. milk"><button id="fcfLA" class="fca-ib" aria-label="Add">＋</button></div><div id="fcfLB"></div>';
+    bd.innerHTML = '<div class="fcf-add"><input id="fcfLI" maxlength="200" placeholder="Add something… e.g. milk"><button id="fcfLA" class="fca-ib" aria-label="Add">＋</button></div><p class="fca-note" style="margin:-4px 2px 10px">Tick what you got. Anyone can take something off with ✕ — e.g. when there\'s no money for sweets this week.</p><div id="fcfLB"></div>';
     const add = async () => { const i = $('#fcfLI', bd); const t = i.value.trim(); if (!t) return; i.value = ''; try { await post('/api/fcf/list/add', { id, text: t }); reload(); } catch (e) { toast(e.message); } i.focus(); };
     $('#fcfLA', bd).onclick = add; $('#fcfLI', bd).onkeydown = e => { if (e.key === 'Enter') add(); };
     paint();
