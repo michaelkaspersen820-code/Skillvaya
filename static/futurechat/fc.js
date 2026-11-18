@@ -627,7 +627,9 @@
     const c = S.conv; if (!c) return;
     const canData = typeof window.startSkillvayaVideoCall === 'function';
     const label = (mode === 'video' ? 'Video call' : 'Voice call') + ' over data', note = 'Free · uses your data or Wi-Fi';
-    const dataCall = calleeId => { close(); try { window.startSkillvayaVideoCall(c.business_id || 0, c.customer_id || 0, mode, { conversationId: c.id, calleeId: calleeId || 0 }); } catch (e) { toast(e.message); } };
+    // FC-CALL-STAY-01: keep Future Chat (and this conversation) open under the call screen, so ending the call
+    // returns the person to the chat they were in instead of the home screen. The call screen sits above Future Chat.
+    const dataCall = calleeId => { try { window.startSkillvayaVideoCall(c.business_id || 0, c.customer_id || 0, mode, { conversationId: c.id, calleeId: calleeId || 0 }); } catch (e) { toast(e.message); } };
     const acts = [];
     if (canData && c.kind === 'group') {
       (c.members || []).filter(x => x.id !== (S.me && S.me.id)).slice(0, 12).forEach(x => acts.push([mode === 'video' ? '🎥' : '📞', label + ' · ' + x.name, note, () => dataCall(x.id)]));
