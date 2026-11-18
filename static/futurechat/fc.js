@@ -81,9 +81,10 @@
   function close(fromBack) {
     if (!S.open) return;
     if (fromBack !== true) { try { if (history.state && history.state.fc) { S.unwind = true; history.back(); } } catch (_) {} }
-    S.open = false; stopTimers(); if (root) root.classList.remove('open'); document.body.classList.remove('fc-open'); S.conv = null;
+    S.open = false; try { window.dispatchEvent(new CustomEvent('fc:view', { detail: { conv: 0, closed: true } })); } catch (_) {} stopTimers(); if (root) root.classList.remove('open'); document.body.classList.remove('fc-open'); S.conv = null;
   }
   window.addEventListener('popstate', () => {
+    if (window.FCX && window.FCX.onBack && window.FCX.onBack()) return;
     if (S.unwind) { if (history.state && history.state.fc) { history.back(); return; } S.unwind = false; return; }
     if (!S.open) return;
     if (S.conv) { S.archivedView = false; renderList(true); if (!(history.state && history.state.fc)) try { history.pushState({ fc: 'list' }, ''); } catch (_) {} return; }
@@ -93,11 +94,12 @@
 
   // ---------- chat list
   async function renderList(load) {
+    try { window.dispatchEvent(new CustomEvent('fc:view', { detail: { conv: 0 } })); } catch (_) {}
     stopTimers(); S.conv = null; S.reply = null;
     root.innerHTML = '<header class="fc-hdr"><div class="fc-hrow"><button class="fc-ib plain" id="fcClose" aria-label="Back" title="Back">' + ICON.back + '</button><div class="fc-logo" aria-hidden="true">' + cmSvg('bubble') + '</div><div class="fc-ttl"><b>Future Chat</b><small>Chats, calls and Chatmoji in Skillvaya</small></div>' +
       '<button class="fc-ib" id="fcNew" aria-label="New chat">' + ICON.plus + '</button></div>' +
       '<label class="fc-search">' + ICON.search.replace('<svg', '<svg width="18" height="18" stroke="#a9c8e7" fill="none" stroke-width="2"') + '<input id="fcQ" placeholder="Search chats, providers, groups" aria-label="Search chats" value="' + esc(S.q) + '"></label>' +
-      '<div class="fc-chips" role="tablist">' + [['all', 'All'], ['unread', 'Unread'], ['contacts', 'Contacts'], ['business', 'Providers'], ['person', 'People'], ['group', 'Groups']].map(([k, l]) =>
+      '<div class="fc-chips" role="tablist">' + [['all', 'All'], ['unread', 'Unread'], ['contacts', 'Contacts'], ['business', 'Providers'], ['person', 'People'], ['group', 'Groups']].filter(x => !(window.SV_FC_APP && x[0] === 'business')).map(([k, l]) =>
         '<button class="fc-chip' + (S.filter === k ? ' on' : '') + '" data-f="' + k + '">' + l + '</button>').join('') + '</div></header>' +
       '<div class="fc-body" id="fcBody"><div class="fc-empty">Loading your chats…</div></div>';
     bodyEl = $('#fcBody', root);
@@ -105,7 +107,8 @@
     $('#fcNew', root).onclick = newChat;
     $('#fcClose', root).onclick = () => close();
     // FCAPP-01: in the stand-alone Future Chat app the top-left button opens Account & settings instead of leaving Future Chat.
-    if (window.SV_FC_APP) { const cb = $('#fcClose', root); cb.innerHTML = '<span style="display:inline-grid;width:26px;height:26px">' + cmSvg('smile') + '</span>'; cb.setAttribute('aria-label', 'Account and settings'); cb.title = 'Account and settings'; cb.onclick = () => { if (window.fcAppMenu) window.fcAppMenu(); }; const sm = root.querySelector('.fc-ttl small'); if (sm) sm.textContent = 'Chats, calls and Chatmoji'; }
+    if (window.FCX && window.FCX.listHeader) { try { window.FCX.listHeader(root); } catch (_) {} }
+    else if (window.SV_FC_APP) { const cb = $('#fcClose', root); cb.innerHTML = '<span style="display:inline-grid;width:26px;height:26px">' + cmSvg('smile') + '</span>'; cb.setAttribute('aria-label', 'Account and settings'); cb.title = 'Account and settings'; cb.onclick = () => { if (window.fcAppMenu) window.fcAppMenu(); }; const sm = root.querySelector('.fc-ttl small'); if (sm) sm.textContent = 'Chats, calls and Chatmoji'; }
     $('#fcQ', root).oninput = e => { S.q = e.target.value; drawList(); };
     root.querySelectorAll('.fc-chip').forEach(b => b.onclick = () => { S.filter = b.dataset.f; root.querySelectorAll('.fc-chip').forEach(x => x.classList.toggle('on', x === b)); drawList(); });
     if (load) await loadList(); else drawList();
@@ -133,9 +136,9 @@
     if (!S.archivedView && !contactsState().synced && !lsGet('fc_contacts_dismissed')) html += '<div class="fc-banner"><div style="flex:1"><b>Find your friends</b><br>See which of your phone contacts are on Future Chat.</div><button id="fcCtBtn">Allow</button><button id="fcCtNo" style="background:none;color:#a9c8e7;margin-left:4px" aria-label="Not now">✕</button></div>';
     if (S.archivedView) html += '<div class="fc-filterbar"><span>Archived chats</span><button id="fcArchBack">Back</button></div>';
     if (!items.length) html += '<div class="fc-empty">' + cmSvg('bubble').replace('<svg', '<svg width="56" height="56"') + '<b>' + (S.list.length ? 'No chats here' : 'Your conversations start here') + '</b>' +
-      (S.list.length ? 'Try another filter.' : 'Tap the chat button to message a provider, a friend by phone number, or start a group.') + '</div>';
+      (S.list.length ? 'Try another filter.' : window.SV_FC_APP ? 'Tap the chat button to message a friend by phone number, or start a group.' : 'Tap the chat button to message a provider, a friend by phone number, or start a group.') + '</div>';
     for (const c of items) {
-      const tag = c.kind === 'business' && c.who === 'business' ? '<span class="fc-tag">PROVIDER ✓</span>' : c.kind === 'group' ? '<span class="fc-tag">GROUP</span>' : c.who === 'customer' ? '<span class="fc-tag">CUSTOMER</span>' : '';
+      const tag = window.SV_FC_APP ? (c.kind === 'group' ? '<span class="fc-tag">GROUP</span>' : '') : c.kind === 'business' && c.who === 'business' ? '<span class="fc-tag">PROVIDER ✓</span>' : c.kind === 'group' ? '<span class="fc-tag">GROUP</span>' : c.who === 'customer' ? '<span class="fc-tag">CUSTOMER</span>' : '';
       html += '<button class="fc-row" data-c="' + c.id + '"><div class="fc-av" style="background:' + color(c.title) + '">' + esc(initials(c.title)) + '</div><div class="fc-mid"><div class="fc-name"><span>' + esc(c.title) + '</span>' + tag + (c.pinned ? '<span title="Pinned">📌</span>' : '') + (c.muted ? '<span title="Muted">🔕</span>' : '') +
         '</div><div class="fc-last">' + (c.last ? (c.last.mine ? 'You: ' : '') + rich(c.last.text) : '<i>No messages yet</i>') + '</div></div><div class="fc-end"><span class="fc-time">' + esc(when(c.last ? c.last.at : c.updated_at)) + '</span>' +
         (c.unread ? '<span class="fc-badge">' + c.unread + '</span>' : '') + '</div></button>';
@@ -150,6 +153,7 @@
     const cn = $('#fcCtNo', bodyEl); if (cn) cn.onclick = () => { lsSet('fc_contacts_dismissed', '1'); drawList(); };
     const ab = $('#fcArch', bodyEl); if (ab) ab.onclick = () => { S.archivedView = true; drawList(); };
     const bb = $('#fcArchBack', bodyEl); if (bb) bb.onclick = () => { S.archivedView = false; drawList(); };
+    if (window.FCX && window.FCX.afterList) { try { window.FCX.afterList(bodyEl, items, S); } catch (_) {} }
   }
   function updateBadge() {
     const n = S.list.reduce((a, c) => a + (c.archived ? 0 : c.unread), 0);
@@ -225,7 +229,7 @@
 
   // ---------- new chat
   function newChat() {
-    sheet('<h3>New chat</h3><p>Message anyone on Skillvaya by phone number, or find a service provider.</p>' +
+    sheet('<h3>New chat</h3><p>' + (window.SV_FC_APP ? 'Message anyone on Future Chat by their phone number.' : 'Message anyone on Skillvaya by phone number, or find a service provider.') + '</p>' +
       '<input id="fcNQ" type="text" inputmode="text" placeholder="Phone number or business name" autocomplete="off"><div id="fcNRes"></div>' +
       '<div class="fc-acts" style="margin-top:6px"><button class="fc-act" id="fcNGroup"><i>👥</i>New group</button><button class="fc-act" id="fcNInvite"><i>✉️</i>Invite friends to Future Chat</button></div>', (el, done) => {
       const inp = $('#fcNQ', el), res = $('#fcNRes', el); let t;
@@ -275,6 +279,7 @@
 
   // ---------- conversation
   async function openConv(id) {
+    try { window.dispatchEvent(new CustomEvent('fc:view', { detail: { conv: id } })); } catch (_) {}
     stopTimers(); S.conv = { id, title: '…', kind: '' }; S.msgs = []; S.lastId = 0; S.reply = null; S.msgFilter = '';
     root.innerHTML = '<header class="fc-hdr fc-conv-hdr"><button class="fc-ib plain" id="fcBack" aria-label="Back to chats">' + ICON.back + '</button><div class="fc-av sm" id="fcAv"></div><div class="fc-ttl" style="padding-left:6px"><b id="fcTitle" style="font-size:16px">Loading…</b><small id="fcSub"></small></div>' +
       '<button class="fc-ib plain" id="fcVoice" aria-label="Voice call">' + ICON.phone + '</button><button class="fc-ib plain" id="fcVideo" aria-label="Video call">' + ICON.video + '</button><button class="fc-ib plain" id="fcMore" aria-label="Chat options">' + ICON.more + '</button></header>' +
@@ -319,7 +324,8 @@
   }
   function drawHeader() {
     const c = S.conv; $('#fcTitle', root).textContent = c.title; const av = $('#fcAv', root); av.textContent = initials(c.title); av.style.background = color(c.title);
-    $('#fcSub', root).textContent = c.kind === 'group' ? (c.members || []).map(m => m.name).slice(0, 5).join(', ') : c.who === 'business' ? 'Service provider · Skillvaya' : c.who === 'customer' ? 'Your customer' : 'Future Chat';
+    $('#fcSub', root).textContent = c.kind === 'group' ? (c.members || []).map(m => m.name).slice(0, 5).join(', ') : window.SV_FC_APP ? 'Future Chat' : c.who === 'business' ? 'Service provider · Skillvaya' : c.who === 'customer' ? 'Your customer' : 'Future Chat';
+    if (window.FCX && window.FCX.afterHeader) { try { window.FCX.afterHeader(root, c); } catch (_) {} }
   }
   function bubble(m, prev) {
     if (m.kind === 'system') return '<div class="fc-sys">' + rich(m.body) + '</div>';
@@ -347,7 +353,8 @@
           '<div class="tot"><span>Total</span><span>R' + tot.toLocaleString('en-ZA') + '</span></div>' + (m.meta.valid ? '<small style="color:#55667d">Valid ' + esc(m.meta.valid) + '</small>' : '') +
           (!m.mine ? '<button class="pri" data-acceptq="' + m.id + '">Accept quote</button>' : '') + '</div>';
       }
-      if (m.body) inner += (inner ? '<div style="margin-top:4px">' : '<div>') + rich(m.body) + '</div>';
+      if (m.meta && m.meta.fcx && window.FCX && window.FCX.card) inner += window.FCX.card(m);
+      else if (m.body) inner += (inner ? '<div style="margin-top:4px">' : '<div>') + rich(m.body) + '</div>';
     }
     const ticks = m.mine ? '<span class="fc-tick' + (m.read ? ' read' : '') + '" aria-label="' + (m.read ? 'Read' : 'Sent') + '">' + (m.read ? '✓✓' : '✓') + '</span>' : '';
     inner += '<div class="fc-meta">' + (m.starred ? '<span class="fc-star">★</span>' : '') + (m.edited && !m.deleted ? 'Edited · ' : '') + clock(m.created_at) + ticks + '</div>';
@@ -427,11 +434,13 @@
   }
   const toB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(blob); });
   async function shrink(file) {
-    if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 350 * 1024) return file;
+    const ds = !!(window.FCX && window.FCX.dataSaver && window.FCX.dataSaver());
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < (ds ? 150 : 350) * 1024) return file;
     try {
-      const bmp = await createImageBitmap(file); const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+      const bmp = await createImageBitmap(file); const k = Math.min(1, (ds ? 1280 : 1600) / Math.max(bmp.width, bmp.height));
       const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k); cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
-      const out = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.82)); if (!out || out.size >= file.size) return file;
+      const out = await new Promise(r => cv.toBlob(r, 'image/jpeg', ds ? 0.7 : 0.82)); if (!out || out.size >= file.size) return file;
+      if (ds && window.FCX.savedBytes) window.FCX.savedBytes(file.size - out.size);
       return new File([out], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
     } catch (_) { return file; }
   }
@@ -475,6 +484,7 @@
       ['👤', 'Contact', '#0369a1', shareContact], ['🎤', 'Voice note', '#e5484d', () => voiceNote(() => { const ta = $('#fcText', root); ta && ta.dispatchEvent(new Event('input')); })],
       ['🧾', 'Quote', '#c2410c', makeQuote], ['😀', 'Chatmoji', '#ca8a04', () => picker(n => sendRaw({ c: S.conv.id, body: ':' + n + ':', kind: 'text', reply_to: S.reply ? S.reply.id : 0 }))]];
     if (S.conv && S.conv.kind === 'group') tiles.push(['💰', 'Stokvel', '#15803d', stokvel]);
+    if (window.FCX && window.FCX.attachTiles) { try { window.FCX.attachTiles(S.conv).forEach(t => tiles.push(t)); } catch (_) {} }
     sheet('<h3>Share</h3><div class="fc-grid">' + tiles.map((t, i) => '<button class="fc-tile" data-i="' + i + '"><i style="background:' + t[2] + '">' + t[0] + '</i>' + t[1] + '</button>').join('') + '</div>', (el, done) => {
       el.querySelectorAll('.fc-tile').forEach(b => b.onclick = () => { done(); tiles[Number(b.dataset.i)][3](); });
     });
@@ -509,6 +519,7 @@
     const mine = (m.reactions || []).find(r => r.user_id === (S.me && S.me.id));
     const acts = [['↩️', 'Reply', () => { const who = (S.conv.members || []).find(x => x.id === m.sender_id); S.reply = { id: m.id, mine: m.mine, name: who ? who.name : '', text: m.body || (m.kind === 'photo' ? '📷 Photo' : m.kind) }; drawReply(); $('#fcText', root).focus(); }]];
     if (m.body) acts.push(['📋', 'Copy text', () => { navigator.clipboard && navigator.clipboard.writeText(m.body).then(() => toast('Copied')); }]);
+    if (m.body && window.FCX && window.FCX.translate) acts.push(['🌐', 'Translate', () => window.FCX.translate(m.body)]);
     if (m.mine && m.kind === 'text') acts.push(['✏️', 'Edit', () => editMsg(m)]);
     acts.push(['⭐', m.starred ? 'Unstar' : 'Star', () => api('/api/fc/star', { m: m.id, on: !m.starred }).then(() => loadMsgs(true, true))]);
     acts.push(['↪️', 'Forward', () => forward(m)]);
@@ -556,6 +567,7 @@
       ['🗂️', c.archived ? 'Unarchive chat' : 'Archive chat', () => setConv({ archived: !c.archived }, true)]];
     if (c.kind === 'group') { acts.unshift(['💰', 'Stokvel', stokvel]); acts.push(['➕', 'Add people', addPeople]); acts.push(['✏️', 'Rename group', () => { const t = prompt('Group name', c.title); if (t) setConv({ title: t }); }]); acts.push(['🚪', 'Leave group', () => { if (confirm('Leave this group?')) setConv({ leave: true }, true); }, 'danger']); }
     if (c.kind === 'business' && c.who === 'business') acts.push(['✦', 'View provider profile', () => { close(); try { window.openProvider && window.openProvider(c.business_id); } catch (_) {} }]);
+    if (window.FCX && window.FCX.convActs) { try { window.FCX.convActs(c).forEach(a => acts.push(a)); } catch (_) {} }
     acts.push(['⚑', 'Report', report, 'danger']);
     sheet('<h3>' + esc(c.title) + '</h3><div class="fc-acts">' + acts.map((a, i) => '<button class="fc-act' + (a[3] ? ' ' + a[3] : '') + '" data-a="' + i + '"><i>' + a[0] + '</i>' + a[1] + '</button>').join('') + '</div>', (el, done) => {
       el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { done(); acts[Number(b.dataset.a)][2](); });
@@ -636,7 +648,7 @@
     if (canData && c.kind === 'group') {
       (c.members || []).filter(x => x.id !== (S.me && S.me.id)).slice(0, 12).forEach(x => acts.push([mode === 'video' ? '🎥' : '📞', label + ' · ' + x.name, note, () => dataCall(x.id)]));
     } else if (canData) acts.push([mode === 'video' ? '🎥' : '📞', label, note, () => dataCall(0)]);
-    if (!acts.length) { toast('Calls need the latest Skillvaya app or a browser with camera and microphone support.'); return; }
+    if (!acts.length) { toast(window.SV_FC_APP ? 'Calls need the latest Future Chat app.' : 'Calls need the latest Skillvaya app or a browser with camera and microphone support.'); return; }
     if (acts.length === 1) { acts[0][3](); return; }
     sheet('<h3>' + esc(c.title) + '</h3><div class="fc-acts">' + acts.map((a, i) => '<button class="fc-act" data-a="' + i + '"><i>' + a[0] + '</i><span>' + a[1] + '<br><small style="color:#55667d">' + esc(a[2]) + '</small></span></button>').join('') + '</div>', (el, done) => {
       el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { done(); acts[Number(b.dataset.a)][3](); });
@@ -768,7 +780,10 @@
   }
   function share(text) { S.pendingShare = String(text || ''); open(); setTimeout(() => toast('Pick a chat to share with'), 300); }
   function inviteFriends() { invite(''); }
-  window.FutureChat = { open, close, verifyPhone, newChat, share, stokvel, inviteFriends, findFriends: () => { open(); setTimeout(askContacts, 300); } };
+  window.FutureChat = { open, close, verifyPhone, newChat, share, stokvel, inviteFriends, findFriends: () => { open(); setTimeout(askContacts, 300); },
+    newGroup, openConv: id => { open(); return openConv(Number(id)); }, picker, state: () => ({ open: S.open, conv: S.conv ? S.conv.id : 0, list: S.list, me: S.me }),
+    callConv: async (id, mode) => { open(); await openConv(Number(id)); call(mode === 'video' ? 'video' : 'voice'); },
+    reloadList: () => { if (S.open && !S.conv) loadList(); }, refreshMsgs: () => { if (S.conv) loadMsgs(true, true); } };
   window.fcVerifyPhone = verifyPhone;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
 })();

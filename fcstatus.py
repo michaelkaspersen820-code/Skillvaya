@@ -90,8 +90,16 @@ def handle_get(h, path):
                                  " WHERE s.user_id IN (" + marks + ") AND s.deleted_at='' AND s.expires_at>? ORDER BY s.created_at",
                                  [uid] + ids + [now]).fetchall()
         mine, people = [], {}
+        try:
+            import fcextras as FX   # FCX-01: people who chose "nobody sees my status", and blocked people
+            with A.conn() as c:
+                hide = FX.hidden_status_owners(c, [i for i in ids if i != uid])
+                hide |= {i for i in ids if i != uid and FX.blocked_between(c, uid, i)}
+        except Exception:
+            hide = set()
         for r in rows:
             if int(r["user_id"]) == uid: mine.append(_item(r, True, True, r["views"])); continue
+            if int(r["user_id"]) in hide: continue
             p = people.setdefault(int(r["user_id"]), {"user_id": int(r["user_id"]), "name": r["name"] or "Future Chat friend", "items": [], "unseen": 0, "latest": ""})
             p["items"].append(_item(r, False, int(r["seen"] or 0) > 0))
             if not int(r["seen"] or 0): p["unseen"] += 1

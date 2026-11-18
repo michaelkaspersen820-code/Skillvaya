@@ -254,5 +254,5 @@
     };
     inp.click();
   }
-  window.FutureChatStatus = { refresh, compose };
+  window.FutureChatStatus = { refresh, compose, load, data: () => S.data, view: openViewer, ads: openAds, house: () => HOUSE_AD };
 })();

@@ -171,6 +171,7 @@ def call_target(c, conv_id, u, callee_id=None):
     if not _member(c, conv_id, uid): raise PermissionError("You are not part of this conversation.")
     others = [int(r["user_id"]) for r in c.execute("SELECT user_id FROM fc_members WHERE conversation_id=? AND user_id<>?", (conv_id, uid)).fetchall()]
     if not others: raise LookupError("There is nobody else in this chat to call.")
+    if _blocked(c, conv_id, uid): raise PermissionError("You can't call in this chat because one of you blocked the other.")
     try: want = int(callee_id or 0)
     except (TypeError, ValueError): want = 0
     if want:
@@ -179,6 +180,14 @@ def call_target(c, conv_id, u, callee_id=None):
     elif len(others) == 1: target = others[0]
     else: raise LookupError("Choose who in the group to call.")
     return target, int(conv["business_id"] or 0), int(conv["customer_id"] or 0) or uid
+
+
+def _blocked(c, conv_id, uid):
+    try:
+        import fcextras as FX   # FCX-01 blocked accounts
+        return FX.direct_block(c, conv_id, uid)
+    except Exception:
+        return False
 
 
 def call_event(c, conv_id, sender_id, text):
@@ -347,14 +356,22 @@ def _push(conv_id, sender, text, kind="message", extra=None):
         try:
             with A.conn() as c:
                 rows = c.execute("SELECT user_id,muted FROM fc_members WHERE conversation_id=? AND user_id<>?", (conv_id, int(sender["id"]))).fetchall()
+                ck = c.execute("SELECT kind FROM fc_conversations WHERE id=?", (conv_id,)).fetchone()
+            group = bool(ck and ck["kind"] == "group")
             for r in rows:
                 if int(r["muted"] or 0): continue
+                allowed, preview = True, True
+                try:
+                    import fcextras as FX   # FCX-01: the person's notification settings
+                    allowed, preview = FX.allow_push(int(r["user_id"]), "message", group)
+                except Exception: pass
+                if not allowed: continue
                 # Someone already looking at this chat sees the message appear; no separate alert.
                 if time.time() - _VIEWING.get((int(r["user_id"]), int(conv_id)), 0) < 8: continue
                 data = {"type": kind, "conversation_id": str(conv_id), "url": "/customer-app?fc=%d" % conv_id}
                 data.update(extra or {})
                 send = getattr(A, "fcm_send_to_user", None)
-                if send: send(int(r["user_id"]), sender["name"] or "Future Chat", text or "New message", data)
+                if send: send(int(r["user_id"]), sender["name"] or "Future Chat", (text if preview else "") or "New message", data)
         except Exception as exc:
             print("Future Chat push skipped:", type(exc).__name__)
     threading.Thread(target=run, daemon=True).start()
@@ -672,6 +689,7 @@ def handle_post(h, path, d):
         reply_to = int(d.get("reply_to") or 0)
         with A.conn() as c:
             _require_member(c, conv_id, u)
+            if _blocked(c, conv_id, uid): return h.sendj({"error": "You can't send messages in this chat because one of you blocked the other."}, 403)
             if reply_to and not c.execute("SELECT 1 FROM fc_messages WHERE id=? AND conversation_id=?", (reply_to, conv_id)).fetchone(): reply_to = 0
             mid = c.execute("INSERT INTO fc_messages(conversation_id,sender_id,body,kind,meta,reply_to,created_at) VALUES(?,?,?,?,?,?,?) RETURNING id",
                             (conv_id, uid, body, kind, meta_s, reply_to, stamp)).fetchone()["id"]
