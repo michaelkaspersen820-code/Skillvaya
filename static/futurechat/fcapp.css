@@ -247,3 +247,24 @@ html.fc-app input[type=file]{display:none!important}
 @keyframes fcafall{0%{transform:translateY(0) rotate(0)}100%{transform:translateY(110vh) rotate(540deg);opacity:.85}}
 html.fc-app.fca-inconv #fcaPanel{bottom:0;z-index:10075}
 html.fc-app .fca-chk{color:#f4f9ff;font-weight:600}html.fc-app .fca-chk input{accent-color:#1ed6c8;color-scheme:dark;opacity:1;width:22px;height:22px}html.fc-app .fca-chk span{color:#f4f9ff}
+
+/* FCA-DEVICES-01: every screen size — small phones (320 px), tablets, landscape, foldables */
+@media (max-width:360px){
+  #fcaNav{padding-left:2px;padding-right:2px}
+  #fcaNav button span{font-size:10.5px;padding:0}
+  html.fc-app .fc-conv-hdr{gap:2px}
+  html.fc-app .fc-conv-hdr .fc-ib{width:36px;min-width:36px;height:36px}
+  .fca-acts{gap:7px}.fca-act{padding:12px 4px;font-size:12px}
+}
+@media (min-width:760px){
+  html.fc-app #fcRoot{left:0!important;right:0!important;width:auto!important;box-shadow:none!important;padding-left:calc(50% - 380px)!important;padding-right:calc(50% - 380px)!important}
+  #fcaPanel .fca-bd>*,#fcaPanel .fca-hd>*{max-width:680px;margin-left:auto;margin-right:auto}
+  #fcaNav{padding-left:calc(50% - 320px);padding-right:calc(50% - 320px)}
+  #fcfGogo header,#fcfGogo .gg,#fcfGogo footer{max-width:640px;margin-left:auto;margin-right:auto}
+  .fc-sheet{border-radius:24px!important;margin-bottom:24px}
+}
+@media (orientation:landscape) and (max-height:500px){
+  #fcaNav{height:52px}#fcaNav button{height:44px;flex-direction:row;gap:6px}
+  .fca-prof .fca-av.xl{width:72px;height:72px}
+  .fcf-sos{width:150px!important;height:150px!important}
+}
