@@ -19,7 +19,7 @@ A = None
 PREF_DEFAULTS = {
     "about": "", "last_seen": "contacts", "photo": "contacts", "status": "contacts",
     "notify_messages": True, "notify_groups": True, "notify_calls": True, "notify_previews": True,
-    "data_saver": False, "language": "English", "translate": True, "biz": {},
+    "data_saver": False, "language": "English", "translate": True, "biz": {}, "app_lang": "en",
 }
 CHOICES = {"last_seen": ("contacts", "nobody"), "photo": ("contacts", "nobody"), "status": ("contacts", "nobody")}
 BOOLS = ("notify_messages", "notify_groups", "notify_calls", "notify_previews", "data_saver", "translate")
@@ -52,6 +52,7 @@ def init(c):
         CREATE INDEX IF NOT EXISTS idx_fcx_items_due ON fcx_items(reminded, due_at);
         CREATE TABLE IF NOT EXISTS fcx_votes(item_id BIGINT NOT NULL, user_id BIGINT NOT NULL, choice INTEGER NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(item_id, user_id));
         CREATE TABLE IF NOT EXISTS fcx_rsvps(item_id BIGINT NOT NULL, user_id BIGINT NOT NULL, answer TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(item_id, user_id));
+        CREATE TABLE IF NOT EXISTS fcx_i18n(lang TEXT NOT NULL, src TEXT NOT NULL, dst TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(lang, src));
         CREATE TABLE IF NOT EXISTS fcx_reports(id %(pk)s, user_id BIGINT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL);
     """ % {"pk": pk})
     # Call history needs the moment a call was answered (ended_at - answered_at = how long people talked).
@@ -317,8 +318,98 @@ def _translate(text, to):
     return out
 
 
+# ---------------------------------------------------------------- app wording in any language (FCX-I18N-01)
+# Prepared languages ship in static/futurechat/fc_i18n_seed.json (made once: Argos offline + checked wording);
+# any other language is translated once with the free translator, saved in fcx_i18n, then served instantly to everyone.
+import os as _os
+_STATIC = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "static", "futurechat")
+_I18N = {"seed": None, "catalog": None, "filling": set(), "lock": threading.Lock()}
+
+
+def _i18n_files():
+    if _I18N["seed"] is None:
+        try: _I18N["seed"] = json.load(open(_os.path.join(_STATIC, "fc_i18n_seed.json"), encoding="utf-8"))
+        except Exception: _I18N["seed"] = {}
+        try: _I18N["catalog"] = json.load(open(_os.path.join(_STATIC, "fc_strings.json"), encoding="utf-8"))
+        except Exception: _I18N["catalog"] = []
+    return _I18N["seed"], _I18N["catalog"]
+
+
+def _ai_batch(items, lang_name):
+    import kaspersen_ai as KAI
+    keys = KAI._keys(); k = keys.get("openrouter")
+    if not k: return {}
+    try: KAI._free_models()
+    except Exception: pass
+    models = [m for m in (KAI._free.get("ids") or []) if m.endswith(":free")][:4] or list(KAI.FREE_PREFERRED)[:3]
+    prompt = ("You translate the buttons and screens of a messaging app called Future Chat into " + lang_name + ". "
+              "Translate every English string in the JSON list. Keep these unchanged: Future Chat, Chatmoji, Skillvaya, Google Play, Wi-Fi, "
+              "prices like R149, numbers, emoji and symbols. Use short, natural, everyday wording a phone app would use. "
+              "Reply with ONLY a JSON object that maps each English string exactly to its translation.\n\n" + json.dumps(items, ensure_ascii=False))
+    for m in models:
+        try:
+            req = urllib.request.Request(KAI.FREE_URL, method="POST", data=json.dumps({"model": m, "temperature": 0, "max_tokens": 6000,
+                                         "messages": [{"role": "user", "content": prompt}]}).encode(),
+                                         headers={"Authorization": "Bearer " + k, "Content-Type": "application/json",
+                                                  "HTTP-Referer": "https://skillvaya.onrender.com", "X-Title": "Future Chat"})
+            with urllib.request.urlopen(req, timeout=120) as resp: j = json.loads(resp.read())
+            t = (((j.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+            t = re.sub(r"(?s)<think>.*?</think>", "", t)
+            a, b = t.find("{"), t.rfind("}")
+            if a < 0 or b <= a: continue
+            d = json.loads(t[a:b + 1])
+            out = {str(x): str(y).strip() for x, y in d.items() if x in items and isinstance(y, str) and y.strip()}
+            if out: return out
+        except Exception as exc:
+            print("Future Chat wording translate via %s failed: %s" % (m, type(exc).__name__))
+    return {}
+
+
+def _fill(lang, lang_name, missing):
+    try:
+        for i in range(0, len(missing), 50):
+            got = _ai_batch(missing[i:i + 50], lang_name)
+            if got:
+                with A.conn() as c:
+                    stamp = A.now()
+                    for src, dst in got.items():
+                        if not c.execute("SELECT 1 FROM fcx_i18n WHERE lang=? AND src=?", (lang, src)).fetchone():
+                            c.execute("INSERT INTO fcx_i18n(lang,src,dst,created_at) VALUES(?,?,?,?)", (lang, src, dst[:600], stamp))
+            time.sleep(3)
+    except Exception as exc:
+        print("Future Chat wording fill stopped:", type(exc).__name__)
+    finally:
+        with _I18N["lock"]: _I18N["filling"].discard(lang)
+
+
+def _i18n(h):
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(h.path).query)
+    lang = str((q.get("lang") or [""])[0]).strip()
+    name = re.sub(r"[^\w \-()]", "", str((q.get("name") or [""])[0]), flags=re.UNICODE)[:40] or lang
+    if not re.fullmatch(r"[a-z]{2,3}(-[A-Za-z]{2,4})?", lang) or lang == "en": return h.sendj({"lang": "en", "strings": {}, "complete": True})
+    seed, catalog = _i18n_files()
+    strings = {}
+    try:
+        sv = getattr(A, "sv_i18n", None)
+        if sv: strings.update(sv(lang)[1] or {})
+    except Exception: pass
+    strings.update(seed.get(lang) or {})
+    with A.conn() as c:
+        for r in c.execute("SELECT src,dst FROM fcx_i18n WHERE lang=?", (lang,)).fetchall(): strings.setdefault(r["src"], r["dst"])
+    missing = [x for x in catalog if x not in strings]
+    filling = False
+    if missing:
+        with _I18N["lock"]:
+            if lang not in _I18N["filling"] and len(_I18N["filling"]) < 3:
+                _I18N["filling"].add(lang); filling = True
+                threading.Thread(target=_fill, args=(lang, name, missing), name="FutureChatWording-" + lang, daemon=True).start()
+            elif lang in _I18N["filling"]: filling = True
+    return h.sendj({"lang": lang, "strings": strings, "complete": not missing, "filling": filling, "missing": len(missing)})
+
+
 # ---------------------------------------------------------------- GET
 def handle_get(h, path):
+    if path == "/api/fcx/i18n": return _i18n(h)   # open before sign-in: the language is chosen on the sign-up screen
     u = h.require(); uid = int(u["id"])
     q = urllib.parse.parse_qs(urllib.parse.urlparse(h.path).query)
     if path == "/api/fcx/me":
@@ -523,6 +614,7 @@ def handle_post(h, path, d):
                 if k in CHOICES and v in CHOICES[k]: p[k] = v
                 elif k in BOOLS: p[k] = bool(v)
                 elif k == "language" and v in LANGS: p[k] = v
+                elif k == "app_lang" and isinstance(v, str) and re.fullmatch(r"[a-z]{2,3}", v): p[k] = v
                 elif k == "biz" and isinstance(v, dict):
                     p["biz"] = {f: str(v.get(f) or "").strip()[:300 if f == "about" else 120] for f in ("name", "category", "about", "hours", "address", "website", "email")}
             _save_prefs(c, uid, p)

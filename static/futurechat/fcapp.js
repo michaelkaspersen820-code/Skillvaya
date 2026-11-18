@@ -85,6 +85,68 @@
 
   // ---------------------------------------------------------------- hooks used by fc.js
   const FCX = window.FCX = {};
+
+  // ---------------------------------------------------------------- app language (FCX-I18N-01): pick on sign-up or in You -> Language
+  const APP_LANGS = [
+    ['en', 'English', 'English', 1], ['af', 'Afrikaans', 'Afrikaans', 1], ['zu', 'isiZulu', 'Zulu', 1], ['xh', 'isiXhosa', 'Xhosa', 1], ['st', 'Sesotho', 'Sotho', 1],
+    ['tn', 'Setswana', 'Tswana', 1], ['sw', 'Kiswahili', 'Swahili', 1], ['fr', 'Français', 'French', 1], ['pt', 'Português', 'Portuguese', 1], ['es', 'Español', 'Spanish', 1],
+    ['de', 'Deutsch', 'German', 1], ['hi', 'हिन्दी', 'Hindi', 1], ['zh', '中文', 'Chinese', 1], ['ar', 'العربية', 'Arabic', 1],
+    ['nso', 'Sepedi', 'Northern Sotho'], ['ts', 'Xitsonga', 'Tsonga'], ['ve', 'Tshivenḓa', 'Venda'], ['ss', 'siSwati', 'Swati'], ['nr', 'isiNdebele', 'Ndebele'],
+    ['sn', 'chiShona', 'Shona'], ['ny', 'Chichewa', 'Chichewa'], ['yo', 'Yorùbá', 'Yoruba'], ['ig', 'Igbo', 'Igbo'], ['ha', 'Hausa', 'Hausa'], ['am', 'አማርኛ', 'Amharic'],
+    ['so', 'Soomaali', 'Somali'], ['rw', 'Kinyarwanda', 'Kinyarwanda'], ['lg', 'Luganda', 'Luganda'], ['mg', 'Malagasy', 'Malagasy'], ['nl', 'Nederlands', 'Dutch'],
+    ['it', 'Italiano', 'Italian'], ['ru', 'Русский', 'Russian'], ['uk', 'Українська', 'Ukrainian'], ['pl', 'Polski', 'Polish'], ['tr', 'Türkçe', 'Turkish'],
+    ['el', 'Ελληνικά', 'Greek'], ['ro', 'Română', 'Romanian'], ['hu', 'Magyar', 'Hungarian'], ['cs', 'Čeština', 'Czech'], ['sv', 'Svenska', 'Swedish'],
+    ['nb', 'Norsk', 'Norwegian'], ['da', 'Dansk', 'Danish'], ['fi', 'Suomi', 'Finnish'], ['he', 'עברית', 'Hebrew'], ['fa', 'فارسی', 'Persian'], ['ur', 'اردو', 'Urdu'],
+    ['bn', 'বাংলা', 'Bengali'], ['ta', 'தமிழ்', 'Tamil'], ['te', 'తెలుగు', 'Telugu'], ['gu', 'ગુજરાતી', 'Gujarati'], ['pa', 'ਪੰਜਾਬੀ', 'Punjabi'], ['mr', 'मराठी', 'Marathi'],
+    ['ja', '日本語', 'Japanese'], ['ko', '한국어', 'Korean'], ['vi', 'Tiếng Việt', 'Vietnamese'], ['th', 'ไทย', 'Thai'], ['id', 'Bahasa Indonesia', 'Indonesian'],
+    ['ms', 'Bahasa Melayu', 'Malay'], ['tl', 'Filipino', 'Filipino'], ['ka', 'ქართული', 'Georgian'], ['hy', 'Հայերեն', 'Armenian']
+  ];
+  const RTL = { ar: 1, he: 1, fa: 1, ur: 1 };
+  const langInfo = c => APP_LANGS.find(x => x[0] === c) || null;
+  function appLang() {
+    try { const s = localStorage.getItem('fc_lang'); if (s && langInfo(s)) return s; } catch (_) {}
+    try { for (const l of (navigator.languages || [navigator.language || ''])) { const c = String(l).toLowerCase(); const hit = langInfo(c.slice(0, 3)) || langInfo(c.slice(0, 2)); if (hit) return hit[0]; } } catch (_) {}
+    return 'en';
+  }
+  let langTimer = 0;
+  async function applyLang(code, tries) {
+    clearTimeout(langTimer);
+    try { localStorage.setItem('sv_lang', 'en'); } catch (_) {}   // Future Chat runs its own wording, not Skillvaya's
+    if (typeof window.svUseDict !== 'function') { setTimeout(() => applyLang(code, tries), 300); return; }
+    if (!code || code === 'en') { window.svUseDict('en', null); document.documentElement.dir = 'ltr'; return; }
+    const info = langInfo(code) || [code, code, code];
+    let cached = null; try { cached = JSON.parse(localStorage.getItem('fc_i18n_' + code) || 'null'); } catch (_) {}
+    if (cached && cached.strings) { window.svUseDict(code, cached.strings); document.documentElement.dir = RTL[code] ? 'rtl' : 'ltr'; }
+    try {
+      const r = await fetch('/api/fcx/i18n?lang=' + encodeURIComponent(code) + '&name=' + encodeURIComponent(info[2]), { cache: 'no-store' });
+      const d = await r.json();
+      if (d && d.strings) {
+        try { localStorage.setItem('fc_i18n_' + code, JSON.stringify({ strings: d.strings, at: Date.now() })); } catch (_) {}
+        if (appLang() === code) { window.svUseDict(code, d.strings); document.documentElement.dir = RTL[code] ? 'rtl' : 'ltr'; }
+        tries = (tries || 0) + 1;
+        if (!d.complete && d.filling && tries < 12 && appLang() === code) langTimer = setTimeout(() => applyLang(code, tries), 20000);
+      }
+    } catch (_) {}
+  }
+  function setAppLang(code) {
+    try { localStorage.setItem('fc_lang', code); } catch (_) {}
+    applyLang(code);
+    try { if (tok()) post('/api/fcx/prefs', { app_lang: code }).catch(() => {}); } catch (_) {}
+  }
+  function langPicker(onDone) {
+    const cur = appLang();
+    const rowL = l => '<button type="button" class="fc-act" data-l="' + l[0] + '" data-no-tr style="' + (l[0] === cur ? 'border:1px solid #1ed6c8;border-radius:12px' : '') + '"><i style="font-size:13px;font-weight:800">' + l[0].toUpperCase() + '</i><span style="flex:1">' + esc(l[1]) + (l[1] !== l[2] ? ' <small style="color:#9cb7cc">· ' + esc(l[2]) + '</small>' : '') + '</span>' + (l[0] === cur ? '<b style="color:#1ed6c8">✓</b>' : '') + '</button>';
+    sheet('<h3 data-no-tr>🌐 Language · Taal · Ulimi · Ulwimi · Puo</h3><input id="fcaLangQ" placeholder="Search · Soek · Sesha" data-no-tr style="margin:6px 0 10px">' +
+      '<div id="fcaLangL" class="fc-acts" style="max-height:58vh;overflow:auto"></div>', (el, done) => {
+      const paint = q => { q = (q || '').toLowerCase(); const list = APP_LANGS.filter(l => !q || (l[1] + ' ' + l[2] + ' ' + l[0]).toLowerCase().includes(q));
+        const top = list.filter(l => l[3]), rest = list.filter(l => !l[3]);
+        $('#fcaLangL', el).innerHTML = top.map(rowL).join('') + (rest.length ? '<p data-no-tr style="margin:12px 4px 4px;font-size:12px;color:#9cb7cc">More languages (translated automatically the first time)</p>' + rest.map(rowL).join('') : '');
+        el.querySelectorAll('[data-l]').forEach(b => b.onclick = () => { done(); setAppLang(b.dataset.l); if (onDone) onDone(b.dataset.l); }); };
+      $('#fcaLangQ', el).oninput = e => paint(e.target.value); paint('');
+    });
+  }
+  FCX.langPicker = langPicker;
+  applyLang(appLang());
   FCX.listHeader = function (root) {
     const hdr = root.querySelector('.fc-hdr'); const row = hdr && hdr.querySelector('.fc-hrow'); if (!row) return;
     const top = document.createElement('div');
@@ -411,6 +473,7 @@
       row('🔒', 'Privacy and visibility', 'Last seen, profile picture and status', { data: 'data-a="privacy"' }) +
       row('🔔', 'Notifications', 'Messages, calls and circles', { data: 'data-a="notif"' }) +
       row('🚫', 'Blocked accounts', (X.counts.blocked || 0) ? X.counts.blocked + ' blocked' : 'Manage your blocked list', { data: 'data-a="blocked"' }) +
+      row('🗣️', 'App language', (langInfo(appLang()) || ['', 'English'])[1], { data: 'data-a="applang"' }) +
       row('🌐', 'Language and translation', p.language || 'English', { data: 'data-a="lang"' }) +
       row('📶', 'Data saver', p.data_saver ? 'On · photos sent smaller' : 'Use less mobile data', { data: 'data-a="data"' }) +
       row('✦', 'Future Chatmoji collection', 'Express more', { data: 'data-a="cm"' }) + '</div>' +
@@ -426,7 +489,7 @@
     bind(bd, {
       photo: () => pickPhoto(), edit: () => push(scrProfile), phone: () => { try { FC().verifyPhone(true); } catch (_) {} }, devices: () => push(scrDevices),
       tasks: () => push(scrTasks), circles: () => go('circles'), privacy: () => push(scrPrivacy), notif: () => push(scrNotif), blocked: () => push(scrBlocked),
-      lang: () => push(scrLang), data: () => push(scrData), cm: () => push(scrChatmoji), biz: () => push(scrBiz), storage: () => push(scrStorage), backup: () => push(scrBackup),
+      lang: () => push(scrLang), applang: () => langPicker(() => setTimeout(() => { if (X.stack.length) draw(); }, 400)), data: () => push(scrData), cm: () => push(scrChatmoji), biz: () => push(scrBiz), storage: () => push(scrStorage), backup: () => push(scrBackup),
       invite: () => { try { FC().inviteFriends(); } catch (_) {} }, help: () => push(scrHelp), terms: () => push(scrTerms), about: () => push(scrAbout),
       signout: signOut, delete: deleteAccount
     });
@@ -532,10 +595,12 @@
   }
   function scrLang() {
     const bd = frame('Language and translation', 'Read messages in your language'); const p = X.prefs || {};
-    bd.innerHTML = '<label class="fca-field"><span>Translate messages into</span><select id="fcaLang">' + (X.langs || []).map(l => '<option' + (l === p.language ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select></label>' +
+    bd.innerHTML = '<div class="fca-card">' + row('🗣️', 'App language', (langInfo(appLang()) || ['', 'English'])[1], { data: 'data-a="applang"' }) + '</div>' +
+      '<label class="fca-field"><span>Translate messages into</span><select id="fcaLang">' + (X.langs || []).map(l => '<option' + (l === p.language ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select></label>' +
       toggles([['translate', 'Offer Translate on messages', 'Hold a message, then tap Translate']]) +
       '<p class="fca-note">Translation is free and works for South African languages like Afrikaans, isiZulu and isiXhosa as well as many others. Only the message you choose is translated.</p>';
     $('#fcaLang', bd).onchange = async e => { if (await savePrefs({ language: e.target.value })) toast('Saved'); };
+    bind(bd, { applang: () => langPicker(() => setTimeout(scrLang, 400)) });
     bindToggles(bd);
   }
   function scrData() {
@@ -781,7 +846,7 @@
     let el = document.getElementById('fcaAuth');
     if (!el) { el = document.createElement('div'); el.id = 'fcaAuth'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Future Chat sign in'); document.body.appendChild(el); }
     const create = mode === 'create';
-    el.innerHTML = '<div class="fca-w"><div class="fca-brand2">' + MARK.replace('class="fca-mark"', 'class="fca-lg"') + '<div><b>Future Chat</b><small>Stay close. Wherever life takes you.</small></div></div>' +
+    el.innerHTML = '<div class="fca-w"><button type="button" class="fca-langbtn" id="fcaLangBtn" data-no-tr>🌐 ' + esc((langInfo(appLang()) || ['', 'English'])[1]) + ' ▾</button><div class="fca-brand2">' + MARK.replace('class="fca-mark"', 'class="fca-lg"') + '<div><b>Future Chat</b><small>Stay close. Wherever life takes you.</small></div></div>' +
       '<div class="fca-tabs" role="tablist"><button type="button" data-m="signin" class="' + (create ? '' : 'on') + '">Sign in</button><button type="button" data-m="create" class="' + (create ? 'on' : '') + '">Create account</button></div>' +
       '<form id="fcaForm" novalidate>' +
       (create ? '<label for="fcaName">Your name</label><input id="fcaName" type="text" autocomplete="name" required>' : '') +
@@ -790,9 +855,10 @@
       '<label for="fcaPw">Password' + (create ? ' (8 or more characters)' : '') + '</label><input id="fcaPw" type="password" autocomplete="' + (create ? 'new-password' : 'current-password') + '" required>' +
       '<label class="fca-tick"><input id="fcaTerms" type="checkbox"><span>I have read and agree to the <a href="/terms" target="_blank" rel="noopener">Terms, Rules &amp; Safety</a> and the <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>. I am 13 or older.</span></label>' +
       '<button class="fca-go" type="submit">' + (create ? 'Create my account' : 'Sign in') + '</button><div class="fca-msg" id="fcaMsg" role="alert"></div>' + (create ? '' : '<button type="button" class="fca-forgot" id="fcaForgot">Forgot your password?</button>') + '</form>' +
-      '<p class="fca-note2">' + (create ? 'Your number lets friends and family find you and call you on Future Chat. We confirm it with a code.' : 'One account for Future Chat and Skillvaya: sign in with the same email and password.') +
+      '<p class="fca-note2" data-keep-brand>' + (create ? 'Your number lets friends and family find you and call you on Future Chat. We confirm it with a code.' : 'One account for Future Chat and Skillvaya: sign in with the same email and password.') +
       ' <a href="/account-deletion" target="_blank" rel="noopener">Delete an account</a></p></div>';
     el.querySelectorAll('.fca-tabs button').forEach(b => b.onclick = () => showAuth(b.dataset.m));
+    el.querySelector('#fcaLangBtn').onclick = () => langPicker(() => setTimeout(() => showAuth(mode), 300));
     const form = el.querySelector('#fcaForm'), msg = el.querySelector('#fcaMsg'), btn = el.querySelector('.fca-go');
     const fg = el.querySelector('#fcaForgot');
     if (fg) fg.onclick = async () => {
@@ -820,6 +886,7 @@
   }
   const authCss = document.createElement('style');
   authCss.textContent = '#fcaAuth{position:fixed;inset:0;z-index:12000;overflow:auto;color:#eaf4ff;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:linear-gradient(180deg,#0a1f33 0%,#0f3150 55%,#11506a 100%)}#fcaAuth *{box-sizing:border-box}' +
+    '#fcaAuth .fca-langbtn{display:block;margin:0 0 6px auto;border:1px solid rgba(30,214,200,.45);background:rgba(30,214,200,.1);color:#5ff0e2;border-radius:20px;padding:8px 14px;font-weight:700;font-size:14px}' +
     '#fcaAuth .fca-w{max-width:440px;margin:0 auto;padding:max(30px,env(safe-area-inset-top)) 22px 40px}#fcaAuth .fca-brand2{display:flex;align-items:center;gap:14px;margin:10px 0 20px}#fcaAuth .fca-lg{width:58px;height:58px;flex:none}' +
     '#fcaAuth .fca-brand2 b{display:block;font-size:27px;color:#fff}#fcaAuth .fca-brand2 small{display:block;color:#9cb7cc;font-size:14px;margin-top:2px}' +
     '#fcaAuth .fca-tabs{display:grid;grid-template-columns:1fr 1fr;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.09);border-radius:15px;padding:4px;margin:10px 0 18px}#fcaAuth .fca-tabs button{border:0;border-radius:11px;padding:11px;font-weight:800;font-size:15px;background:transparent;color:#cfe3f2}#fcaAuth .fca-tabs button.on{background:#1ed6c8;color:#05283a}' +
@@ -832,13 +899,13 @@
   // ---------------------------------------------------------------- brand: no "Skillvaya" anywhere on screen in this app
   function rebrand(node) {
     try {
-      const w = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, { acceptNode: t => /Skillvaya/.test(t.nodeValue) && !(t.parentNode && /^(SCRIPT|STYLE|TEXTAREA)$/.test(t.parentNode.nodeName)) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+      const w = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, { acceptNode: t => /Skillvaya/.test(t.nodeValue) && !(t.parentNode && (/^(SCRIPT|STYLE|TEXTAREA)$/.test(t.parentNode.nodeName) || (t.parentNode.closest && t.parentNode.closest('[data-keep-brand]')))) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
       const hits = []; while (w.nextNode()) hits.push(w.currentNode);
       hits.forEach(t => { t.nodeValue = t.nodeValue.replace(/Skillvaya/g, 'Future Chat'); });
       if (node.querySelectorAll) node.querySelectorAll('[aria-label*="Skillvaya"],[title*="Skillvaya"],[placeholder*="Skillvaya"]').forEach(e => ['aria-label', 'title', 'placeholder'].forEach(a => { const v = e.getAttribute(a); if (v && v.indexOf('Skillvaya') >= 0) e.setAttribute(a, v.replace(/Skillvaya/g, 'Future Chat')); }));
     } catch (_) {}
   }
-  const brandObs = new MutationObserver(ms => { for (const m of ms) { if (m.type === 'characterData') { if (/Skillvaya/.test(m.target.nodeValue || '')) m.target.nodeValue = m.target.nodeValue.replace(/Skillvaya/g, 'Future Chat'); } else m.addedNodes.forEach(n => { if (n.nodeType === 1) rebrand(n); else if (n.nodeType === 3 && /Skillvaya/.test(n.nodeValue)) n.nodeValue = n.nodeValue.replace(/Skillvaya/g, 'Future Chat'); }); } });
+  const brandObs = new MutationObserver(ms => { for (const m of ms) { if (m.type === 'characterData') { if (/Skillvaya/.test(m.target.nodeValue || '') && !(m.target.parentNode && m.target.parentNode.closest && m.target.parentNode.closest('[data-keep-brand]'))) m.target.nodeValue = m.target.nodeValue.replace(/Skillvaya/g, 'Future Chat'); } else m.addedNodes.forEach(n => { if (n.nodeType === 1) rebrand(n); else if (n.nodeType === 3 && /Skillvaya/.test(n.nodeValue) && !(n.parentNode && n.parentNode.closest && n.parentNode.closest('[data-keep-brand]'))) n.nodeValue = n.nodeValue.replace(/Skillvaya/g, 'Future Chat'); }); } });
   function watchBrand() { if (!document.body) return setTimeout(watchBrand, 30); rebrand(document.body); brandObs.observe(document.body, { childList: true, subtree: true, characterData: true }); }
   watchBrand();
   const _alert = window.alert, _confirm = window.confirm;
