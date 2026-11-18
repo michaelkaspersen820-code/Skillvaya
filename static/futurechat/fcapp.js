@@ -191,7 +191,8 @@
   FCX.attachTiles = function (conv) {
     if (!conv || !conv.id) return [];
     return [['📊', 'Poll', '#0e8c9e', () => itemForm('poll', conv.id)], ['✅', 'Task', '#0f766e', () => itemForm('task', conv.id)],
-      ['📅', 'Meeting', '#1d4ed8', () => itemForm('event', conv.id)], ['⏰', 'Reminder', '#7c3aed', () => itemForm('reminder', conv.id)]];
+      ['📅', 'Meeting', '#1d4ed8', () => itemForm('event', conv.id)], ['⏰', 'Reminder', '#7c3aed', () => itemForm('reminder', conv.id)],
+      ['🕛', 'Schedule', '#0f766e', () => scheduleForm(conv)], ['🎉', 'Greeting card', '#be185d', () => greetingFor(conv)]];
   };
   FCX.convActs = function (c) {
     const acts = [], p = X.peers[String(c.id)] || {};
@@ -471,7 +472,8 @@
       row('✅', 'Tasks', 'Turn conversations into to-dos', { data: 'data-a="tasks"' }) +
       row('⏰', 'Reminders and meetings', 'Never miss something important', { data: 'data-a="tasks"' }) +
       row('◎', 'Circles', 'Your people and groups', { data: 'data-a="circles"' }) +
-      row('🎉', 'Celebrations', 'Birthdays, holidays and special days', { data: 'data-a="celeb"' }) + '</div>' +
+      row('🎉', 'Celebrations', 'Birthdays, holidays and special days', { data: 'data-a="celeb"' }) +
+      row('🕛', 'Scheduled messages', 'Messages waiting to be sent', { data: 'data-a="sched"' }) + '</div>' +
       '<div class="fca-gl">Preferences</div><div class="fca-card">' +
       row('🔒', 'Privacy and visibility', 'Last seen, profile picture and status', { data: 'data-a="privacy"' }) +
       row('🔔', 'Notifications', 'Messages, calls and circles', { data: 'data-a="notif"' }) +
@@ -492,7 +494,7 @@
     bind(bd, {
       photo: () => pickPhoto(), edit: () => push(scrProfile), phone: () => { try { FC().verifyPhone(true); } catch (_) {} }, devices: () => push(scrDevices),
       tasks: () => push(scrTasks), circles: () => go('circles'), privacy: () => push(scrPrivacy), notif: () => push(scrNotif), blocked: () => push(scrBlocked),
-      celeb: () => push(scrCelebrations), lang: () => push(scrLang), applang: () => langPicker(() => setTimeout(() => { if (X.stack.length) draw(); }, 400)), data: () => push(scrData), cm: () => push(scrChatmoji), biz: () => push(scrBiz), storage: () => push(scrStorage), backup: () => push(scrBackup),
+      celeb: () => push(scrCelebrations), sched: () => push(scrScheduled), lang: () => push(scrLang), applang: () => langPicker(() => setTimeout(() => { if (X.stack.length) draw(); }, 400)), data: () => push(scrData), cm: () => push(scrChatmoji), biz: () => push(scrBiz), storage: () => push(scrStorage), backup: () => push(scrBackup),
       invite: () => { try { FC().inviteFriends(); } catch (_) {} }, help: () => push(scrHelp), terms: () => push(scrTerms), about: () => push(scrAbout),
       signout: signOut, delete: deleteAccount
     });
@@ -548,7 +550,7 @@
     let items = []; try { items = (await api('/api/fcx/sessions')).items || []; } catch (e) { bd.innerHTML = '<div class="fca-empty"><b>Couldn\'t load</b>' + esc(e.message) + '</div>'; return; }
     if (X.stack[X.stack.length - 1] !== self) return;
     bd.innerHTML = '<div class="fca-card">' + items.map(s => row(s.current ? '📱' : '💻', s.current ? 'This phone' : 'Signed in ' + when(s.created_at), s.current ? 'Active now' : 'Stays signed in until ' + new Date(s.expires_at).toLocaleDateString(), {}, '')).join('') + '</div>' +
-      '<p class="fca-note">Future Chat and Skillvaya use the same account, so signing in on either app shows here.</p>' +
+      '<p class="fca-note" data-keep-brand>Future Chat and Skillvaya use the same account, so signing in on either app shows here.</p>' +
       (items.length > 1 ? '<button class="fca-btn danger" data-a="out">Sign out all other devices</button>' : '');
     bind(bd, { out: async () => { if (!confirm('Sign out everywhere except this phone?')) return; try { const d = await post('/api/fcx/sessions/logout-others'); toast('Signed out ' + d.signed_out + (d.signed_out === 1 ? ' device' : ' devices')); scrDevices(); } catch (e) { toast(e.message); } } });
   }
@@ -764,9 +766,9 @@
     const old = body.querySelector('.fca-celeb'); if (old) old.remove();
     const items = [];
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    bdayToday().forEach(b => items.push(['🎂', b.name.split(' ')[0] + "'s birthday today", 'Send a wish', () => cardSheet({ kind: 'bday', person: b })]));
+    bdayToday().forEach(b => items.push(['🎂', b.name.split(' ')[0] + "'s birthday today", 'Send a wish', () => bdayCard(b)]));
     celebsOn(today).filter(c => celebrates(c[0])).forEach(c => items.push([c[2], c[3], 'Send wishes', () => cardSheet({ kind: 'holiday', celeb: c })]));
-    (X.bdays || []).filter(b => nextBirthday(b)[1] === 1).forEach(b => items.push(['🎈', b.name.split(' ')[0] + "'s birthday is tomorrow", 'Remind me', () => toast("We'll remind you tomorrow morning 🎂")]));
+    (X.bdays || []).filter(b => nextBirthday(b)[1] === 1).forEach(b => items.push(['🎈', b.name.split(' ')[0] + "'s birthday is tomorrow", 'Send at midnight', () => bdayCard(b)]));
     if (!items.length) return;
     const el = document.createElement('div'); el.className = 'fca-celeb';
     el.innerHTML = items.map((x, i) => '<button type="button" data-i="' + i + '"><i>' + x[0] + '</i><span><b>' + esc(x[1]) + '</b><small>' + esc(x[2]) + ' →</small></span></button>').join('');
@@ -789,12 +791,17 @@
     sheet('<h3>' + (isB ? '🎂 Birthday card' : o.celeb[2] + ' ' + esc(o.celeb[3])) + '</h3><div id="fcaCardPrev"></div>' +
       (isB ? '<div class="fca-seg" style="margin:10px 0" id="fcaThemes">' + BDAY_THEMES.map((t, i) => '<button type="button" data-t="' + i + '" class="' + (i ? '' : 'on') + '">' + t[0] + ' ' + t[1] + '</button>').join('') + '</div>' : '') +
       '<textarea id="fcaCardT" rows="3" maxlength="400">' + esc(text) + '</textarea>' +
+      '<p style="margin:10px 0 4px">When</p><div class="fca-seg" id="fcaWhen">' + (isB && o.days > 0 ? '<button type="button" data-w="mid" class="on">🌙 Midnight on ' + esc(o.dateText) + '</button><button type="button" data-w="now">Now</button>' : '<button type="button" data-w="now" class="on">Now</button>') + '<button type="button" data-w="pick">⏰ Pick a time</button></div>' +
+      '<input id="fcaWhenT" type="datetime-local" style="display:none;margin-top:8px">' +
+      (isB ? '' : '<label class="fca-chk" style="padding-left:2px"><input type="checkbox" id="fcaAsStatus"><span>Also post it as my status</span></label>') +
       (isB ? '' : '<p style="margin:8px 0 4px">Send to</p><div style="max-height:30vh;overflow:auto"><label class="fca-chk"><input type="checkbox" id="fcaAll"><span><b>Everyone below</b></span></label>' + chats.map(c => '<label class="fca-chk"><input type="checkbox" class="fcaCc" value="' + c.id + '"><span>' + esc(c.title) + '</span></label>').join('') + '</div>') +
       '<button class="fc-btn" id="fcaCardGo">' + (isB ? 'Send to ' + esc(first) : 'Send') + '</button>', (el, done) => {
       const paint = () => { const t = isB ? BDAY_THEMES[theme] : null; $('#fcaCardPrev', el).innerHTML = cardHtml(isB ? t[0] : o.celeb[2], title, $('#fcaCardT', el).value, isB ? t[2] : o.celeb[6]); };
       $('#fcaCardT', el).oninput = paint; paint();
       el.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { theme = Number(b.dataset.t); el.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('on', x === b)); paint(); });
       const all = $('#fcaAll', el); if (all) all.onchange = () => el.querySelectorAll('.fcaCc').forEach(c => c.checked = all.checked);
+      let whenMode = (isB && o.days > 0) ? 'mid' : 'now';
+      el.querySelectorAll('[data-w]').forEach(b => b.onclick = () => { whenMode = b.dataset.w; el.querySelectorAll('[data-w]').forEach(x => x.classList.toggle('on', x === b)); $('#fcaWhenT', el).style.display = whenMode === 'pick' ? 'block' : 'none'; });
       $('#fcaCardGo', el).onclick = async e => {
         const words = $('#fcaCardT', el).value.trim() || text;
         const meta = { card: isB ? { k: 'bday', th: theme, t: title } : { k: o.celeb[0], t: title } };
@@ -803,13 +810,21 @@
         let ids = isB ? [o.person.conversation_id] : Array.from(el.querySelectorAll('.fcaCc:checked')).map(c => Number(c.value));
         if (isB && !ids[0]) { toast('Start a chat with ' + first + ' first'); return; }
         if (!ids.length) { toast('Choose at least one chat'); return; }
+        let at = '';
+        if (whenMode === 'mid') at = new Date(o.date.getFullYear(), o.date.getMonth(), o.date.getDate(), 0, 0, 30).toISOString();
+        if (whenMode === 'pick') { const v = $('#fcaWhenT', el).value; if (!v) { toast('Choose the day and time'); return; } at = new Date(v).toISOString(); }
         e.target.disabled = true; let ok = 0;
-        for (const c of ids) { try { await post('/api/fc/send', { c, body, kind: 'text', meta }); ok++; } catch (_) {} }
-        done(); toast(ok ? (isB ? 'Birthday card sent 🎉' : 'Sent to ' + ok + (ok === 1 ? ' chat' : ' chats') + ' ✓') : 'Could not send. Check your connection.');
-        if (isB && ok) FC().openConv(ids[0]);
+        for (const c of ids) { try { if (at) await post('/api/fcx/schedule', { c, body, meta, send_at: at }); else await post('/api/fc/send', { c, body, kind: 'text', meta }); ok++; } catch (er) { if (at) toast(er.message); } }
+        const st = $('#fcaAsStatus', el);
+        if (st && st.checked) { try { await post('/api/fc/status', { body: emoji + ' ' + title + '\n' + words, bg: 'linear-gradient(135deg,' + o.celeb[6][0] + ',' + o.celeb[6][1] + ')' }); try { window.FutureChatStatus && window.FutureChatStatus.refresh(true); } catch (_) {} } catch (_) {} }
+        done();
+        if (at) toast(ok ? '⏰ Scheduled — it will be sent ' + new Date(at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Could not schedule it.');
+        else toast(ok ? (isB ? 'Birthday card sent 🎉' : 'Sent to ' + ok + (ok === 1 ? ' chat' : ' chats') + ' ✓') : 'Could not send. Check your connection.');
+        if (isB && ok && !at) FC().openConv(ids[0]);
       };
     });
   }
+  function bdayCard(p) { const [d, n] = nextBirthday(p); cardSheet({ kind: 'bday', person: p, days: n, date: d, dateText: d.toLocaleDateString([], { day: 'numeric', month: 'short' }) }); }
   // card inside the chat (+ confetti the first time the person opens it)
   FCX.greet = function (m) {
     const k = m.meta.card.k, c = CELEB.find(x => x[0] === k);
@@ -846,7 +861,7 @@
       '<p class="fca-note">Future Chat celebrates everyone: Christian, Jewish, Muslim, Hindu, Sikh, Chinese and many more days. You get a banner and a ready greeting card on the day. Muslim dates follow the Umm al-Qura calendar and can differ by a day where the moon is sighted locally; Jewish holidays start the evening before.</p>';
     bd.innerHTML = h;
     bind(bd, { mine: () => push(scrMyBirthday), pick: () => push(scrPickCelebs) });
-    bd.querySelectorAll('[data-b]').forEach(b => b.onclick = () => { const p = X.bdays.find(x => x.user_id === Number(b.dataset.b)); cardSheet({ kind: 'bday', person: p }); });
+    bd.querySelectorAll('[data-b]').forEach(b => b.onclick = () => { const p = X.bdays.find(x => x.user_id === Number(b.dataset.b)); bdayCard(p); });
     bd.querySelectorAll('[data-c]').forEach(b => b.onclick = () => cardSheet({ kind: 'holiday', celeb: CELEB.find(x => x[0] === b.dataset.c) }));
   }
   function scrMyBirthday() {
@@ -867,8 +882,10 @@
   function scrPickCelebs() {
     const bd = frame('Special days', 'Choose what you celebrate');
     const draw_ = () => {
-      bd.innerHTML = '<p class="fca-note">Turn on the days you celebrate. You\'ll see a banner and a greeting card on the day. Everything is on to start with.</p>' +
+      bd.innerHTML = toggles([['notify_celeb', 'Morning reminder on my special days', 'A friendly nudge to send greetings']]) +
+        '<p class="fca-note">Turn on the days you celebrate. You\'ll see a banner and a greeting card on the day. Reminders for faith days only come for the days you switch on here.</p>' +
         Object.keys(CG).map(g => '<div class="fca-gl">' + esc(CG[g]) + '</div><div class="fca-card">' + CELEB.filter(c => c[1] === g).map(c => row(c[2], c[3], '', { data: 'data-k="' + c[0] + '"' }, '<span class="fca-sw' + (celebrates(c[0]) ? ' on' : '') + '"></span>')).join('') + '</div>').join('');
+      bindToggles(bd);
       bd.querySelectorAll('[data-k]').forEach(b => b.onclick = async () => {
         const id = b.dataset.k; let l = ((X.prefs && X.prefs.celebrate) || ['*']).slice();
         if (l.indexOf('*') >= 0) { const i = l.indexOf('-' + id); if (i >= 0) l.splice(i, 1); else l.push('-' + id); }
@@ -879,6 +896,38 @@
     draw_();
   }
   FCX.celebrations = () => { openPanel(); push(scrCelebrations); };
+  function greetingFor(conv) {
+    const peer = X.peers[String(conv.id)] || {};
+    const b = (X.bdays || []).find(x => x.user_id === peer.user_id);
+    const up = upcomingCelebs(30).filter(x => celebrates(x[0][0])).slice(0, 8);
+    const opts = [];
+    if (b) opts.push(['🎂', 'Birthday card for ' + b.name.split(' ')[0], () => bdayCard(b)]);
+    up.forEach(([c, d, n]) => opts.push([c[2], c[3] + (n === 0 ? ' · today' : ' · ' + d.toLocaleDateString([], { day: 'numeric', month: 'short' })), () => cardSheet({ kind: 'holiday', celeb: c })]));
+    CELEB.filter(c => !up.some(u => u[0][0] === c[0])).slice(0, 0).forEach(() => {});
+    opts.push(['🎉', 'All special days…', () => { openPanel(); push(scrCelebrations); }]);
+    sheet('<h3>🎉 Greeting card</h3><div class="fc-acts">' + opts.map((o, i) => '<button class="fc-act" data-i="' + i + '"><i>' + o[0] + '</i>' + esc(o[1]) + '</button>').join('') + '</div>', (el, done) => {
+      el.querySelectorAll('[data-i]').forEach(x => x.onclick = () => { done(); opts[Number(x.dataset.i)][2](); });
+    });
+  }
+
+  async function scrScheduled() {
+    const self = X.stack[X.stack.length - 1];
+    const bd = frame('Scheduled messages', 'Sent automatically at the time you chose'); bd.innerHTML = '<div class="fca-empty">Loading…</div>';
+    let items = []; try { items = (await api('/api/fcx/scheduled')).items || []; } catch (e) { bd.innerHTML = '<div class="fca-empty">' + esc(e.message) + '</div>'; return; }
+    if (X.stack[X.stack.length - 1] !== self) return;
+    bd.innerHTML = items.length ? '<div class="fca-card">' + items.map(s => '<div class="fca-item"><span style="font-size:20px;width:26px;text-align:center">⏰</span><div class="tx"><b>' + esc(s.title) + '</b><small data-no-tr>' + esc(s.body.slice(0, 120)) + '</small><span class="due">' + esc(dueText(s.send_at).toUpperCase()) + '</span></div><button class="x" data-x="' + s.id + '" aria-label="Cancel">✕</button></div>').join('') + '</div>'
+      : '<div class="fca-empty"><span class="big">⏰</span><b>Nothing scheduled</b>Write a message now and Future Chat sends it later — like a birthday wish at midnight.</div>';
+    bd.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => { if (!confirm('Cancel this scheduled message?')) return; try { await post('/api/fcx/schedule/cancel', { id: Number(b.dataset.x) }); toast('Cancelled'); scrScheduled(); } catch (e) { toast(e.message); } });
+  }
+  function scheduleForm(conv) {
+    const soon = new Date(Date.now() + 3600e3); soon.setMinutes(0, 0, 0);
+    sheet('<h3>⏰ Schedule a message</h3><p>Future Chat sends it for you at the time you choose.</p><textarea id="fcaSchT" rows="4" maxlength="4000" placeholder="Your message"></textarea>' +
+      '<label class="fca-field"><span>Send on</span><input id="fcaSchW" type="datetime-local" value="' + esc(localInput(soon.toISOString())) + '"></label><button class="fc-btn" id="fcaSchGo">Schedule</button>', (el, done) => {
+      setTimeout(() => { try { $('#fcaSchT', el).focus(); } catch (_) {} }, 50);
+      $('#fcaSchGo', el).onclick = async e => { const t = $('#fcaSchT', el).value.trim(), w = $('#fcaSchW', el).value; if (!t) { toast('Type your message first'); return; } if (!w) { toast('Choose when to send it'); return; }
+        e.target.disabled = true; try { const d = await post('/api/fcx/schedule', { c: conv.id, body: t, send_at: new Date(w).toISOString() }); done(); toast('⏰ Scheduled for ' + dueText(d.send_at)); } catch (er) { toast(er.message); e.target.disabled = false; } };
+    });
+  }
 
   // ---------------------------------------------------------------- clear chats + backup (FCX-CLEAR-01)
   async function clearChats(cid, title) {
@@ -999,7 +1048,7 @@
             toast(d.status === 'active' ? 'Your ad is live in Sponsored status ✓' : 'Your ad is saved and waiting for approval ✓');
             try { window.FutureChatStatus && window.FutureChatStatus.refresh(true); } catch (_) {} pop(); return;
           }
-          sheet('<h3>Your ad is saved ✓</h3><p>Ads are paid securely with Google Play. Payment inside the Future Chat app opens soon; until then, open the <b>Skillvaya</b> app on this phone, tap <b>Advertise here</b> on its home screen and pay there — the same ad shows in Future Chat\'s Sponsored status and on the Skillvaya home screen.</p><a class="fc-btn" style="display:block;text-align:center;text-decoration:none" href="https://play.google.com/store/apps/details?id=za.co.skillvaya.app">Open Skillvaya on Google Play</a>');
+          sheet('<h3>Your ad is saved ✓</h3><p data-keep-brand>Ads are paid securely with Google Play. Payment inside the Future Chat app opens soon; until then, open the <b>Skillvaya</b> app on this phone, tap <b>Advertise here</b> on its home screen and pay there — the same ad shows in Future Chat\'s Sponsored status and on the Skillvaya home screen.</p><a class="fc-btn" data-keep-brand style="display:block;text-align:center;text-decoration:none" href="https://play.google.com/store/apps/details?id=za.co.skillvaya.app">Open Skillvaya on Google Play</a>');
           b.disabled = false; b.textContent = 'Send my ad for approval';
         } catch (e) { toast(e.message); b.disabled = false; b.textContent = owner ? 'Publish my ad (free for the owner)' : 'Send my ad for approval'; }
       }
@@ -1150,6 +1199,7 @@
     setTimeout(loadPeers, 800);
     if (p.get('fcx') === 'item' && p.get('id')) setTimeout(() => itemSheet(Number(p.get('id'))), 900);
     if (p.get('fcx') === 'bday') setTimeout(() => { go('you'); push(scrCelebrations); }, 900);
+    if (p.get('fcx') === 'celeb' && p.get('id')) setTimeout(() => { const c = CELEB.find(x => x[0] === p.get('id')); if (c) cardSheet({ kind: 'holiday', celeb: c }); }, 1200);
     // keep Future Chat underneath the tabs at all times
     setInterval(() => {
       if (!tok() || document.getElementById('fcaAuth')) return;

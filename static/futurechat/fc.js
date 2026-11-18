@@ -230,7 +230,7 @@
   // ---------- new chat
   function newChat() {
     sheet('<h3>New chat</h3><p>' + (window.SV_FC_APP ? 'Message anyone on Future Chat by their phone number.' : 'Message anyone on Skillvaya by phone number, or find a service provider.') + '</p>' +
-      '<input id="fcNQ" type="text" inputmode="text" placeholder="Phone number or business name" autocomplete="off"><div id="fcNRes"></div>' +
+      '<input id="fcNQ" type="text" inputmode="text" placeholder="' + (window.SV_FC_APP ? 'Phone number' : 'Phone number or business name') + '" autocomplete="off"><div id="fcNRes"></div>' +
       '<div class="fc-acts" style="margin-top:6px"><button class="fc-act" id="fcNGroup"><i>👥</i>New group</button><button class="fc-act" id="fcNInvite"><i>✉️</i>Invite friends to Future Chat</button></div>', (el, done) => {
       const inp = $('#fcNQ', el), res = $('#fcNRes', el); let t;
       const showContacts = () => { const st = contactsState(); if (!st.synced) { res.innerHTML = '<button class="fc-act" id="fcNCt"><i>📇</i>Find friends from your contacts</button>'; $('#fcNCt', el).onclick = () => { done(); askContacts(); }; return; }

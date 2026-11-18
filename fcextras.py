@@ -20,10 +20,10 @@ PREF_DEFAULTS = {
     "about": "", "last_seen": "contacts", "photo": "contacts", "status": "contacts",
     "notify_messages": True, "notify_groups": True, "notify_calls": True, "notify_previews": True,
     "data_saver": False, "language": "English", "translate": True, "biz": {}, "app_lang": "en",
-    "birthday": {}, "birthday_vis": "contacts", "celebrate": ["*"],
+    "birthday": {}, "birthday_vis": "contacts", "celebrate": ["*"], "notify_celeb": True,
 }
 CHOICES = {"last_seen": ("contacts", "nobody"), "photo": ("contacts", "nobody"), "status": ("contacts", "nobody"), "birthday_vis": ("contacts", "nobody")}
-BOOLS = ("notify_messages", "notify_groups", "notify_calls", "notify_previews", "data_saver", "translate")
+BOOLS = ("notify_messages", "notify_groups", "notify_calls", "notify_previews", "data_saver", "translate", "notify_celeb")
 LANGS = ["English", "Afrikaans", "isiZulu", "isiXhosa", "Sesotho", "Setswana", "Sepedi", "Xitsonga", "French", "Portuguese",
          "Spanish", "German", "Swahili", "Arabic", "Hindi", "Chinese"]
 ITEM_KINDS = ("task", "reminder", "event", "poll")
@@ -55,6 +55,9 @@ def init(c):
         CREATE TABLE IF NOT EXISTS fcx_rsvps(item_id BIGINT NOT NULL, user_id BIGINT NOT NULL, answer TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(item_id, user_id));
         CREATE TABLE IF NOT EXISTS fcx_i18n(lang TEXT NOT NULL, src TEXT NOT NULL, dst TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(lang, src));
         CREATE TABLE IF NOT EXISTS fcx_bday_sent(user_id BIGINT NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(user_id, day, kind));
+        CREATE TABLE IF NOT EXISTS fcx_scheduled(id %(pk)s, user_id BIGINT NOT NULL, conversation_id BIGINT NOT NULL, body TEXT NOT NULL,
+            meta TEXT NOT NULL DEFAULT '{}', send_at TEXT NOT NULL, sent_at TEXT NOT NULL DEFAULT '', cancelled INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_fcx_sched_due ON fcx_scheduled(sent_at, send_at);
         CREATE TABLE IF NOT EXISTS fcx_reports(id %(pk)s, user_id BIGINT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL);
     """ % {"pk": pk})
     # Call history needs the moment a call was answered (ended_at - answered_at = how long people talked).
@@ -250,7 +253,80 @@ def _reminder_loop():
         except Exception as exc: print("Future Chat reminders skipped:", type(exc).__name__)
         try: _birthdays_job()
         except Exception as exc: print("Future Chat birthdays skipped:", type(exc).__name__)
+        try: _send_scheduled()
+        except Exception as exc: print("Future Chat scheduled messages skipped:", type(exc).__name__)
+        try: _celeb_job()
+        except Exception as exc: print("Future Chat special-day greetings skipped:", type(exc).__name__)
         time.sleep(60)
+
+
+# ---------------------------------------------------------------- scheduled messages (FCX-SCHED-01): "send at midnight on her birthday"
+def _send_scheduled():
+    now = _now().isoformat()
+    done = []
+    with A.conn() as c:
+        rows = c.execute("SELECT s.*,u.name FROM fcx_scheduled s JOIN users u ON u.id=s.user_id WHERE s.sent_at='' AND s.cancelled=0 AND s.send_at<=? LIMIT 50", (now,)).fetchall()
+        for r in rows:
+            c.execute("UPDATE fcx_scheduled SET sent_at=? WHERE id=?", (now, int(r["id"])))
+            cid, uid = int(r["conversation_id"]), int(r["user_id"])
+            if not _member(c, cid, uid) or direct_block(c, cid, uid): continue
+            try: meta = json.loads(r["meta"] or "{}")
+            except ValueError: meta = {}
+            meta["scheduled"] = 1
+            u = {"id": uid, "name": r["name"] or "Future Chat"}
+            _post_in_chat(c, cid, u, r["body"], meta); done.append((cid, u, r["body"]))
+    for cid, u, body in done: _push_conv(cid, u, body[:120])
+
+
+# ---------------------------------------------------------------- special-day greetings (FCX-CELEB-02)
+# static/futurechat/fc_holidays.json: day -> special days (made from the same rules the app uses, Hebrew/Islamic/Chinese calendars included).
+# At 08:00 South African time people get one friendly nudge for their special days. Religious days only for people who chose them;
+# everyone else gets New Year and their own country's days.
+COUNTRY_DAYS = {"ZA": ["humanrights", "freedom", "workers", "africa", "youth", "mandela", "womensdaysa", "heritage", "reconciliation", "goodwill"],
+                "US": ["usindependence", "thanksgiving"], "DE": ["germanunity"], "IN": ["indiaday"], "NG": ["nigeriaday", "africa"], "CA": ["canadaday"], "AU": ["australiaday"]}
+_HOL = {"data": None}
+
+
+def _holidays():
+    if _HOL["data"] is None:
+        try: _HOL["data"] = json.load(open(_os.path.join(_STATIC, "fc_holidays.json"), encoding="utf-8"))
+        except Exception: _HOL["data"] = {"days": {}, "info": {}}
+    return _HOL["data"]
+
+
+def _celeb_job():
+    now_sa = _now() + datetime.timedelta(hours=2)
+    if now_sa.hour < 8: return
+    day = now_sa.date().isoformat()
+    H = _holidays(); ids = H.get("days", {}).get(day) or []
+    if not ids: return
+    send = getattr(A, "fcm_send_to_user", None)
+    jobs = []
+    with A.conn() as c:
+        users = c.execute("SELECT DISTINCT m.user_id AS uid,p.data AS pdata,u.country AS country FROM fc_members m JOIN users u ON u.id=m.user_id "
+                          "LEFT JOIN fcx_prefs p ON p.user_id=m.user_id").fetchall()
+        for r in users:
+            uid = int(r["uid"])
+            try: pd = json.loads(r["pdata"] or "{}")
+            except ValueError: pd = {}
+            if pd.get("notify_celeb") is False: continue
+            lst = pd.get("celebrate") or ["*"]
+            if "*" in lst:
+                mine = {"newyear"} | set(COUNTRY_DAYS.get(str(r["country"] or "ZA").upper(), []))
+                mine -= {x[1:] for x in lst if x.startswith("-")}
+            else:
+                mine = set(lst)
+            for hid in ids:
+                if hid not in mine: continue
+                if c.execute("SELECT 1 FROM fcx_bday_sent WHERE user_id=? AND day=? AND kind=?", (uid, day, "celeb:" + hid)).fetchone(): continue
+                c.execute("INSERT INTO fcx_bday_sent(user_id,day,kind) VALUES(?,?,?)", (uid, day, "celeb:" + hid))
+                jobs.append((uid, hid))
+    if not send: return
+    for uid, hid in jobs:
+        info = H.get("info", {}).get(hid) or ["\U0001f389", "Special day"]
+        if not allow_push(uid, "message")[0]: continue
+        try: send(uid, info[0] + " " + info[1], "Tap to send greetings to your people on Future Chat", {"type": "fc_celeb", "id": hid, "url": "/futurechat-app?fcx=celeb&id=" + hid})
+        except Exception as exc: print("Future Chat special-day push failed:", type(exc).__name__)
 
 
 # ---------------------------------------------------------------- birthdays (FCX-BDAY-01)
@@ -563,6 +639,18 @@ def handle_get(h, path):
                              "photo": ("/api/fcx/avatar/%d?v=%s" % (o, _photo_version(ph["profile_photo"]))) if ph and ph["profile_photo"] and pp.get("photo") != "nobody" else ""})
         t = _sa_today()
         return h.sendj({"items": rows, "today": t.isoformat()})
+    if path == "/api/fcx/scheduled":
+        with A.conn() as c:
+            rows = c.execute("SELECT s.id,s.conversation_id,s.body,s.send_at,cv.kind,cv.title FROM fcx_scheduled s JOIN fc_conversations cv ON cv.id=s.conversation_id "
+                             "WHERE s.user_id=? AND s.sent_at='' AND s.cancelled=0 ORDER BY s.send_at LIMIT 100", (uid,)).fetchall()
+            out = []
+            for r in rows:
+                t = r["title"] if r["kind"] == "group" else ""
+                if not t:
+                    o = c.execute("SELECT u.name FROM fc_members o JOIN users u ON u.id=o.user_id WHERE o.conversation_id=? AND o.user_id<>? LIMIT 1", (int(r["conversation_id"]), uid)).fetchone()
+                    t = (o["name"] if o else "") or "Chat"
+                out.append({"id": int(r["id"]), "conversation_id": int(r["conversation_id"]), "title": t, "body": r["body"], "send_at": r["send_at"]})
+        return h.sendj({"items": out})
     if path == "/api/fcx/blocks":
         with A.conn() as c:
             rows = c.execute("SELECT b.blocked_id,u.name,b.created_at FROM fcx_blocks b JOIN users u ON u.id=b.blocked_id WHERE b.user_id=? ORDER BY b.created_at DESC", (uid,)).fetchall()
@@ -807,6 +895,25 @@ def handle_post(h, path, d):
             if notify: notify("Future Chat problem report", (u.get("name") or "") + " <" + (u.get("email") or "") + ">\n\n" + body)
         except Exception: pass
         return h.sendj({"ok": True, "message": "Thank you. Your report reached the Future Chat team."})
+    if path == "/api/fcx/schedule":
+        cid = int(d.get("c") or 0); body = str(d.get("body") or "").strip()[:4000]
+        meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
+        when = _iso(d.get("send_at"))
+        if not body: return h.sendj({"error": "Type your message first."}, 400)
+        if not when: return h.sendj({"error": "Choose when to send it."}, 400)
+        if when <= _now().isoformat(): return h.sendj({"error": "Choose a time in the future."}, 400)
+        if when > (_now() + datetime.timedelta(days=370)).isoformat(): return h.sendj({"error": "You can schedule up to a year ahead."}, 400)
+        with A.conn() as c:
+            if not _member(c, cid, uid): return h.sendj({"error": "You are not part of this chat."}, 403)
+            if c.execute("SELECT COUNT(*) AS n FROM fcx_scheduled WHERE user_id=? AND sent_at='' AND cancelled=0", (uid,)).fetchone()["n"] >= 50:
+                return h.sendj({"error": "You already have 50 messages waiting to be sent."}, 400)
+            sid = c.execute("INSERT INTO fcx_scheduled(user_id,conversation_id,body,meta,send_at,created_at) VALUES(?,?,?,?,?,?) RETURNING id",
+                            (uid, cid, body, json.dumps(meta)[:4000], when, A.now())).fetchone()["id"]
+        return h.sendj({"ok": True, "id": int(sid), "send_at": when})
+    if path == "/api/fcx/schedule/cancel":
+        with A.conn() as c:
+            c.execute("UPDATE fcx_scheduled SET cancelled=1 WHERE id=? AND user_id=? AND sent_at=''", (int(d.get("id") or 0), uid))
+        return h.sendj({"ok": True})
     if path == "/api/fcx/clear":
         stamp = A.now(); cid = int(d.get("c") or 0)
         with A.conn() as c:

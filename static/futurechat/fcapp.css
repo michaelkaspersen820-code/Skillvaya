@@ -246,3 +246,4 @@ html.fc-app input[type=file]{display:none!important}
 .fca-confetti span{position:absolute;top:-40px;animation:fcafall 2.6s ease-in forwards}
 @keyframes fcafall{0%{transform:translateY(0) rotate(0)}100%{transform:translateY(110vh) rotate(540deg);opacity:.85}}
 html.fc-app.fca-inconv #fcaPanel{bottom:0;z-index:10075}
+html.fc-app .fca-chk{color:#f4f9ff;font-weight:600}html.fc-app .fca-chk input{accent-color:#1ed6c8;color-scheme:dark;opacity:1;width:22px;height:22px}html.fc-app .fca-chk span{color:#f4f9ff}

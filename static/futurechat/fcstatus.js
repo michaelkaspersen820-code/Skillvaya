@@ -195,7 +195,8 @@
   }
 
   // ---------- posting a status
-  const BGS = ['#0b2447', '#0d6f86', '#7b2cbf', '#c2185b', '#2e7d32', '#ef6c00', '#263238'];
+  const BGS = ['#0b2447', '#0d6f86', '#7b2cbf', '#c2185b', '#2e7d32', '#ef6c00', '#263238',
+    'linear-gradient(135deg,#9d174d,#f59e0b)', 'linear-gradient(135deg,#1e3a8a,#0ea5e9)', 'linear-gradient(135deg,#14532d,#b91c1c)', 'linear-gradient(135deg,#6d28d9,#ec4899)'];   // festive colours
   function sheet(html, mount) {
     const dim = document.createElement('div'); dim.className = 'fc-dim';
     dim.innerHTML = '<div class="fc-sheet" role="dialog" aria-modal="true"><div class="fc-handle"></div>' + html + '</div>';

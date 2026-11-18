@@ -126,7 +126,7 @@ def handle_post(h, path, d):
     if path == "/api/fc/status":
         body = str(d.get("body") or "").strip()[:700]
         bg = str(d.get("bg") or "#0b2447")
-        if bg not in BGS: bg = "#0b2447"
+        if bg not in BGS and not re.fullmatch(r"linear-gradient\(135deg,#[0-9a-fA-F]{6},#[0-9a-fA-F]{6}\)", bg): bg = "#0b2447"
         mime, b64 = "", ""
         media = str(d.get("media") or "")
         if media:
