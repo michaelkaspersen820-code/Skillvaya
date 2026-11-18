@@ -382,6 +382,35 @@ def skillvaya_matches_category(requested, business):
 def category_search_terms(stored):
     aliases = [name for name, targets in CATEGORY_ALIASES.items() if stored in targets]
     return " ".join([stored, *aliases])
+# SV-SEARCH-FUZZY-01: provider search forgives spaces and small typos ("Skill vaya", "skilvaya", "skill via" -> Skillvaya).
+# Everything the old exact substring search found is still found (that check runs first).
+def _sv_close(a, b):
+    if a == b: return True
+    allow = 1 if len(a) < 8 else 2
+    if abs(len(a) - len(b)) > allow: return False
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]; best = i
+        for j, cb in enumerate(b, 1):
+            v = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)); cur.append(v); best = min(best, v)
+        if best > allow: return False
+        prev = cur
+    return prev[-1] <= allow
+def sv_search_matches(term, name, haystack):
+    import re as _re
+    t = (term or "").strip().lower()
+    if not t: return True
+    hay = (haystack or "").lower()
+    if t in hay: return True
+    compact = lambda s: _re.sub(r"[^a-z0-9]+", "", s)
+    ct = compact(t)
+    if len(ct) >= 3 and ct in compact(hay): return True
+    name_words = _re.findall(r"[a-z0-9]+", (name or "").lower())
+    pieces = name_words + [a + b for a, b in zip(name_words, name_words[1:])]
+    if len(ct) >= 5 and any(_sv_close(ct, p) for p in pieces if len(p) >= 4): return True
+    words = [w for w in _re.findall(r"[a-z0-9]+", t) if len(w) >= 3]
+    if not words: return False
+    return all(w in hay or (len(w) >= 4 and any(_sv_close(w, p) for p in name_words if len(p) >= 4)) for w in words)
 # SV88-SPOTLIGHT-YEAR: yearly = 11 x monthly, except Spotlight at R10,000 (Google Play price ceiling).
 PLANS = {"local":{"name":"Local","monthly":105,"yearly":1155},"priority":{"name":"Priority","monthly":210,"yearly":2310},"plus":{"name":"Business Plus","monthly":500,"yearly":5500},"spotlight":{"name":"Business Spotlight","monthly":1000,"yearly":10000}}
 PROVIDER_TIER_RANKS = {"local":0,"priority":1,"plus":2,"spotlight":3}
@@ -3578,6 +3607,23 @@ async function svSyncVideoCall(call){
   }
  }finally{call.syncing=false;}
 }
+// SV-CALL-PERM-01: a call must not fail just because Android cancelled a permission prompt (it does that when two prompts
+// overlap, e.g. the app's startup prompt and the call's prompt) or because the camera was refused. Retry, and fall back to voice.
+function svIsPermissionError(e){return !!e&&/NotAllowed|Security|Permission|denied/i.test(String(e.name||'')+' '+String(e.message||''));}
+async function svGetCallMedia(constraints,mode){
+  const audioOnly={audio:constraints.audio||true,video:false};let lastErr=null;
+  for(let attempt=0;attempt<3;attempt++){
+    if(attempt>0)await new Promise(r=>setTimeout(r,attempt===1?1200:2500));
+    if(mode==='video'&&attempt<2){try{return {stream:await navigator.mediaDevices.getUserMedia(constraints)};}catch(e){lastErr=e;}}
+    try{return {stream:await navigator.mediaDevices.getUserMedia(audioOnly),audioOnly:mode==='video'};}
+    catch(e){lastErr=e;if(!svIsPermissionError(e)&&!/NotReadable|Abort|TrackStart/i.test(String(e.name||'')))break;}
+  }
+  return {error:lastErr||new Error('Microphone is not available.')};
+}
+function svCallMediaErrorText(e){
+  if(svIsPermissionError(e))return 'Skillvaya is not allowed to use your microphone. On your phone open Settings > Apps > Skillvaya > Permissions, set Microphone (and Camera for video) to Allow, then try the call again.';
+  return (e&&e.message)||'Please check microphone/camera permissions.';
+}
 async function startSkillvayaVideoCall(businessId,customerId,mode='video',fcOpts){const fcConv=Number(fcOpts&&fcOpts.conversationId||0),fcCallee=Number(fcOpts&&fcOpts.calleeId||0);
   // Preserve the existing background incoming-call notification permission flow.
   try { if (window.SkillvayaNotifications && typeof window.SkillvayaNotifications.ensureForCall === 'function') window.SkillvayaNotifications.ensureForCall(); } catch (e) { console.warn('Notification permission prompt unavailable', e); }
@@ -3590,7 +3636,7 @@ async function startSkillvayaVideoCall(businessId,customerId,mode='video',fcOpts
   const constraints=mode==='voice'?{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false}:{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}}};
   try{
     svShowCallModal(mode==='voice'?'Skillvaya voice call':'Skillvaya video call','Requesting microphone permission…',mode);
-    mediaPromise=navigator.mediaDevices.getUserMedia(constraints).then(stream=>({stream}),error=>({error}));
+    mediaPromise=svGetCallMedia(constraints,mode);
     call={callId:'',businessId:Number(businessId)||0,customerId:Number(customerId)||0,conversationId:fcConv,mediaMode:mode,isCaller:true,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
     await svCreatePeer(call);
     const offer=await call.pc.createOffer();await call.pc.setLocalDescription(offer);
@@ -3605,7 +3651,7 @@ async function startSkillvayaVideoCall(businessId,customerId,mode='video',fcOpts
     if(call&&svActiveVideoCall===call)await closeSkillvayaVideoCall(true);
     else{if(call&&call.pc)try{call.pc.close()}catch(_){}if(call&&call.localStream)call.localStream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');}
     if(mediaPromise)mediaPromise.then(result=>{if(result&&result.stream)result.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}})}).catch(()=>{});
-    alert('Could not start the call: '+(e.message||'Microphone/camera permission was not granted.'));
+    alert('Could not start the call: '+svCallMediaErrorText(e));
   }
 }
 async function acceptSkillvayaVideoCall(){
@@ -3618,7 +3664,7 @@ async function acceptSkillvayaVideoCall(){
   const constraints=mode==='voice'?{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false}:{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}}};
   try{
     svShowCallModal(mode==='voice'?'Skillvaya voice call':'Skillvaya video call','Preparing microphone and connection…',mode);
-    mediaPromise=navigator.mediaDevices.getUserMedia(constraints).then(stream=>({stream}),error=>({error}));
+    mediaPromise=svGetCallMedia(constraints,mode);
     if(Number(incoming.conversation_id||0)&&window.FutureChat){try{window.FutureChat.open(Number(incoming.conversation_id))}catch(_){}}else{view('messages');showMessagesScreen(false);openMessageConversation(Number(incoming.business_id),Number(incoming.customer_id)).catch(e=>console.warn('Call contact view refresh was delayed:',e&&e.message||e));}
     call={callId:String(incoming.id),businessId:Number(incoming.business_id),customerId:Number(incoming.customer_id),mediaMode:mode,isCaller:false,localStream:new MediaStream(),remoteStream:null,pc:null,audioSender:null,videoSender:null,pendingCandidates:[],queuedRemoteCandidates:[],lastSignalId:0,remoteDescriptionSet:false,syncing:false,pollTimer:null};
     svActiveVideoCall=call;
@@ -3635,12 +3681,12 @@ async function acceptSkillvayaVideoCall(){
     await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'accept',call_id:call.callId,answer_sdp:JSON.stringify(call.pc.localDescription)})});svIncomingAcceptingCallId=null;
     call.lastSignalId=(remote.signals||[]).reduce((n,x)=>Math.max(n,Number(x.id)||0),0);
     for(const event of (remote.signals||[])){if(Number(event.sender_id)===Number(me.id)||event.kind!=='candidate')continue;try{await call.pc.addIceCandidate(new RTCIceCandidate(JSON.parse(event.payload)))}catch(_){}}
-    svSendPendingCandidates(call).catch(err=>svSetCallState('Call accepted; network setup is retrying: '+err.message));svStartCallPolling(call);svSetCallState(mode==='voice'?'Voice call accepted; connecting…':'Video call accepted; connecting…');
+    svSendPendingCandidates(call).catch(err=>svSetCallState('Call accepted; network setup is retrying: '+err.message));svStartCallPolling(call);svSetCallState(mediaResult.audioOnly?'Camera not allowed, so you joined with voice only; connecting…':(mode==='voice'?'Voice call accepted; connecting…':'Video call accepted; connecting…'));
   }catch(e){
     if(call&&svActiveVideoCall===call)await closeSkillvayaVideoCall(true);
     else{if(call&&call.pc)try{call.pc.close()}catch(_){}if(call&&call.localStream)call.localStream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});const modal=document.getElementById('svVideoCallModal');if(modal)modal.classList.add('hidden');}
     if(mediaPromise)mediaPromise.then(result=>{if(result&&result.stream)result.stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}})}).catch(()=>{});
-    alert('Could not accept the call: '+(e.message||'Please check microphone/camera permissions.'));
+    alert('Could not accept the call: '+svCallMediaErrorText(e));
     try{await api('/api/video-calls',{method:'POST',body:JSON.stringify({action:'reject',call_id:String(incoming.id)})})}catch(_){svProcessedIncomingCalls.delete(incomingId);}finally{if(svIncomingAcceptingCallId===incomingId)svIncomingAcceptingCallId=null;}
   }
 }
@@ -5436,7 +5482,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                              AND my.rater_id=? AND my.target_user_id=b.user_id
                         LEFT JOIN (SELECT business_id,COUNT(*) AS jobs_done FROM job_requests WHERE status='completed' GROUP BY business_id) jd ON jd.business_id=b.id
                         WHERE LOWER(TRIM(COALESCE(b.status,''))) IN ('active','approved','published')""",(rater_id,)).fetchall()
-                items=[dict(x) for x in rows if (category_matches(cat, x["category"]) or skillvaya_matches_category(cat, dict(x))) and (not term or term in (x["name"]+" "+x["category"]+" "+x["description"]+" "+category_search_terms(x["category"])).lower()) and (not area or area in x["area"].lower())]
+                items=[dict(x) for x in rows if (category_matches(cat, x["category"]) or skillvaya_matches_category(cat, dict(x))) and (not term or sv_search_matches(term, x["name"], x["name"]+" "+x["category"]+" "+x["description"]+" "+category_search_terms(x["category"]))) and (not area or area in x["area"].lower())]
                 ranks={"local":0,"priority":1,"plus":2,"spotlight":3}
                 _sv_cc=sv_country(q.get("country",[""])[0])
                 if _sv_cc: items=[x for x in items if (sv_country(x.get("country")) or "ZA")==_sv_cc or any(w in str(x.get("area") or "").lower() for w in _SV_NO_GEO)]
