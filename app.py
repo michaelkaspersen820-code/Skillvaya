@@ -38,6 +38,7 @@ import futurechat as FC
 import kaspersen_ai as KAI
 import ownlink as OWN
 import homeads as HA
+import fcstatus as FST
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 TERMS_VERSION = "2026-10-21-v1.2"
@@ -4146,7 +4147,7 @@ function svAfterLogin(){svFutureChatStatus();svRefreshProviderTools()}
 function check(tag){try{if(sent>=3)return;var nav=document.querySelector('.bottom-tabbar');if(!nav)return;var hidden=[].filter.call(nav.children,function(c){var r=c.getBoundingClientRect(),s=getComputedStyle(c);return !(r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden')});if(!hidden.length)return;sent++;var rep={tag:tag,path:location.pathname,ua:navigator.userAgent,lang:document.documentElement.lang,dir:document.documentElement.dir,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,body:document.body.className,signedIn:!!(window.me),role:window.me&&window.me.role||'',hasSvLang:typeof svLang==='function',sw:!!(navigator.serviceWorker&&navigator.serviceWorker.controller),count:nav.children.length,hidden:hidden.map(function(c){return {id:c.id,why:why(c)}})};fetch('/api/diag/tabs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rep).slice(0,20000)}).catch(function(){})}catch(_){}}
 setTimeout(function(){check('load+6s')},6000);document.addEventListener('click',function(e){if(e.target&&e.target.closest&&e.target.closest('.bottom-tabbar button'))setTimeout(function(){check('tap:'+(e.target.closest('button').id||''))},1500)},true)})();
 try{if(typeof closeSkillvayaVideoCall==='function'&&!closeSkillvayaVideoCall.__fx){const o=closeSkillvayaVideoCall;closeSkillvayaVideoCall=function(){try{svFxStop();svFx.id='none';if(window.svLens){window.svLens.i=-1;window.svLens.e=-1}}catch(_){}return o.apply(this,arguments)};closeSkillvayaVideoCall.__fx=1}if(typeof svAttachCallMedia==='function'&&!svAttachCallMedia.__fx){const a=svAttachCallMedia;svAttachCallMedia=async function(call,stream){const prev=svFx.id;svFxStop();const ok=await a.apply(this,arguments);if(ok&&prev&&prev!=='none'){try{await svApplyCallFx(prev)}catch(_){}}return ok};svAttachCallMedia.__fx=1}}catch(_){}
-</script><script src="/futurechat/chatmoji.js?v=2" defer></script><script src="/futurechat/calllens.js?v=8" defer></script><script src="/futurechat/fc.js?v=10" defer></script><script src="/homeads/ha.js?v=1" defer></script></body></html>'''
+</script><script src="/futurechat/chatmoji.js?v=2" defer></script><script src="/futurechat/calllens.js?v=8" defer></script><script src="/futurechat/fc.js?v=10" defer></script><script src="/futurechat/fcstatus.js?v=1" defer></script><script src="/homeads/ha.js?v=1" defer></script></body></html>'''
 SV_DIAG_TABS=[]
 SESSIONS={}
 def issue_session(user):
@@ -5198,6 +5199,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
             if path=="/api/webpush/key":
                 _v,pub=webpush_keys()
                 return self.sendj({"publicKey":pub,"enabled":bool(pub)})
+            if path=="/api/fc/statuses" or path.startswith("/api/fc/status/"):
+                return FST.handle_get(self,path)
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
                 return FC.handle_get(self,path)
             if path.startswith("/api/kai/"):
@@ -5636,6 +5639,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return OWN.handle_mcp(self,path,d)
             if path.startswith("/api/own/"):
                 return OWN.handle_agent(self,path,d)
+            if path=="/api/fc/status" or path.startswith("/api/fc/status/"):
+                return FST.handle_post(self,path,d)
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
                 return FC.handle_post(self,path,d)
             if path.startswith("/api/kai/"):
@@ -6916,6 +6921,8 @@ def fc_setup():
     with conn() as c: FC.init(c)
     HA.bind(globals())
     with conn() as c: HA.init(c)
+    FST.bind(globals())
+    with conn() as c: FST.init(c)
     KAI.bind(globals())
     OWN.bind(KAI.A, KAI._verify)
     with conn() as c: KAI.init(c)
