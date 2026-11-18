@@ -20,8 +20,9 @@ PREF_DEFAULTS = {
     "about": "", "last_seen": "contacts", "photo": "contacts", "status": "contacts",
     "notify_messages": True, "notify_groups": True, "notify_calls": True, "notify_previews": True,
     "data_saver": False, "language": "English", "translate": True, "biz": {}, "app_lang": "en",
+    "birthday": {}, "birthday_vis": "contacts", "celebrate": ["*"],
 }
-CHOICES = {"last_seen": ("contacts", "nobody"), "photo": ("contacts", "nobody"), "status": ("contacts", "nobody")}
+CHOICES = {"last_seen": ("contacts", "nobody"), "photo": ("contacts", "nobody"), "status": ("contacts", "nobody"), "birthday_vis": ("contacts", "nobody")}
 BOOLS = ("notify_messages", "notify_groups", "notify_calls", "notify_previews", "data_saver", "translate")
 LANGS = ["English", "Afrikaans", "isiZulu", "isiXhosa", "Sesotho", "Setswana", "Sepedi", "Xitsonga", "French", "Portuguese",
          "Spanish", "German", "Swahili", "Arabic", "Hindi", "Chinese"]
@@ -53,6 +54,7 @@ def init(c):
         CREATE TABLE IF NOT EXISTS fcx_votes(item_id BIGINT NOT NULL, user_id BIGINT NOT NULL, choice INTEGER NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(item_id, user_id));
         CREATE TABLE IF NOT EXISTS fcx_rsvps(item_id BIGINT NOT NULL, user_id BIGINT NOT NULL, answer TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(item_id, user_id));
         CREATE TABLE IF NOT EXISTS fcx_i18n(lang TEXT NOT NULL, src TEXT NOT NULL, dst TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(lang, src));
+        CREATE TABLE IF NOT EXISTS fcx_bday_sent(user_id BIGINT NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(user_id, day, kind));
         CREATE TABLE IF NOT EXISTS fcx_reports(id %(pk)s, user_id BIGINT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL);
     """ % {"pk": pk})
     # Call history needs the moment a call was answered (ended_at - answered_at = how long people talked).
@@ -246,7 +248,65 @@ def _reminder_loop():
     while True:
         try: _send_due()
         except Exception as exc: print("Future Chat reminders skipped:", type(exc).__name__)
+        try: _birthdays_job()
+        except Exception as exc: print("Future Chat birthdays skipped:", type(exc).__name__)
         time.sleep(60)
+
+
+# ---------------------------------------------------------------- birthdays (FCX-BDAY-01)
+# Birthdays are day + month (year optional and never shown to others). At 07:00 South African time the people a person
+# chats with get "It's Kelly's birthday today" (and "tomorrow" the day before), and every group they're in gets a note.
+def _sa_today():
+    return (_now() + datetime.timedelta(hours=2)).date()
+
+
+def _bday_people(c):
+    out = []
+    for r in c.execute("SELECT p.user_id,p.data,u.name FROM fcx_prefs p JOIN users u ON u.id=p.user_id WHERE p.data LIKE '%%\"birthday\": {\"d\"%%'").fetchall():
+        try: d = json.loads(r["data"] or "{}")
+        except ValueError: continue
+        b = d.get("birthday") or {}
+        if b.get("d") and b.get("m") and d.get("birthday_vis", "contacts") != "nobody":
+            out.append((int(r["user_id"]), r["name"] or "Your friend", int(b["d"]), int(b["m"])))
+    return out
+
+
+def _is_day(dd, mm, day):
+    if mm == 2 and dd == 29 and not (day.year % 4 == 0 and (day.year % 100 != 0 or day.year % 400 == 0)): return day.month == 2 and day.day == 28
+    return day.day == dd and day.month == mm
+
+
+def _birthdays_job():
+    now_sa = _now() + datetime.timedelta(hours=2)
+    if now_sa.hour < 7: return
+    today = now_sa.date(); tomorrow = today + datetime.timedelta(days=1)
+    send = getattr(A, "fcm_send_to_user", None)
+    with A.conn() as c:
+        people = _bday_people(c)
+        jobs = []
+        for uid, name, dd, mm in people:
+            for kind, day in (("today", today), ("tomorrow", tomorrow)):
+                if not _is_day(dd, mm, day): continue
+                if c.execute("SELECT 1 FROM fcx_bday_sent WHERE user_id=? AND day=? AND kind=?", (uid, today.isoformat(), kind)).fetchone(): continue
+                c.execute("INSERT INTO fcx_bday_sent(user_id,day,kind) VALUES(?,?,?)", (uid, today.isoformat(), kind))
+                friends = [f for f in contacts(c, uid) if not blocked_between(c, uid, f)]
+                jobs.append((uid, name, kind, friends))
+                if kind == "today":
+                    stamp = A.now()
+                    for g in c.execute("SELECT m.conversation_id FROM fc_members m JOIN fc_conversations cv ON cv.id=m.conversation_id WHERE m.user_id=? AND cv.kind='group'", (uid,)).fetchall():
+                        cid = int(g["conversation_id"])
+                        mid = c.execute("INSERT INTO fc_messages(conversation_id,sender_id,body,kind,meta,created_at) VALUES(?,?,?,?,?,?) RETURNING id",
+                                        (cid, uid, "\U0001f382 It's " + name + "'s birthday today! Send your wishes \U0001f389", "system", json.dumps({"bday": uid}), stamp)).fetchone()["id"]
+                        c.execute("UPDATE fc_conversations SET last_message_id=?,updated_at=? WHERE id=?", (mid, stamp, cid))
+    if not send: return
+    for uid, name, kind, friends in jobs:
+        title = "\U0001f382 " + (name + "'s birthday today" if kind == "today" else name + "'s birthday is tomorrow")
+        body = "Send " + name.split(" ")[0] + " a birthday wish on Future Chat" if kind == "today" else "Don't forget to wish " + name.split(" ")[0] + " tomorrow"
+        for f in friends:
+            ok, _pv = allow_push(f, "message")
+            if not ok: continue
+            try: send(f, title, body, {"type": "fc_birthday", "user_id": str(uid), "url": "/futurechat-app?fcx=bday&u=%d" % uid})
+            except Exception as exc: print("Future Chat birthday push failed:", type(exc).__name__)
 
 
 def _send_due():
@@ -489,6 +549,20 @@ def handle_get(h, path):
         biz = p.get("biz") or {}
         if biz.get("name"): out["biz"] = {k: biz.get(k, "") for k in ("name", "category", "about", "hours", "address", "website", "email")}
         return h.sendj({"profile": out})
+    if path == "/api/fcx/birthdays":
+        with A.conn() as c:
+            mine = contacts(c, uid)
+            rows = []
+            for o, name, dd, mm in _bday_people(c):
+                if o not in mine or blocked_between(c, uid, o): continue
+                conv = c.execute("SELECT a.conversation_id FROM fc_members a JOIN fc_members b ON b.conversation_id=a.conversation_id "
+                                 "JOIN fc_conversations cv ON cv.id=a.conversation_id WHERE a.user_id=? AND b.user_id=? AND cv.kind<>'group' LIMIT 1", (uid, o)).fetchone()
+                ph = c.execute("SELECT profile_photo FROM users WHERE id=?", (o,)).fetchone()
+                pp = prefs(c, o)
+                rows.append({"user_id": o, "name": name, "d": dd, "m": mm, "conversation_id": int(conv["conversation_id"]) if conv else 0,
+                             "photo": ("/api/fcx/avatar/%d?v=%s" % (o, _photo_version(ph["profile_photo"]))) if ph and ph["profile_photo"] and pp.get("photo") != "nobody" else ""})
+        t = _sa_today()
+        return h.sendj({"items": rows, "today": t.isoformat()})
     if path == "/api/fcx/blocks":
         with A.conn() as c:
             rows = c.execute("SELECT b.blocked_id,u.name,b.created_at FROM fcx_blocks b JOIN users u ON u.id=b.blocked_id WHERE b.user_id=? ORDER BY b.created_at DESC", (uid,)).fetchall()
@@ -496,7 +570,7 @@ def handle_get(h, path):
     if path == "/api/fcx/calls":
         with A.conn() as c:
             rows = c.execute("SELECT vc.id,vc.caller_id,vc.callee_id,vc.status,vc.created_at,vc.ended_at,vc.answered_at,vc.conversation_id,"
-                             " CASE WHEN vc.offer_sdp LIKE '%m=video%' THEN 1 ELSE 0 END AS video,"
+                             " CASE WHEN vc.offer_sdp LIKE '%%m=video%%' THEN 1 ELSE 0 END AS video,"
                              " cu.name AS caller_name,ce.name AS callee_name FROM video_calls vc"
                              " LEFT JOIN users cu ON cu.id=vc.caller_id LEFT JOIN users ce ON ce.id=vc.callee_id"
                              " WHERE vc.caller_id=? OR vc.callee_id=? ORDER BY vc.created_at DESC LIMIT 150", (uid, uid)).fetchall()
@@ -615,6 +689,16 @@ def handle_post(h, path, d):
                 elif k in BOOLS: p[k] = bool(v)
                 elif k == "language" and v in LANGS: p[k] = v
                 elif k == "app_lang" and isinstance(v, str) and re.fullmatch(r"[a-z]{2,3}", v): p[k] = v
+                elif k == "birthday" and isinstance(v, dict):
+                    try:
+                        dd, mm = int(v.get("d") or 0), int(v.get("m") or 0); yy = int(v.get("y") or 0)
+                        if not (1 <= mm <= 12 and 1 <= dd <= 31): p["birthday"] = {}
+                        else:
+                            datetime.date(2000, mm, dd)   # valid day for that month (29 Feb allowed)
+                            p["birthday"] = {"d": dd, "m": mm, "y": yy if 1900 <= yy <= _now().year else 0}
+                    except (ValueError, TypeError): pass
+                elif k == "celebrate" and isinstance(v, list):
+                    p["celebrate"] = [str(x)[:24] for x in v if re.fullmatch(r"[\w*-]{1,24}", str(x))][:80]
                 elif k == "biz" and isinstance(v, dict):
                     p["biz"] = {f: str(v.get(f) or "").strip()[:300 if f == "about" else 120] for f in ("name", "category", "about", "hours", "address", "website", "email")}
             _save_prefs(c, uid, p)
