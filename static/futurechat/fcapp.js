@@ -169,6 +169,7 @@
     const spacer = body.lastElementChild && !body.lastElementChild.className ? body.lastElementChild : null;
     const fab = body.querySelector('.fc-fab');
     body.insertBefore(sp, spacer || fab || null);
+    celebStrip(body);
     sp.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { const g = b.dataset.g; if (g === 'circles') go('circles'); else if (g === 'tasks') { go('you'); push(scrTasks); } else { go('you'); push(scrChatmoji); } });
     navBadge();
     if (!FCX._peersAt || Date.now() - FCX._peersAt > 20000) { FCX._peersAt = Date.now(); loadPeers(); }
@@ -286,7 +287,8 @@
     const bd = frame('Status', 'Moments that disappear after 24 hours', { action: [SVG.cam, 'New status', () => window.FutureChatStatus && window.FutureChatStatus.compose()] });
     bd.innerHTML = '<div class="fca-empty"><span class="big">◌</span><b>Loading status…</b></div>';
     const FS = window.FutureChatStatus; if (!FS) { bd.innerHTML = '<div class="fca-empty"><b>Status is loading</b>Try again in a moment.</div>'; return; }
-    await FS.load(true); if (X.stack[X.stack.length - 1] !== scrStatus) return;
+    await FS.load(true); await loadBirthdays(); if (X.stack[X.stack.length - 1] !== scrStatus) return;
+    const bdayIds = bdayToday().map(b => b.user_id);
     const d = FS.data() || { mine: [], others: [], sponsored: [] }; const me = X.me || {};
     const ads = d.sponsored && d.sponsored.length ? d.sponsored : [FS.house()];
     const views = (d.mine || []).reduce((a, s) => a + (s.views || 0), 0);
@@ -295,7 +297,7 @@
       '<button type="button" class="fca-row" data-a="add"><span class="ic">✎</span><span class="tx"><b>Add to my status</b><small>Photo, video or text · visible for 24 hours</small></span><span class="chev">›</span></button></div>';
     h += '<div class="fca-gl">Sponsored</div><div class="fca-card"><button type="button" class="fca-row" data-a="ads"><span class="fca-sp"><span class="fca-ring ad"><div class="fca-av" style="background:#3a2a00;font-size:12px">AD</div></span></span><span class="tx"><b>Sponsored</b><small>' + ads.length + (ads.length === 1 ? ' business' : ' businesses') + ' · only when you open it</small></span><span class="chev">›</span></button></div>';
     const unseen = (d.others || []).map((p, i) => [p, i]).filter(x => x[0].unseen), seen = (d.others || []).map((p, i) => [p, i]).filter(x => !x[0].unseen);
-    const list = arr => arr.map(([p, i]) => '<button type="button" class="fca-row" data-a="p" data-i="' + i + '"><span class="fca-sp"><span class="fca-ring ' + (p.unseen ? '' : 'seen') + '">' + avatar(p.name, peerPhotoByUser(p.user_id)) + '</span></span><span class="tx"><b>' + esc(p.name) + '</b><small>' + esc(when(p.latest)) + ' · ' + p.items.length + (p.items.length === 1 ? ' update' : ' updates') + '</small></span></button>').join('');
+    const list = arr => arr.map(([p, i]) => '<button type="button" class="fca-row" data-a="p" data-i="' + i + '"><span class="fca-sp"><span class="fca-ring ' + (p.unseen ? '' : 'seen') + '">' + avatar(p.name, peerPhotoByUser(p.user_id)) + '</span></span><span class="tx"><b>' + esc(p.name) + (bdayIds.indexOf(p.user_id) >= 0 ? ' 🎂' : '') + '</b><small>' + esc(when(p.latest)) + ' · ' + p.items.length + (p.items.length === 1 ? ' update' : ' updates') + '</small></span></button>').join('');
     if (unseen.length) h += '<div class="fca-gl">Recent updates</div><div class="fca-card">' + list(unseen) + '</div>';
     if (seen.length) h += '<div class="fca-gl">Viewed updates</div><div class="fca-card">' + list(seen) + '</div>';
     if (!d.others || !d.others.length) h += '<div class="fca-empty"><span class="big">◎</span><b>No updates yet</b>When the people you chat with post a status, it shows here.</div>';
@@ -468,7 +470,8 @@
       '<div class="fca-gl">Productivity</div><div class="fca-card">' +
       row('✅', 'Tasks', 'Turn conversations into to-dos', { data: 'data-a="tasks"' }) +
       row('⏰', 'Reminders and meetings', 'Never miss something important', { data: 'data-a="tasks"' }) +
-      row('◎', 'Circles', 'Your people and groups', { data: 'data-a="circles"' }) + '</div>' +
+      row('◎', 'Circles', 'Your people and groups', { data: 'data-a="circles"' }) +
+      row('🎉', 'Celebrations', 'Birthdays, holidays and special days', { data: 'data-a="celeb"' }) + '</div>' +
       '<div class="fca-gl">Preferences</div><div class="fca-card">' +
       row('🔒', 'Privacy and visibility', 'Last seen, profile picture and status', { data: 'data-a="privacy"' }) +
       row('🔔', 'Notifications', 'Messages, calls and circles', { data: 'data-a="notif"' }) +
@@ -489,7 +492,7 @@
     bind(bd, {
       photo: () => pickPhoto(), edit: () => push(scrProfile), phone: () => { try { FC().verifyPhone(true); } catch (_) {} }, devices: () => push(scrDevices),
       tasks: () => push(scrTasks), circles: () => go('circles'), privacy: () => push(scrPrivacy), notif: () => push(scrNotif), blocked: () => push(scrBlocked),
-      lang: () => push(scrLang), applang: () => langPicker(() => setTimeout(() => { if (X.stack.length) draw(); }, 400)), data: () => push(scrData), cm: () => push(scrChatmoji), biz: () => push(scrBiz), storage: () => push(scrStorage), backup: () => push(scrBackup),
+      celeb: () => push(scrCelebrations), lang: () => push(scrLang), applang: () => langPicker(() => setTimeout(() => { if (X.stack.length) draw(); }, 400)), data: () => push(scrData), cm: () => push(scrChatmoji), biz: () => push(scrBiz), storage: () => push(scrStorage), backup: () => push(scrBackup),
       invite: () => { try { FC().inviteFriends(); } catch (_) {} }, help: () => push(scrHelp), terms: () => push(scrTerms), about: () => push(scrAbout),
       signout: signOut, delete: deleteAccount
     });
@@ -534,8 +537,9 @@
       '<label class="fca-field"><span>Your name</span><input id="fcaPN" maxlength="60" value="' + esc(m.name || '') + '"></label>' +
       '<label class="fca-field"><span>About (people you chat with can see this)</span><input id="fcaPA" maxlength="140" placeholder="e.g. Available · Busy · At work" value="' + esc(p.about || '') + '"></label>' +
       '<label class="fca-field"><span>Email (for signing in)</span><input value="' + esc(m.email || '') + '" readonly></label>' +
+      '<div class="fca-card">' + row('🎂', 'Birthday', (p.birthday && p.birthday.d) ? p.birthday.d + '/' + p.birthday.m : 'Add your birthday', { data: 'data-a="bday"' }) + '</div>' +
       '<button class="fca-btn" data-a="save">Save</button>';
-    bind(bd, { photo: pickPhoto, cam: () => choose(true), lib: () => choose(false),
+    bind(bd, { photo: pickPhoto, cam: () => choose(true), lib: () => choose(false), bday: () => push(scrMyBirthday),
       save: async b => { b.disabled = true; try { await post('/api/fcx/profile', { name: $('#fcaPN', bd).value, about: $('#fcaPA', bd).value }); await loadMe(); toast('Profile saved ✓'); pop(); } catch (e) { toast(e.message); b.disabled = false; } } });
   }
   async function scrDevices() {
@@ -655,6 +659,227 @@
         const a = document.createElement('a'); a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(txt); a.download = 'future-chat-data.json'; document.body.appendChild(a); a.click(); a.remove(); } catch (e) { toast(e.message); } }
     });
   }
+
+  // ---------------------------------------------------------------- celebrations: birthdays + holidays for everyone (FCX-CELEB-01)
+  // Fixed days, Easter-based days and dates from the phone's own Hebrew, Islamic (Umm al-Qura) and Chinese calendars,
+  // so every year is right without updates. Diwali and Holi follow the Hindu lunar calendar: dates listed to 2030.
+  const CG = { sa: '🇿🇦 South Africa', christian: '✝️ Christian', jewish: '✡️ Jewish', muslim: '☪️ Muslim', hindu: '🪔 Hindu & Sikh', asian: '🧧 Chinese & Asian', family: '💐 Family & world days', world: '🌍 Other countries' };
+  const CELEB = [
+    ['newyear', 'family', '🎆', 'New Year', { md: [1, 1] }, 'Happy New Year! Wishing you a wonderful year ahead.', ['#1b2a6b', '#c2410c']],
+    ['valentine', 'family', '💝', "Valentine's Day", { md: [2, 14] }, "Happy Valentine's Day! Sending you lots of love.", ['#9d174d', '#f43f5e']],
+    ['womensday', 'family', '💜', "International Women's Day", { md: [3, 8] }, "Happy International Women's Day! Celebrating you today.", ['#5b21b6', '#a855f7']],
+    ['mothers', 'family', '💐', "Mother's Day", { nth: [5, 0, 2] }, "Happy Mother's Day! Thank you for all your love.", ['#9d174d', '#fb7185']],
+    ['fathers', 'family', '👔', "Father's Day", { nth: [6, 0, 3] }, "Happy Father's Day! Thank you for everything.", ['#1e3a8a', '#0ea5e9']],
+    ['halloween', 'family', '🎃', 'Halloween', { md: [10, 31] }, 'Happy Halloween! 🎃', ['#431407', '#f97316']],
+    ['newyearseve', 'family', '🥂', "New Year's Eve", { md: [12, 31] }, "Happy New Year's Eve! Let's end the year well.", ['#111827', '#b45309']],
+    ['humanrights', 'sa', '✊', 'Human Rights Day', { md: [3, 21] }, 'Happy Human Rights Day! Dignity and equality for all.', ['#14532d', '#16a34a']],
+    ['freedom', 'sa', '🇿🇦', 'Freedom Day', { md: [4, 27] }, 'Happy Freedom Day, South Africa!', ['#14532d', '#ca8a04']],
+    ['workers', 'sa', '🛠️', "Workers' Day", { md: [5, 1] }, "Happy Workers' Day! Thank you for all your hard work.", ['#7c2d12', '#ea580c']],
+    ['africa', 'sa', '🌍', 'Africa Day', { md: [5, 25] }, 'Happy Africa Day! Proudly African.', ['#14532d', '#d97706']],
+    ['youth', 'sa', '🎓', 'Youth Day', { md: [6, 16] }, 'Happy Youth Day! Honouring the youth of 1976 and today.', ['#1e3a8a', '#16a34a']],
+    ['mandela', 'sa', '🤝', 'Mandela Day', { md: [7, 18] }, 'Happy Mandela Day! 67 minutes to make a difference.', ['#1f2937', '#ca8a04']],
+    ['womensdaysa', 'sa', '👩🏾', "National Women's Day", { md: [8, 9] }, "Happy Women's Day! Wathint' abafazi, wathint' imbokodo.", ['#701a75', '#db2777']],
+    ['heritage', 'sa', '🔥', 'Heritage Day', { md: [9, 24] }, 'Happy Heritage Day! Enjoy the braai and celebrate our cultures.', ['#7c2d12', '#16a34a']],
+    ['reconciliation', 'sa', '🕊️', 'Day of Reconciliation', { md: [12, 16] }, 'Happy Day of Reconciliation! Together we are one nation.', ['#1e3a8a', '#0d9488']],
+    ['goodwill', 'sa', '🎁', 'Day of Goodwill', { md: [12, 26] }, 'Happy Day of Goodwill! Spread kindness today.', ['#14532d', '#dc2626']],
+    ['goodfriday', 'christian', '✝️', 'Good Friday', { easter: -2 }, 'Wishing you a blessed and peaceful Good Friday.', ['#1f2937', '#6b21a8']],
+    ['easter', 'christian', '🐣', 'Easter', { easter: 0 }, 'Happy Easter! He is risen. 🙏', ['#065f46', '#facc15']],
+    ['christmas', 'christian', '🎄', 'Christmas', { md: [12, 25] }, 'Merry Christmas! Wishing you joy, peace and love.', ['#14532d', '#b91c1c']],
+    ['passover', 'jewish', '🍷', 'Passover (Pesach)', { heb: ['Nisan', 15] }, 'Chag Pesach Sameach! Wishing you a happy Passover.', ['#1e3a8a', '#7c3aed']],
+    ['roshhashanah', 'jewish', '🍎', 'Rosh Hashanah', { heb: ['Tishri', 1] }, 'Shana Tova! Wishing you a sweet new year. 🍯', ['#7f1d1d', '#d97706']],
+    ['yomkippur', 'jewish', '🕊️', 'Yom Kippur', { heb: ['Tishri', 10] }, "G'mar Chatima Tova. Wishing you an easy and meaningful fast.", ['#1e293b', '#475569']],
+    ['hanukkah', 'jewish', '🕎', 'Hanukkah', { heb: ['Kislev', 25], days: 8 }, 'Happy Hanukkah! Chag Sameach. May your home be full of light. ✨', ['#1e3a8a', '#0ea5e9']],
+    ['ramadan', 'muslim', '🌙', 'Ramadan begins', { isl: [9, 1] }, 'Ramadan Mubarak! Wishing you a blessed month.', ['#064e3b', '#0d9488']],
+    ['eidfitr', 'muslim', '🕌', 'Eid al-Fitr', { isl: [10, 1] }, 'Eid Mubarak! Wishing you and your family joy and peace.', ['#064e3b', '#ca8a04']],
+    ['eidadha', 'muslim', '🐑', 'Eid al-Adha', { isl: [12, 10] }, 'Eid al-Adha Mubarak! Blessings to you and your family.', ['#064e3b', '#a16207']],
+    ['islamicny', 'muslim', '🌙', 'Islamic New Year', { isl: [1, 1] }, 'Happy Islamic New Year! May the year bring blessings.', ['#0f172a', '#0d9488']],
+    ['diwali', 'hindu', '🪔', 'Diwali', { dates: ['2026-11-08', '2027-10-29', '2028-10-17', '2029-11-05', '2030-10-26'] }, 'Happy Diwali! May your home be filled with light and joy. 🪔', ['#7c2d12', '#f59e0b']],
+    ['holi', 'hindu', '🎨', 'Holi', { dates: ['2027-03-22', '2028-03-11', '2029-03-01', '2030-03-20'] }, 'Happy Holi! Wishing you a colourful and joyful festival. 🌈', ['#be185d', '#22c55e']],
+    ['vaisakhi', 'hindu', '🌾', 'Vaisakhi', { md: [4, 14] }, 'Happy Vaisakhi! Wishing you a joyful harvest festival.', ['#9a3412', '#eab308']],
+    ['lunarny', 'asian', '🧧', 'Lunar New Year', { chn: [1, 1] }, 'Happy Lunar New Year! Wishing you luck and good fortune. 🧧', ['#7f1d1d', '#dc2626']],
+    ['usindependence', 'world', '🇺🇸', 'Independence Day (USA)', { md: [7, 4] }, 'Happy Fourth of July! 🎆', ['#1e3a8a', '#b91c1c']],
+    ['thanksgiving', 'world', '🦃', 'Thanksgiving (USA)', { nth: [11, 4, 4] }, 'Happy Thanksgiving! Grateful for you.', ['#7c2d12', '#ca8a04']],
+    ['germanunity', 'world', '🇩🇪', 'German Unity Day', { md: [10, 3] }, 'Frohen Tag der Deutschen Einheit! Happy German Unity Day.', ['#111827', '#dc2626']],
+    ['indiaday', 'world', '🇮🇳', 'Independence Day (India)', { md: [8, 15] }, 'Happy Independence Day, India! 🇮🇳', ['#c2410c', '#15803d']],
+    ['nigeriaday', 'world', '🇳🇬', 'Independence Day (Nigeria)', { md: [10, 1] }, 'Happy Independence Day, Nigeria! 🇳🇬', ['#14532d', '#16a34a']],
+    ['canadaday', 'world', '🇨🇦', 'Canada Day', { md: [7, 1] }, 'Happy Canada Day! 🇨🇦', ['#7f1d1d', '#dc2626']],
+    ['australiaday', 'world', '🇦🇺', 'Australia Day', { md: [1, 26] }, 'Happy Australia Day! 🇦🇺', ['#1e3a8a', '#ca8a04']]
+  ];
+  const BDAY_THEMES = [['🎂', 'Cake', ['#9d174d', '#f59e0b']], ['🎈', 'Balloons', ['#1d4ed8', '#22d3ee']], ['🎉', 'Party', ['#6d28d9', '#ec4899']], ['🌟', 'Stars', ['#0f172a', '#1ed6c8']]];
+  const DAY = 864e5;
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  function easterOf(y) { const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1; return new Date(y, mo - 1, da); }
+  function nthWeekday(y, mo, wd, n) { const d = new Date(y, mo - 1, 1); let c = 0; while (true) { if (d.getDay() === wd && ++c === n) return new Date(d); d.setDate(d.getDate() + 1); } }
+  const CALF = {};
+  function calParts(cal, d) {
+    try {
+      const f = CALF[cal] || (CALF[cal] = new Intl.DateTimeFormat('en-u-ca-' + cal, { timeZone: 'UTC', month: cal === 'hebrew' ? 'long' : 'numeric', day: 'numeric' }));
+      const p = f.formatToParts(new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())));
+      return { m: (p.find(x => x.type === 'month') || {}).value, d: Number((p.find(x => x.type === 'day') || {}).value) };
+    } catch (_) { return { m: '', d: 0 }; }
+  }
+  const YEAR_CACHE = {};
+  function celebYear(y) {   // id -> list of yyyy-mm-dd in that year
+    if (YEAR_CACHE[y]) return YEAR_CACHE[y];
+    const out = {};
+    const add = (id, d, days) => { for (let i = 0; i < (days || 1); i++) { const x = new Date(d); x.setDate(x.getDate() + i); (out[id] = out[id] || []).push(ymd(x)); } };
+    const lunar = CELEB.filter(c => c[4].heb || c[4].isl || c[4].chn);
+    for (const c of CELEB) {
+      const r = c[4];
+      if (r.md) add(c[0], new Date(y, r.md[0] - 1, r.md[1]));
+      else if (r.nth) add(c[0], nthWeekday(y, r.nth[0], r.nth[1], r.nth[2]));
+      else if (r.easter != null) { const e = easterOf(y); e.setDate(e.getDate() + r.easter); add(c[0], e); }
+      else if (r.dates) r.dates.filter(x => x.slice(0, 4) === String(y)).forEach(x => (out[c[0]] = out[c[0]] || []).push(x));
+    }
+    for (let t = new Date(y, 0, 1); t.getFullYear() === y; t = new Date(t.getTime() + DAY + 3600e3), t.setHours(0, 0, 0, 0)) {
+      let H = null, I = null, C = null;
+      for (const c of lunar) {
+        const r = c[4];
+        if (r.heb) { H = H || calParts('hebrew', t); if (H.m === r.heb[0] && H.d === r.heb[1]) add(c[0], t, r.days); }
+        else if (r.isl) { I = I || calParts('islamic-umalqura', t); if (I.m === String(r.isl[0]) && I.d === r.isl[1]) add(c[0], t, r.days); }
+        else if (r.chn) { C = C || calParts('chinese', t); if (C.m === String(r.chn[0]) && C.d === r.chn[1]) add(c[0], t, r.days); }
+      }
+    }
+    return (YEAR_CACHE[y] = out);
+  }
+  function celebrates(id) { const l = (X.prefs && X.prefs.celebrate) || ['*']; if (l.indexOf('*') >= 0) return l.indexOf('-' + id) < 0; return l.indexOf(id) >= 0; }
+  function celebsOn(d) { const key = ymd(d), Y = celebYear(d.getFullYear()); return CELEB.filter(c => (Y[c[0]] || []).indexOf(key) >= 0); }
+  function upcomingCelebs(days) {
+    const out = [], now = new Date(); now.setHours(0, 0, 0, 0);
+    for (let i = 0; i <= days; i++) { const d = new Date(now.getTime() + i * DAY + 3600e3); d.setHours(0, 0, 0, 0); celebsOn(d).forEach(c => { if (!out.some(o => o[0][0] === c[0])) out.push([c, d, i]); }); }
+    return out;
+  }
+  function nextBirthday(b) { const now = new Date(); now.setHours(0, 0, 0, 0); let y = now.getFullYear(); const mk = yy => { const leap = yy % 4 === 0 && (yy % 100 !== 0 || yy % 400 === 0); return (b.m === 2 && b.d === 29 && !leap) ? new Date(yy, 1, 28) : new Date(yy, b.m - 1, b.d); }; let d = mk(y); if (d < now) d = mk(y + 1); return [d, Math.round((d - now) / DAY)]; }
+  // birthdays of the people I chat with (cached a few minutes)
+  async function loadBirthdays(force) {
+    if (!force && X.bdays && Date.now() - X.bdaysAt < 300000) return X.bdays;
+    try { X.bdays = (await api('/api/fcx/birthdays')).items || []; X.bdaysAt = Date.now(); } catch (_) { X.bdays = X.bdays || []; }
+    return X.bdays;
+  }
+  function bdayToday() { return (X.bdays || []).filter(b => nextBirthday(b)[1] === 0); }
+  // strip at the top of Chats: today's birthdays + today's celebrations + tomorrow's birthdays
+  async function celebStrip(body) {
+    await loadBirthdays();
+    if (!body.isConnected) return;
+    const old = body.querySelector('.fca-celeb'); if (old) old.remove();
+    const items = [];
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    bdayToday().forEach(b => items.push(['🎂', b.name.split(' ')[0] + "'s birthday today", 'Send a wish', () => cardSheet({ kind: 'bday', person: b })]));
+    celebsOn(today).filter(c => celebrates(c[0])).forEach(c => items.push([c[2], c[3], 'Send wishes', () => cardSheet({ kind: 'holiday', celeb: c })]));
+    (X.bdays || []).filter(b => nextBirthday(b)[1] === 1).forEach(b => items.push(['🎈', b.name.split(' ')[0] + "'s birthday is tomorrow", 'Remind me', () => toast("We'll remind you tomorrow morning 🎂")]));
+    if (!items.length) return;
+    const el = document.createElement('div'); el.className = 'fca-celeb';
+    el.innerHTML = items.map((x, i) => '<button type="button" data-i="' + i + '"><i>' + x[0] + '</i><span><b>' + esc(x[1]) + '</b><small>' + esc(x[2]) + ' →</small></span></button>').join('');
+    el.querySelectorAll('[data-i]').forEach(b => b.onclick = () => items[Number(b.dataset.i)][3]());
+    body.insertBefore(el, body.firstChild);
+    // birthday cake next to the person in the chat list
+    bdayToday().forEach(b => { const r = document.querySelector('#fcRoot .fc-row[data-c="' + b.conversation_id + '"] .fc-name'); if (r && !r.querySelector('.fca-cake')) r.insertAdjacentHTML('beforeend', '<span class="fca-cake" title="Birthday today">🎂</span>'); });
+  }
+  // greeting card: preview, edit the words, send to one person (birthday) or to chats you pick (holidays)
+  function cardHtml(emoji, title, text, cols, big) {
+    return '<div class="fcx-greet' + (big ? ' big' : '') + '" style="background:linear-gradient(135deg,' + cols[0] + ',' + cols[1] + ')"><div class="em">' + emoji + '</div><b>' + esc(title) + '</b><p>' + esc(text) + '</p><span class="sp">✦ ✧ ✦</span></div>';
+  }
+  function cardSheet(o) {
+    const isB = o.kind === 'bday';
+    let theme = 0;
+    const first = isB ? o.person.name.split(' ')[0] : '';
+    const title = isB ? 'Happy birthday, ' + first + '!' : o.celeb[3];
+    let text = isB ? 'Wishing you a wonderful birthday and an amazing year ahead! 🎉' : o.celeb[5];
+    let chats = []; try { chats = (FC().state().list || []).filter(c => !c.archived); } catch (_) {}
+    sheet('<h3>' + (isB ? '🎂 Birthday card' : o.celeb[2] + ' ' + esc(o.celeb[3])) + '</h3><div id="fcaCardPrev"></div>' +
+      (isB ? '<div class="fca-seg" style="margin:10px 0" id="fcaThemes">' + BDAY_THEMES.map((t, i) => '<button type="button" data-t="' + i + '" class="' + (i ? '' : 'on') + '">' + t[0] + ' ' + t[1] + '</button>').join('') + '</div>' : '') +
+      '<textarea id="fcaCardT" rows="3" maxlength="400">' + esc(text) + '</textarea>' +
+      (isB ? '' : '<p style="margin:8px 0 4px">Send to</p><div style="max-height:30vh;overflow:auto"><label class="fca-chk"><input type="checkbox" id="fcaAll"><span><b>Everyone below</b></span></label>' + chats.map(c => '<label class="fca-chk"><input type="checkbox" class="fcaCc" value="' + c.id + '"><span>' + esc(c.title) + '</span></label>').join('') + '</div>') +
+      '<button class="fc-btn" id="fcaCardGo">' + (isB ? 'Send to ' + esc(first) : 'Send') + '</button>', (el, done) => {
+      const paint = () => { const t = isB ? BDAY_THEMES[theme] : null; $('#fcaCardPrev', el).innerHTML = cardHtml(isB ? t[0] : o.celeb[2], title, $('#fcaCardT', el).value, isB ? t[2] : o.celeb[6]); };
+      $('#fcaCardT', el).oninput = paint; paint();
+      el.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { theme = Number(b.dataset.t); el.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('on', x === b)); paint(); });
+      const all = $('#fcaAll', el); if (all) all.onchange = () => el.querySelectorAll('.fcaCc').forEach(c => c.checked = all.checked);
+      $('#fcaCardGo', el).onclick = async e => {
+        const words = $('#fcaCardT', el).value.trim() || text;
+        const meta = { card: isB ? { k: 'bday', th: theme, t: title } : { k: o.celeb[0], t: title } };
+        const emoji = isB ? BDAY_THEMES[theme][0] : o.celeb[2];
+        const body = emoji + ' ' + title + ' ' + words;
+        let ids = isB ? [o.person.conversation_id] : Array.from(el.querySelectorAll('.fcaCc:checked')).map(c => Number(c.value));
+        if (isB && !ids[0]) { toast('Start a chat with ' + first + ' first'); return; }
+        if (!ids.length) { toast('Choose at least one chat'); return; }
+        e.target.disabled = true; let ok = 0;
+        for (const c of ids) { try { await post('/api/fc/send', { c, body, kind: 'text', meta }); ok++; } catch (_) {} }
+        done(); toast(ok ? (isB ? 'Birthday card sent 🎉' : 'Sent to ' + ok + (ok === 1 ? ' chat' : ' chats') + ' ✓') : 'Could not send. Check your connection.');
+        if (isB && ok) FC().openConv(ids[0]);
+      };
+    });
+  }
+  // card inside the chat (+ confetti the first time the person opens it)
+  FCX.greet = function (m) {
+    const k = m.meta.card.k, c = CELEB.find(x => x[0] === k);
+    const th = k === 'bday' ? (BDAY_THEMES[Number(m.meta.card.th) || 0] || BDAY_THEMES[0]) : null;
+    const emoji = th ? th[0] : (c ? c[2] : '🎉'), cols = th ? th[2] : (c ? c[6] : ['#1e3a8a', '#1ed6c8']);
+    const title = String(m.meta.card.t || (c ? c[3] : 'Celebrate!'));
+    let words = String(m.body || ''); const cut = words.indexOf(title); if (cut >= 0) words = words.slice(cut + title.length).trim();
+    if (!m.mine) { let seen = []; try { seen = JSON.parse(localStorage.getItem('fc_greet_seen') || '[]'); } catch (_) {} if (seen.indexOf(m.id) < 0) { seen.push(m.id); try { localStorage.setItem('fc_greet_seen', JSON.stringify(seen.slice(-300))); } catch (_) {} setTimeout(() => confetti(emoji), 350); } }
+    return cardHtml(emoji, title, words, cols, true);
+  };
+  function confetti(emoji) {
+    const box = document.createElement('div'); box.className = 'fca-confetti'; box.setAttribute('aria-hidden', 'true');
+    const bits = [emoji, '🎉', '✨', '🎈', '💫', emoji];
+    let h = ''; for (let i = 0; i < 34; i++) h += '<span style="left:' + Math.round(Math.random() * 100) + '%;animation-delay:' + (Math.random() * 0.9).toFixed(2) + 's;font-size:' + (18 + Math.round(Math.random() * 18)) + 'px">' + bits[i % bits.length] + '</span>';
+    box.innerHTML = h; document.body.appendChild(box); setTimeout(() => box.remove(), 3800);
+  }
+  // You -> Celebrations
+  async function scrCelebrations() {
+    const self = X.stack[X.stack.length - 1];
+    const bd = frame('Celebrations', 'Birthdays and special days');
+    bd.innerHTML = '<div class="fca-empty">Loading…</div>';
+    await loadBirthdays(true);
+    if (X.stack[X.stack.length - 1] !== self) return;
+    const me = (X.prefs && X.prefs.birthday) || {};
+    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const when_ = n => n === 0 ? 'Today 🎉' : n === 1 ? 'Tomorrow' : 'In ' + n + ' days';
+    const bl = (X.bdays || []).map(b => [b, ...nextBirthday(b)]).sort((a, b) => a[2] - b[2]).slice(0, 40);
+    const up = upcomingCelebs(60).filter(x => celebrates(x[0][0]));
+    let h = '<div class="fca-card">' + row('🎂', 'My birthday', me.d ? me.d + ' ' + MONTHS[me.m - 1] + ((X.prefs || {}).birthday_vis === 'nobody' ? ' · hidden' : ' · people you chat with see it') : 'Add your birthday so friends can celebrate you', { data: 'data-a="mine"' }) + '</div>';
+    h += '<div class="fca-gl">Birthdays coming up</div>' + (bl.length ? '<div class="fca-card">' + bl.map(([b, d, n]) => '<button type="button" class="fca-row" data-b="' + b.user_id + '">' + avatar(b.name, b.photo, 'sm') + '<span class="tx"><b>' + esc(b.name) + '</b><small>' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' · ' + when_(n) + '</small></span><span class="end" style="font-size:20px">' + (n === 0 ? '🎂' : '🎈') + '</span></button>').join('') + '</div>'
+      : '<div class="fca-empty"><span class="big">🎈</span><b>No birthdays yet</b>When the people you chat with add their birthday, you\'ll see them here and get a reminder.</div>');
+    h += '<div class="fca-gl">Special days coming up</div>' + (up.length ? '<div class="fca-card">' + up.map(([c, d, n]) => '<button type="button" class="fca-row" data-c="' + c[0] + '"><span class="ic" style="background:linear-gradient(135deg,' + c[6][0] + ',' + c[6][1] + ');font-size:19px">' + c[2] + '</span><span class="tx"><b>' + esc(c[3]) + '</b><small>' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' · ' + when_(n) + '</small></span><span class="chev">›</span></button>').join('') + '</div>' : '<div class="fca-empty">Nothing in the next two months.</div>');
+    h += '<div class="fca-card">' + row('🗓️', 'Which special days do you celebrate?', 'Choose your religion, culture and country days', { data: 'data-a="pick"' }) + '</div>' +
+      '<p class="fca-note">Future Chat celebrates everyone: Christian, Jewish, Muslim, Hindu, Sikh, Chinese and many more days. You get a banner and a ready greeting card on the day. Muslim dates follow the Umm al-Qura calendar and can differ by a day where the moon is sighted locally; Jewish holidays start the evening before.</p>';
+    bd.innerHTML = h;
+    bind(bd, { mine: () => push(scrMyBirthday), pick: () => push(scrPickCelebs) });
+    bd.querySelectorAll('[data-b]').forEach(b => b.onclick = () => { const p = X.bdays.find(x => x.user_id === Number(b.dataset.b)); cardSheet({ kind: 'bday', person: p }); });
+    bd.querySelectorAll('[data-c]').forEach(b => b.onclick = () => cardSheet({ kind: 'holiday', celeb: CELEB.find(x => x[0] === b.dataset.c) }));
+  }
+  function scrMyBirthday() {
+    const bd = frame('My birthday', 'So friends can celebrate you'); const b = (X.prefs && X.prefs.birthday) || {};
+    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    bd.innerHTML = '<div class="fca-hero" style="background:linear-gradient(135deg,#9d174d,#f59e0b)"><small>🎂 BIRTHDAY</small><b>' + (b.d ? b.d + ' ' + MONTHS[b.m - 1] : 'Add your birthday') + '</b><p>On your birthday the people you chat with get a reminder to wish you, and your circles get a note.</p></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 2fr;gap:10px"><label class="fca-field"><span>Day</span><select id="fcaBd">' + '<option value="">—</option>' + Array.from({ length: 31 }, (_, i) => '<option' + (b.d === i + 1 ? ' selected' : '') + '>' + (i + 1) + '</option>').join('') + '</select></label>' +
+      '<label class="fca-field"><span>Month</span><select id="fcaBm"><option value="">—</option>' + MONTHS.map((m, i) => '<option value="' + (i + 1) + '"' + (b.m === i + 1 ? ' selected' : '') + '>' + m + '</option>').join('') + '</select></label></div>' +
+      '<label class="fca-field"><span>Year (optional — never shown to anyone)</span><input id="fcaBy" inputmode="numeric" maxlength="4" placeholder="e.g. 1990" value="' + (b.y || '') + '"></label>' +
+      choiceRows('birthday_vis', 'Who sees my birthday', [['contacts', 'The people I chat with', ''], ['nobody', 'Nobody', 'No reminders go out for you']]) +
+      '<button class="fca-btn" data-a="save">Save my birthday</button>' + (b.d ? '<button class="fca-btn danger" data-a="rm">Remove my birthday</button>' : '');
+    bindChoices(bd, scrMyBirthday);
+    bind(bd, {
+      save: async () => { const d = Number($('#fcaBd', bd).value), m = Number($('#fcaBm', bd).value); if (!d || !m) { toast('Choose the day and month'); return; } if (await savePrefs({ birthday: { d, m, y: Number($('#fcaBy', bd).value) || 0 } })) { toast('Birthday saved 🎂'); pop(); } },
+      rm: async () => { if (await savePrefs({ birthday: {} })) { toast('Birthday removed'); scrMyBirthday(); } }
+    });
+  }
+  function scrPickCelebs() {
+    const bd = frame('Special days', 'Choose what you celebrate');
+    const draw_ = () => {
+      bd.innerHTML = '<p class="fca-note">Turn on the days you celebrate. You\'ll see a banner and a greeting card on the day. Everything is on to start with.</p>' +
+        Object.keys(CG).map(g => '<div class="fca-gl">' + esc(CG[g]) + '</div><div class="fca-card">' + CELEB.filter(c => c[1] === g).map(c => row(c[2], c[3], '', { data: 'data-k="' + c[0] + '"' }, '<span class="fca-sw' + (celebrates(c[0]) ? ' on' : '') + '"></span>')).join('') + '</div>').join('');
+      bd.querySelectorAll('[data-k]').forEach(b => b.onclick = async () => {
+        const id = b.dataset.k; let l = ((X.prefs && X.prefs.celebrate) || ['*']).slice();
+        if (l.indexOf('*') >= 0) { const i = l.indexOf('-' + id); if (i >= 0) l.splice(i, 1); else l.push('-' + id); }
+        else { const i = l.indexOf(id); if (i >= 0) l.splice(i, 1); else l.push(id); }
+        if (await savePrefs({ celebrate: l })) draw_();
+      });
+    };
+    draw_();
+  }
+  FCX.celebrations = () => { openPanel(); push(scrCelebrations); };
+
   // ---------------------------------------------------------------- clear chats + backup (FCX-CLEAR-01)
   async function clearChats(cid, title) {
     const all = !cid;
@@ -924,6 +1149,7 @@
     loadMe();
     setTimeout(loadPeers, 800);
     if (p.get('fcx') === 'item' && p.get('id')) setTimeout(() => itemSheet(Number(p.get('id'))), 900);
+    if (p.get('fcx') === 'bday') setTimeout(() => { go('you'); push(scrCelebrations); }, 900);
     // keep Future Chat underneath the tabs at all times
     setInterval(() => {
       if (!tok() || document.getElementById('fcaAuth')) return;
