@@ -5089,7 +5089,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 # FCAPP-01: the stand-alone Future Chat app (Google Play) opens this. Same page, accounts, chats and calls as
                 # Future Chat inside Skillvaya; fcapp.js only changes the frame (full-screen Future Chat, own sign-in, Account menu).
                 fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
-                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=10" defer></script>', '<script src="/futurechat/fc.js?v=10" defer></script><script src="/futurechat/fcapp.js?v=1" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=10" defer></script>', '<script src="/futurechat/fc.js?v=10" defer></script><script src="/futurechat/fcapp.js?v=2" defer></script>', 1)
                 fc_html = fc_page.encode("utf-8")
                 self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(fc_html))); self.end_headers(); self.wfile.write(fc_html); return
             if path=="/customer-app" and "FutureChatNative" in self.headers.get("User-Agent",""):
