@@ -409,7 +409,7 @@ def handle_get(h, path):
             if time.monotonic() - _SWEPT_AT[0] > 3600: _SWEPT_AT[0] = time.monotonic(); threading.Thread(target=purge_old_media, daemon=True).start()
         with A.conn() as c:
             rows = c.execute(
-                "SELECT cv.id,cv.kind,cv.title,cv.business_id,cv.customer_id,cv.updated_at,m.archived,m.muted,m.pinned,"
+                "SELECT cv.id,cv.kind,cv.title,cv.business_id,cv.customer_id,cv.updated_at,m.archived,m.muted,m.pinned,m.cleared_id AS cleared_id,cv.last_message_id AS lmid,"
                 " lm.sender_id AS lm_sender,lm.body AS lm_body,lm.kind AS lm_kind,lm.deleted_at AS lm_deleted,lm.created_at AS lm_at,"
                 " (SELECT COUNT(*) FROM fc_messages x WHERE x.conversation_id=cv.id AND x.id>m.last_read_id AND x.sender_id<>?) AS unread,"
                 " b.name AS biz_name,b.user_id AS biz_owner,cu.name AS cust_name,"
@@ -427,7 +427,7 @@ def handle_get(h, path):
                 title, who = ((r["cust_name"] or "Customer"), "customer") if mine_biz else ((r["biz_name"] or "Business"), "business")
             else: title, who = r["other_name"] or "Conversation", "person"
             last = None
-            if r["lm_at"]:
+            if r["lm_at"] and int(r["lmid"] or 0) > int(r["cleared_id"] or 0):
                 last = {"text": _snippet({"kind": r["lm_kind"], "body": r["lm_body"], "deleted_at": r["lm_deleted"]}), "mine": int(r["lm_sender"]) == uid, "at": r["lm_at"]}
             items.append({"id": int(r["id"]), "kind": r["kind"], "title": title, "who": who, "business_id": int(r["business_id"] or 0),
                           "customer_id": int(r["customer_id"] or 0), "updated_at": r["updated_at"], "unread": int(r["unread"] or 0),
@@ -450,6 +450,9 @@ def handle_get(h, path):
             if before: rows = c.execute("SELECT * FROM fc_messages WHERE conversation_id=? AND id<? ORDER BY id DESC LIMIT 60", (conv_id, before)).fetchall()[::-1]
             elif after: rows = c.execute("SELECT * FROM fc_messages WHERE conversation_id=? AND id>? ORDER BY id LIMIT 200", (conv_id, after)).fetchall()
             else: rows = c.execute("SELECT * FROM fc_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 80", (conv_id,)).fetchall()[::-1]
+            try: _cl = int(dict(mem).get("cleared_id") or 0)   # FCX-CLEAR-01: "Clear chat" hides older messages for this person only
+            except Exception: _cl = 0
+            if _cl: rows = [r for r in rows if int(r["id"]) > _cl]
             ids = [int(r["id"]) for r in rows]
             reacts, stars, atts, replies = {}, set(), {}, {}
             if ids:

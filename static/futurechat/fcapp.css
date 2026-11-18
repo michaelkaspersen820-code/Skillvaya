@@ -222,3 +222,4 @@ html.fc-app #fcaPanel input:not([type=checkbox]),html.fc-app #fcaPanel textarea,
 html.fc-app #fcaPanel input::placeholder,html.fc-app #fcaPanel textarea::placeholder,html.fc-app .fc-sheet input::placeholder,html.fc-app .fc-sheet textarea::placeholder{color:#9cb7cc!important;-webkit-text-fill-color:#9cb7cc}
 html.fc-app #fcaPanel select option,html.fc-app .fc-sheet select option{background:#0f2b45;color:#fff}
 html.fc-app .fc-pill .fc-ib{background:transparent!important;box-shadow:none!important;border:0!important}
+html.fc-app .fca-row.danger,html.fc-app .fc-act.danger{background:transparent!important;box-shadow:none!important;border-color:var(--fca-line)!important}html.fc-app .fca-row.danger .tx b,html.fc-app .fc-act.danger{color:#ff9a9a!important}html.fc-app .fca-row.danger .tx small{color:#c99!important}

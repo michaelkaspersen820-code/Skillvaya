@@ -173,6 +173,8 @@
       if (!ad.house) api('/api/home-ads/event', { id: ad.id, ev: 'click' }).catch(() => {});
       const t = String(ad.target || '');
       if (/^https?:\/\//i.test(t)) window.open(t, '_blank', 'noopener');
+      else if (/^tel:/i.test(t)) location.href = t;
+      else if (/^provider:\d+$/.test(t)) { try { closeViewer(); window.FutureChat && window.FutureChat.close(); window.openProvider(Number(t.split(':')[1])); } catch (_) {} }
       else if (/^\+?[0-9 ]{7,}$/.test(t)) location.href = 'tel:' + t.replace(/\s+/g, '');
       else if (t.indexOf('@') > 0) location.href = 'mailto:' + t;
     };
@@ -254,5 +256,16 @@
     };
     inp.click();
   }
+  // FCSTATUS-ADV-01: the house card's button opens "Advertise with us" (Future Chat app) or the ad builder (Skillvaya)
+  document.addEventListener('click', e => {
+    const b = e.target && e.target.closest && e.target.closest('#fcsView [data-a]');
+    if (!b || !V || !V.ads) return;
+    const ad = V.ads[V.ii]; if (!ad || !ad.house) return;
+    if (b.dataset.a !== 'cta') return;
+    e.preventDefault(); e.stopPropagation();
+    closeViewer();
+    if (window.FCX && window.FCX.advertise) window.FCX.advertise();
+    else if (window.HomeAds && window.HomeAds.openBuilder) { try { window.FutureChat && window.FutureChat.close(); } catch (_) {} window.HomeAds.openBuilder(); }
+  }, true);
   window.FutureChatStatus = { refresh, compose, load, data: () => S.data, view: openViewer, ads: openAds, house: () => HOUSE_AD };
 })();

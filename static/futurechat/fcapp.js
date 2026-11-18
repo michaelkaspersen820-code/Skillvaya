@@ -135,6 +135,8 @@
     if (c.kind !== 'group' && p.user_id) acts.unshift(['👤', 'View profile', () => { openPanel(); push(() => scrPeer(p.user_id, c.id)); }]);
     acts.push(['✅', 'Tasks, polls and meetings', () => { openPanel(); push(() => scrCircle(c.id, c.title)); }]);
     if (c.kind !== 'group' && p.user_id) acts.push(['🚫', p.blocked ? 'Unblock' : 'Block', () => blockUser(p.user_id, !p.blocked, c.title)]);
+    acts.push(['💾', 'Save a copy of this chat', () => saveCopy(c.id, c.title)]);
+    acts.push(['🧹', 'Clear chat', () => clearChats(c.id, c.title), 'danger']);
     return acts;
   };
   FCX.dataSaver = () => !!(X.prefs ? X.prefs.data_saver : (function () { try { return localStorage.getItem('fc_data_saver'); } catch (_) { return ''; } })());
@@ -414,7 +416,8 @@
       row('✦', 'Future Chatmoji collection', 'Express more', { data: 'data-a="cm"' }) + '</div>' +
       '<div class="fca-gl">More</div><div class="fca-card">' +
       row('💼', 'Business and creator tools', 'Business profile and broadcasts', { data: 'data-a="biz"' }) +
-      row('💾', 'Storage and data', 'Media on this phone, download your data', { data: 'data-a="storage"' }) +
+      row('☁️', 'Chat backup', 'Your chats are backed up to your account', { data: 'data-a="backup"' }) +
+      row('💾', 'Storage and data', 'Clear chats, media on this phone, your data', { data: 'data-a="storage"' }) +
       row('💌', 'Invite friends', 'Share a link to Future Chat', { data: 'data-a="invite"' }) +
       row('🛡️', 'Help and safety', 'Report, block and protect', { data: 'data-a="help"' }) +
       row('📄', 'Terms and policies', 'Terms, Rules & Safety · Privacy Policy', { data: 'data-a="terms"' }) +
@@ -423,7 +426,7 @@
     bind(bd, {
       photo: () => pickPhoto(), edit: () => push(scrProfile), phone: () => { try { FC().verifyPhone(true); } catch (_) {} }, devices: () => push(scrDevices),
       tasks: () => push(scrTasks), circles: () => go('circles'), privacy: () => push(scrPrivacy), notif: () => push(scrNotif), blocked: () => push(scrBlocked),
-      lang: () => push(scrLang), data: () => push(scrData), cm: () => push(scrChatmoji), biz: () => push(scrBiz), storage: () => push(scrStorage),
+      lang: () => push(scrLang), data: () => push(scrData), cm: () => push(scrChatmoji), biz: () => push(scrBiz), storage: () => push(scrStorage), backup: () => push(scrBackup),
       invite: () => { try { FC().inviteFriends(); } catch (_) {} }, help: () => push(scrHelp), terms: () => push(scrTerms), about: () => push(scrAbout),
       signout: signOut, delete: deleteAccount
     });
@@ -576,15 +579,141 @@
   function scrStorage() {
     const bd = frame('Storage and data', 'Your Future Chat information'); const c = X.counts || {};
     bd.innerHTML = '<div class="fca-stat"><div><b>' + (c.chats || 0) + '</b><small>Chats</small></div><div><b>' + (c.sent || 0) + '</b><small>Messages sent</small></div><div><b>' + (c.items || 0) + '</b><small>Tasks & plans</small></div></div>' +
-      '<div class="fca-card">' + row('🧹', 'Clear media on this phone', 'Photos and videos Future Chat saved on this phone', { data: 'data-a="clear"' }) + row('⬇️', 'Download my data', 'A copy of your account information', { data: 'data-a="export"' }) + '</div>' +
+      '<div class="fca-card">' + row('☁️', 'Chat backup', 'Back up, save a copy, restore cleared chats', { data: 'data-a="backup"' }) + row('🧹', 'Clear media on this phone', 'Photos and videos Future Chat saved on this phone', { data: 'data-a="clear"' }) + row('⬇️', 'Download my data', 'A copy of your account information', { data: 'data-a="export"' }) + '</div>' +
+      '<div class="fca-card">' + row('🗑️', 'Clear all chats', 'Empty every chat on your account (you can restore from backup)', { data: 'data-a="clearall"', cls: 'danger' }, '') + '</div>' +
       '<p class="fca-note">Photos, videos and voice notes are kept on the phones they were sent to, not on our server.</p>';
     bind(bd, {
+      backup: () => push(scrBackup), clearall: () => clearChats(0, ''),
       clear: () => { if (!confirm('Remove the photos and videos Future Chat saved on this phone? Your messages stay.')) return; try { indexedDB.deleteDatabase('futurechat_media'); } catch (_) {} toast('Media cleared from this phone'); },
       export: async () => { try { const r = await fetch('/api/account/export', { headers: { Authorization: 'Bearer ' + tok() }, cache: 'no-store' }); if (!r.ok) throw new Error('Could not prepare your data right now.'); const txt = await r.text();
         if (navigator.share) { try { await navigator.share({ title: 'My Future Chat data', text: txt.slice(0, 90000) }); return; } catch (_) {} }
         const a = document.createElement('a'); a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(txt); a.download = 'future-chat-data.json'; document.body.appendChild(a); a.click(); a.remove(); } catch (e) { toast(e.message); } }
     });
   }
+  // ---------------------------------------------------------------- clear chats + backup (FCX-CLEAR-01)
+  async function clearChats(cid, title) {
+    const all = !cid;
+    if (!confirm(all ? 'Clear ALL your chats? Every chat will be empty on your account. Other people keep their copy. You can bring them back with Chat backup → Restore.' :
+      'Clear all messages in "' + title + '"? Only for you — the other person keeps their copy. You can bring them back with Chat backup → Restore.')) return;
+    try { const d = await post('/api/fcx/clear', all ? { all: true } : { c: cid }); toast(all ? 'Cleared ' + d.cleared + (d.cleared === 1 ? ' chat' : ' chats') : 'Chat cleared');
+      try { FC().refreshMsgs(); FC().reloadList(); } catch (_) {} if (X.stack.length) draw(); } catch (e) { toast(e.message); }
+  }
+  function backupText(d) {
+    const L = ['Future Chat backup', 'Account: ' + d.account, 'Saved: ' + new Date(d.exported_at).toLocaleString(), ''];
+    for (const ch of d.chats) {
+      L.push('==================================================', ch.chat + (ch.kind === 'group' ? ' (group)' : ''), '==================================================');
+      let day = '';
+      for (const m of ch.messages) {
+        const t = new Date(m.at); const dd = t.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        if (dd !== day) { L.push('', '--- ' + dd + ' ---'); day = dd; }
+        L.push('[' + t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '] ' + m.from + ': ' + (m.text || '') + (m.files && m.files.length ? '  (files: ' + m.files.join(', ') + ')' : ''));
+      }
+      if (!ch.messages.length) L.push('(no messages)');
+      L.push('');
+    }
+    return L.join('\n');
+  }
+  async function saveCopy(cid, title) {
+    toast('Preparing your copy…');
+    try {
+      const d = await api('/api/fcx/backup' + (cid ? '?c=' + cid : ''));
+      const name = 'FutureChat-' + (cid ? String(title || 'chat').replace(/[^A-Za-z0-9]+/g, '-').slice(0, 40) : 'backup') + '-' + new Date().toISOString().slice(0, 10) + '.txt';
+      const a = document.createElement('a'); a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(backupText(d)); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => toast('Saved to your Downloads folder: ' + name), 400);
+    } catch (e) { toast(e.message); }
+  }
+  async function scrBackup() {
+    const self = X.stack[X.stack.length - 1];
+    const bd = frame('Chat backup', 'Keep your chats safe'); bd.innerHTML = '<div class="fca-empty">Loading…</div>';
+    let i; try { i = await api('/api/fcx/backup/info'); } catch (e) { bd.innerHTML = '<div class="fca-empty"><b>Couldn\'t load</b>' + esc(e.message) + '</div>'; return; }
+    if (X.stack[X.stack.length - 1] !== self) return;
+    bd.innerHTML = '<div class="fca-hero"><small>AUTOMATIC BACKUP · ON</small><b>' + i.messages + (i.messages === 1 ? ' message' : ' messages') + '</b><p>' + i.chats + (i.chats === 1 ? ' chat' : ' chats') + ' backed up to your Future Chat account · last change ' + esc(when(i.backed_up_at)) + '. Sign in on a new phone and your chats are there.</p></div>' +
+      '<div class="fca-card">' + row('☁️', 'Back up now', 'Check that everything is backed up', { data: 'data-a="now"' }) +
+      row('💾', 'Save a copy to this phone', 'All your chats as a text file in Downloads', { data: 'data-a="copy"' }) +
+      (i.cleared ? row('♻️', 'Restore cleared chats', i.cleared + (i.cleared === 1 ? ' message' : ' messages') + ' you cleared can come back', { data: 'data-a="restore"' }) : '') + '</div>' +
+      '<div class="fca-card">' + row('🗑️', 'Clear all chats', 'Empty every chat (restore from here later)', { data: 'data-a="clearall"', cls: 'danger' }, '') + '</div>' +
+      '<p class="fca-note">Messages are backed up to your account automatically. Photos, videos and voice notes are kept on the phones they were sent to — keep them with your phone\'s own Google Photos or gallery backup.</p>';
+    bind(bd, {
+      now: async b => { b.disabled = true; try { await api('/api/fcx/backup/info'); toast('All ' + i.messages + ' messages are backed up ✓'); } catch (e) { toast(e.message); } b.disabled = false; },
+      copy: () => saveCopy(0, ''),
+      restore: async () => { if (!confirm('Bring back the messages you cleared?')) return; try { const d = await post('/api/fcx/restore'); toast('Restored ' + d.restored + (d.restored === 1 ? ' chat' : ' chats')); try { FC().reloadList(); } catch (_) {} scrBackup(); } catch (e) { toast(e.message); } },
+      clearall: async () => { await clearChats(0, ''); scrBackup(); }
+    });
+  }
+
+  // ---------------------------------------------------------------- Advertise with us (the Sponsored status "Advertise here" card)
+  FCX.advertise = async function () {
+    let me = {}, plans = [];
+    try { const d = await api('/api/home-ads/mine'); me = d.me || {}; plans = d.plans || []; } catch (_) {}
+    if (!X.stack.length) { openPanel(); }
+    push(() => scrAdvertise(me, plans));
+  };
+  function scrAdvertise(me, plans) {
+    const bd = frame('Advertise with us', 'Reach people on Future Chat');
+    const owner = me.role === 'admin';
+    const price = (tier, days) => { const p = plans.find(x => x.tier === tier && x.days === days); return p ? p.price : ''; };
+    bd.innerHTML = '<div class="fca-hero"><small>SPONSORED STATUS</small><b>Your business in Status</b><p>Your ad shows in the one Sponsored status everyone sees at the top of Status — only when they choose to open it. Never a pop-up, never in chats. Every ad is checked before it goes live.</p></div>' +
+      '<div class="fca-gl">Prices</div><div class="fca-card">' +
+      row('✍️', 'Words or photo ad', '1 week ' + price('word', 7) + ' · 1 month ' + price('word', 30), {}, '') +
+      row('🎬', 'Video ad (up to 30 seconds)', '1 week ' + price('video', 7) + ' · 1 month ' + price('video', 30), {}, '') + '</div>' +
+      '<div class="fca-gl">Your ad</div>' +
+      '<div class="fca-seg" style="margin-bottom:10px" id="fcaAdK"><button class="on" data-k="word">✍️ Words</button><button data-k="photo">🖼️ Photo</button><button data-k="video">🎬 Video</button></div>' +
+      '<label class="fca-field"><span>Business name</span><input id="fcaAdA" maxlength="60" value="' + esc(me.business_name || me.name || '') + '"></label>' +
+      '<label class="fca-field"><span>Headline</span><input id="fcaAdH" maxlength="60" placeholder="e.g. Fresh cakes delivered in Bellville"></label>' +
+      '<label class="fca-field"><span>Short message (optional)</span><textarea id="fcaAdB" rows="2" maxlength="180"></textarea></label>' +
+      '<label class="fca-field" id="fcaAdFRow" style="display:none"><span id="fcaAdFL">Photo</span><input id="fcaAdF" type="file"></label>' +
+      '<label class="fca-field"><span>When people tap your ad</span><select id="fcaAdTo"><option value="tel">Call my number</option><option value="web">Open my website or page</option><option value="none">Nothing (just show the ad)</option></select></label>' +
+      '<label class="fca-field" id="fcaAdLRow"><span id="fcaAdLL">Phone number</span><input id="fcaAdL" inputmode="tel" placeholder="082 123 4567" value="' + esc((X.me || {}).phone || '') + '"></label>' +
+      '<label class="fca-field"><span>How long</span><select id="fcaAdP"></select></label>' +
+      '<p class="fca-note">Ads must be honest and legal: no adult content, weapons, gambling, scams, misleading claims or other people\'s trademarks. If your ad isn\'t approved, you get your money back.</p>' +
+      '<button class="fca-btn" data-a="go">' + (owner ? 'Publish my ad (free for the owner)' : 'Send my ad for approval') + '</button><button class="fca-btn sec" data-a="mine">My ads</button>';
+    let kind = 'word';
+    const $$ = s => $(s, bd);
+    const drawPlans = () => { const tier = kind === 'video' ? 'video' : 'word'; $$('#fcaAdP').innerHTML = plans.filter(p => p.tier === tier).map(p => '<option value="' + p.product_id + '">' + (p.days === 7 ? '1 week' : '1 month') + ' · ' + esc(p.price) + '</option>').join(''); };
+    bd.querySelectorAll('#fcaAdK button').forEach(b => b.onclick = () => { kind = b.dataset.k; bd.querySelectorAll('#fcaAdK button').forEach(x => x.classList.toggle('on', x === b));
+      $$('#fcaAdFRow').style.display = kind === 'word' ? 'none' : 'block'; $$('#fcaAdFL').textContent = kind === 'photo' ? 'Photo (JPG, PNG or WebP, up to 2 MB)' : 'Video (MP4, up to 12 MB, about 30 seconds)';
+      $$('#fcaAdF').accept = kind === 'photo' ? 'image/jpeg,image/png,image/webp' : 'video/mp4,video/webm,video/quicktime'; $$('#fcaAdF').value = ''; drawPlans(); });
+    $$('#fcaAdTo').onchange = () => { const v = $$('#fcaAdTo').value; $$('#fcaAdLRow').style.display = v === 'none' ? 'none' : 'block'; $$('#fcaAdLL').textContent = v === 'tel' ? 'Phone number' : 'Website or page link'; $$('#fcaAdL').inputMode = v === 'tel' ? 'tel' : 'url'; $$('#fcaAdL').placeholder = v === 'tel' ? '082 123 4567' : 'www.mybusiness.co.za'; if (v === 'web') $$('#fcaAdL').value = ''; };
+    drawPlans();
+    bind(bd, {
+      mine: () => push(scrMyAds),
+      go: async b => {
+        const headline = $$('#fcaAdH').value.trim(); if (headline.length < 3) { toast('Add a short headline'); return; }
+        const to = $$('#fcaAdTo').value, link = $$('#fcaAdL').value.trim();
+        if (to !== 'none' && !link) { toast(to === 'tel' ? 'Add your phone number' : 'Add your website link'); return; }
+        const target = to === 'none' ? '' : to === 'tel' ? 'tel:' + link.replace(/[^\d+]/g, '') : (/^https?:\/\//i.test(link) ? link : 'https://' + link);
+        let media = null;
+        if (kind !== 'word') {
+          const f = $$('#fcaAdF').files[0]; if (!f) { toast('Add your ' + kind); return; }
+          if (kind === 'photo' && f.size > 2 * 1024 * 1024) { toast('Photos must be 2 MB or smaller'); return; }
+          if (kind === 'video' && f.size > 12 * 1024 * 1024) { toast('Videos must be 12 MB or smaller'); return; }
+          media = { mime: f.type, data_base64: await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(new Error('That file could not be read.')); r.readAsDataURL(f); }) };
+        }
+        b.disabled = true; b.textContent = 'Uploading your ad…';
+        try {
+          const d = await post('/api/home-ads/create', { kind, headline, body: $$('#fcaAdB').value.trim(), cta: to === 'tel' ? 'Call now' : to === 'web' ? 'Visit' : 'Learn more', target, advertiser: $$('#fcaAdA').value.trim(), product_id: $$('#fcaAdP').value, media });
+          if (owner || d.status === 'active' || d.status === 'pending_review') {
+            toast(d.status === 'active' ? 'Your ad is live in Sponsored status ✓' : 'Your ad is saved and waiting for approval ✓');
+            try { window.FutureChatStatus && window.FutureChatStatus.refresh(true); } catch (_) {} pop(); return;
+          }
+          sheet('<h3>Your ad is saved ✓</h3><p>Ads are paid securely with Google Play. Payment inside the Future Chat app opens soon; until then, open the <b>Skillvaya</b> app on this phone, tap <b>Advertise here</b> on its home screen and pay there — the same ad shows in Future Chat\'s Sponsored status and on the Skillvaya home screen.</p><a class="fc-btn" style="display:block;text-align:center;text-decoration:none" href="https://play.google.com/store/apps/details?id=za.co.skillvaya.app">Open Skillvaya on Google Play</a>');
+          b.disabled = false; b.textContent = 'Send my ad for approval';
+        } catch (e) { toast(e.message); b.disabled = false; b.textContent = owner ? 'Publish my ad (free for the owner)' : 'Send my ad for approval'; }
+      }
+    });
+  }
+  async function scrMyAds() {
+    const self = X.stack[X.stack.length - 1];
+    const bd = frame('My ads', 'Your Sponsored status ads'); bd.innerHTML = '<div class="fca-empty">Loading…</div>';
+    let d; try { d = await api('/api/home-ads/mine'); } catch (e) { bd.innerHTML = '<div class="fca-empty">' + esc(e.message) + '</div>'; return; }
+    if (X.stack[X.stack.length - 1] !== self) return;
+    const ST = { pending_payment: 'Not paid yet', pending_review: 'Waiting for approval', active: 'Live', paused: 'Paused', rejected: 'Not approved', expired: 'Ended' };
+    const items = d.items || [];
+    bd.innerHTML = items.length ? '<div class="fca-card">' + items.map(a => row(a.status === 'active' ? '🟢' : '📣', a.headline, (ST[a.status] || a.status) + ' · ' + (a.plan || '') + (a.status === 'active' || a.status === 'expired' ? ' · shown ' + a.views + ' times, ' + a.clicks + ' taps' : '') + (a.ends_at ? ' · until ' + new Date(a.ends_at).toLocaleDateString() : ''), {}, '')).join('') + '</div>'
+      : '<div class="fca-empty"><span class="big">📣</span><b>No ads yet</b>Create your first ad and reach people in Status.</div>';
+  }
+
   function scrHelp() {
     const bd = frame('Help and safety', 'Report, block and protect your account');
     bd.innerHTML = '<div class="fca-card">' + row('🛡️', 'Stay safe on Future Chat', 'Simple ways to protect yourself', { data: 'data-a="tips"' }) + row('⚑', 'Report a problem', 'Tell the Future Chat team', { data: 'data-a="report"' }) + row('🚫', 'Blocked accounts', '', { data: 'data-a="blocked"' }) + row('🗑️', 'How to delete an account', '', { data: 'data-a="del"' }) + '</div>' +

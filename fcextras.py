@@ -62,6 +62,15 @@ def init(c):
     if "answered_at" not in cols:
         try: c.execute("ALTER TABLE video_calls ADD COLUMN answered_at TEXT NOT NULL DEFAULT ''")
         except Exception: pass
+    # FCX-CLEAR-01: "Clear chat" / "Clear all chats" hide older messages for one person; the backup can bring them back.
+    try:
+        mcols = A.FC._columns(c, "fc_members") if hasattr(A, "FC") else set()
+    except Exception:
+        mcols = set()
+    for col, ddl in (("cleared_id", "BIGINT NOT NULL DEFAULT 0"), ("cleared_at", "TEXT NOT NULL DEFAULT ''")):
+        if col not in mcols:
+            try: c.execute("ALTER TABLE fc_members ADD COLUMN " + col + " " + ddl)
+            except Exception: pass
     threading.Thread(target=_reminder_loop, name="FutureChatReminders", daemon=True).start()
 
 
@@ -443,6 +452,38 @@ def handle_get(h, path):
             r = c.execute("SELECT * FROM fcx_items WHERE id=?", (int(m.group(1)),)).fetchone()
             if not _can_see_item(c, r, uid): return h.sendj({"error": "This item was removed or isn't shared with you."}, 404)
             return h.sendj({"item": _item_out(c, r, uid)})
+    if path == "/api/fcx/backup/info":
+        with A.conn() as c:
+            n_conv = c.execute("SELECT COUNT(*) AS n FROM fc_members WHERE user_id=?", (uid,)).fetchone()["n"]
+            n_msg = c.execute("SELECT COUNT(*) AS n FROM fc_members m JOIN fc_messages x ON x.conversation_id=m.conversation_id "
+                              "WHERE m.user_id=? AND x.id>m.cleared_id AND x.deleted_at=''", (uid,)).fetchone()["n"]
+            n_hidden = c.execute("SELECT COUNT(*) AS n FROM fc_members m JOIN fc_messages x ON x.conversation_id=m.conversation_id "
+                                 "WHERE m.user_id=? AND x.id<=m.cleared_id AND x.deleted_at=''", (uid,)).fetchone()["n"]
+            last = c.execute("SELECT MAX(x.created_at) AS t FROM fc_members m JOIN fc_messages x ON x.conversation_id=m.conversation_id WHERE m.user_id=?", (uid,)).fetchone()["t"]
+        return h.sendj({"chats": int(n_conv), "messages": int(n_msg), "cleared": int(n_hidden), "backed_up_at": last or A.now()})
+    if path == "/api/fcx/backup":
+        cid = int((q.get("c") or ["0"])[0] or 0)
+        out = []
+        with A.conn() as c:
+            mems = c.execute("SELECT m.conversation_id,m.cleared_id,cv.kind,cv.title FROM fc_members m JOIN fc_conversations cv ON cv.id=m.conversation_id "
+                             "WHERE m.user_id=?" + (" AND m.conversation_id=?" if cid else "") + " ORDER BY cv.updated_at DESC", (uid, cid) if cid else (uid,)).fetchall()
+            for mm in mems:
+                conv = int(mm["conversation_id"])
+                if mm["kind"] == "group": title = mm["title"] or "Group"
+                else:
+                    o = c.execute("SELECT u.name FROM fc_members o JOIN users u ON u.id=o.user_id WHERE o.conversation_id=? AND o.user_id<>? LIMIT 1", (conv, uid)).fetchone()
+                    title = (o["name"] if o else "") or mm["title"] or "Chat"
+                rows = c.execute("SELECT x.id,x.sender_id,x.body,x.kind,x.meta,x.created_at,x.deleted_at,u.name FROM fc_messages x LEFT JOIN users u ON u.id=x.sender_id "
+                                 "WHERE x.conversation_id=? AND x.id>? ORDER BY x.id LIMIT 20000", (conv, int(mm["cleared_id"] or 0))).fetchall()
+                msgs = []
+                for r in rows:
+                    if r["deleted_at"]: continue
+                    att = [a["filename"] for a in c.execute("SELECT filename FROM fc_attachments WHERE message_id=?", (int(r["id"]),)).fetchall()]
+                    text = r["body"] or ""
+                    if r["kind"] not in ("text", "system", "call") and not text: text = "[" + r["kind"] + "]"
+                    msgs.append({"at": r["created_at"], "from": "You" if int(r["sender_id"]) == uid else (r["name"] or "Someone"), "text": text, "files": att})
+                out.append({"chat": title, "kind": mm["kind"], "messages": msgs})
+        return h.sendj({"exported_at": A.now(), "account": u["email"], "chats": out})
     if path == "/api/fcx/sessions":
         t = _token(h)
         with A.conn() as c:
@@ -590,6 +631,27 @@ def handle_post(h, path, d):
             if notify: notify("Future Chat problem report", (u.get("name") or "") + " <" + (u.get("email") or "") + ">\n\n" + body)
         except Exception: pass
         return h.sendj({"ok": True, "message": "Thank you. Your report reached the Future Chat team."})
+    if path == "/api/fcx/clear":
+        stamp = A.now(); cid = int(d.get("c") or 0)
+        with A.conn() as c:
+            if d.get("all"):
+                mems = [int(r["conversation_id"]) for r in c.execute("SELECT conversation_id FROM fc_members WHERE user_id=?", (uid,)).fetchall()]
+            else:
+                if not cid or not _member(c, cid, uid): return h.sendj({"error": "Choose a chat to clear."}, 400)
+                mems = [cid]
+            n = 0
+            for conv in mems:
+                r = c.execute("SELECT last_message_id FROM fc_conversations WHERE id=?", (conv,)).fetchone()
+                last = int((r["last_message_id"] if r else 0) or 0)
+                if not last: continue
+                c.execute("UPDATE fc_members SET cleared_id=?,cleared_at=?,last_read_id=CASE WHEN last_read_id<? THEN ? ELSE last_read_id END WHERE conversation_id=? AND user_id=?",
+                          (last, stamp, last, last, conv, uid)); n += 1
+        return h.sendj({"ok": True, "cleared": n})
+    if path == "/api/fcx/restore":
+        with A.conn() as c:
+            n = c.execute("SELECT COUNT(*) AS n FROM fc_members WHERE user_id=? AND cleared_id>0", (uid,)).fetchone()["n"]
+            c.execute("UPDATE fc_members SET cleared_id=0,cleared_at='' WHERE user_id=?", (uid,))
+        return h.sendj({"ok": True, "restored": int(n)})
     if path == "/api/fcx/sessions/logout-others":
         t = _token(h)
         with A.conn() as c:
