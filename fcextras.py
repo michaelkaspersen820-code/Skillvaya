@@ -52,6 +52,8 @@ def init(c):
         CREATE INDEX IF NOT EXISTS idx_fcx_items_owner ON fcx_items(owner_id, conversation_id);
         CREATE INDEX IF NOT EXISTS idx_fcx_items_conv ON fcx_items(conversation_id);
         CREATE INDEX IF NOT EXISTS idx_fcx_items_due ON fcx_items(reminded, due_at);
+        CREATE TABLE IF NOT EXISTS fcx_call_hidden(user_id BIGINT NOT NULL, call_id TEXT NOT NULL, PRIMARY KEY(user_id, call_id));
+        CREATE TABLE IF NOT EXISTS fcx_call_clear(user_id BIGINT PRIMARY KEY, cleared_before TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS fcx_votes(item_id BIGINT NOT NULL, user_id BIGINT NOT NULL, choice INTEGER NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(item_id, user_id));
         CREATE TABLE IF NOT EXISTS fcx_rsvps(item_id BIGINT NOT NULL, user_id BIGINT NOT NULL, answer TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(item_id, user_id));
         CREATE TABLE IF NOT EXISTS fcx_i18n(lang TEXT NOT NULL, src TEXT NOT NULL, dst TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(lang, src));
@@ -663,7 +665,10 @@ def handle_get(h, path):
                              " CASE WHEN vc.offer_sdp LIKE '%%m=video%%' THEN 1 ELSE 0 END AS video,"
                              " cu.name AS caller_name,ce.name AS callee_name FROM video_calls vc"
                              " LEFT JOIN users cu ON cu.id=vc.caller_id LEFT JOIN users ce ON ce.id=vc.callee_id"
-                             " WHERE vc.caller_id=? OR vc.callee_id=? ORDER BY vc.created_at DESC LIMIT 150", (uid, uid)).fetchall()
+                             " WHERE (vc.caller_id=? OR vc.callee_id=?)"
+                             " AND vc.created_at > COALESCE((SELECT k.cleared_before FROM fcx_call_clear k WHERE k.user_id=?), '')"
+                             " AND NOT EXISTS (SELECT 1 FROM fcx_call_hidden x WHERE x.user_id=? AND x.call_id=vc.id)"
+                             " ORDER BY vc.created_at DESC LIMIT 150", (uid, uid, uid, uid)).fetchall()
         items = []
         for r in rows:
             out = int(r["caller_id"]) == uid
@@ -753,6 +758,21 @@ def _token(h):
 
 
 # ---------------------------------------------------------------- POST
+def _purge_calls(c, uid):
+    """Delete finished calls of this person that BOTH people have cleared from their history."""
+    side = ("(vc.created_at <= COALESCE((SELECT k.cleared_before FROM fcx_call_clear k WHERE k.user_id=vc.%(w)s), '') "
+            "OR EXISTS (SELECT 1 FROM fcx_call_hidden x WHERE x.user_id=vc.%(w)s AND x.call_id=vc.id))")
+    ids = [str(r["id"]) for r in c.execute(
+        "SELECT vc.id FROM video_calls vc WHERE (vc.caller_id=? OR vc.callee_id=?) AND (COALESCE(vc.ended_at,'')<>'' OR vc.status IN ('missed','rejected','ended','cancelled')) "
+        "AND " + side % {"w": "caller_id"} + " AND " + side % {"w": "callee_id"}, (uid, uid)).fetchall()]
+    for i in range(0, len(ids), 200):
+        part = ids[i:i + 200]; marks = ",".join("?" * len(part))
+        c.execute("DELETE FROM video_calls WHERE id IN (" + marks + ")", tuple(part))
+        c.execute("DELETE FROM fcx_call_hidden WHERE call_id IN (" + marks + ")", tuple(part))
+        c.execute("DELETE FROM video_call_signals WHERE call_id IN (" + marks + ")", tuple(part))
+    return len(ids)
+
+
 def handle_post(h, path, d):
     u = h.require(); uid = int(u["id"]); d = d or {}
     if path == "/api/fcx/ping":
@@ -920,6 +940,17 @@ def handle_post(h, path, d):
         with A.conn() as c:
             c.execute("UPDATE fcx_scheduled SET cancelled=1 WHERE id=? AND user_id=? AND sent_at=''", (int(d.get("id") or 0), uid))
         return h.sendj({"ok": True})
+    if path in ("/api/fcx/calls/clear", "/api/fcx/calls/delete"):
+        with A.conn() as c:
+            if path.endswith("/clear"):
+                c.execute("INSERT INTO fcx_call_clear(user_id,cleared_before) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET cleared_before=excluded.cleared_before", (uid, A.now()))
+            else:
+                call_id = str(d.get("id") or "")[:80]
+                if not c.execute("SELECT 1 FROM video_calls WHERE id=? AND (caller_id=? OR callee_id=?)", (call_id, uid, uid)).fetchone():
+                    return h.sendj({"error": "That call isn't in your history."}, 404)
+                c.execute("INSERT INTO fcx_call_hidden(user_id,call_id) VALUES(?,?) ON CONFLICT(user_id,call_id) DO NOTHING", (uid, call_id))
+            gone = _purge_calls(c, uid)
+        return h.sendj({"ok": True, "removed_from_server": gone})
     if path == "/api/fcx/clear":
         stamp = A.now(); cid = int(d.get("c") or 0)
         with A.conn() as c:

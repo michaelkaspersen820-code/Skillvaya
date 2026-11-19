@@ -342,14 +342,22 @@
     };
     bd.querySelectorAll('.fca-seg button').forEach(b => b.onclick = () => { bd.querySelectorAll('.fca-seg button').forEach(x => x.classList.toggle('on', x === b)); paint(b.dataset.f); });
     paint('all');
+    const clr = document.createElement('div'); clr.className = 'fca-card'; clr.innerHTML = row('🗑️', 'Clear call history', 'Remove every call from this list', { data: 'data-a="clrcalls"', cls: 'danger' }, '');
+    bd.appendChild(clr); bind(clr, { clrcalls: clearCalls });
+  }
+  // FCX-CALLCLEAR-01: clear the whole call list, or one call
+  async function clearCalls() {
+    if (!confirm('Clear your whole call history? Only your list is cleared — the other person keeps theirs.')) return;
+    try { await api('/api/fcx/calls/clear', {}); toast('Call history cleared'); if (X.stack[X.stack.length - 1] === scrCalls) scrCalls(); } catch (e) { toast(e.message); }
   }
   document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#fcaPanel [data-ring]'); if (!b) return; const d = (window.FutureChatStatus && window.FutureChatStatus.data()) || {}; const rings = d.sponsored_rings && d.sponsored_rings.length ? d.sponsored_rings : [d.sponsored && d.sponsored.length ? d.sponsored : [window.FutureChatStatus.house()]]; window.FutureChatStatus.ads(rings[Number(b.dataset.ring)] || rings[0]); });
   function callSheet(c) {
     sheet('<h3>' + esc(c.name) + '</h3><p>' + esc(when(c.at)) + '</p><div class="fc-acts">' +
       (c.conversation_id ? '<button class="fc-act" data-a="voice"><i>📞</i>Voice call</button><button class="fc-act" data-a="video"><i>🎥</i>Video call</button><button class="fc-act" data-a="msg"><i>💬</i>Message</button>' : '<p>This call was made before Future Chat calls had chats.</p>') +
-      '</div>', (el, done) => bind(el, {
+      '<button class="fc-act" data-a="del"><i>🗑️</i>Delete from call history</button></div>', (el, done) => bind(el, {
         voice: () => { done(); FC().callConv(c.conversation_id, 'voice'); }, video: () => { done(); FC().callConv(c.conversation_id, 'video'); },
-        msg: () => { done(); FC().openConv(c.conversation_id); } }));
+        msg: () => { done(); FC().openConv(c.conversation_id); },
+        del: async () => { done(); try { await api('/api/fcx/calls/delete', { id: c.id }); toast('Removed from call history'); if (X.stack[X.stack.length - 1] === scrCalls) scrCalls(); } catch (e) { toast(e.message); } } }));
   }
   function directChats() { try { return (FC().state().list || []).filter(c => c.kind !== 'group' && !c.archived); } catch (_) { return []; } }
   function newCall() {
@@ -662,11 +670,11 @@
   function scrStorage() {
     const bd = frame('Storage and data', 'Your Future Chat information'); const c = X.counts || {};
     bd.innerHTML = '<div class="fca-stat"><div><b>' + (c.chats || 0) + '</b><small>Chats</small></div><div><b>' + (c.sent || 0) + '</b><small>Messages sent</small></div><div><b>' + (c.items || 0) + '</b><small>Tasks & plans</small></div></div>' +
-      '<div class="fca-card">' + row('☁️', 'Chat backup', 'Back up, save a copy, restore cleared chats', { data: 'data-a="backup"' }) + row('🧹', 'Clear media on this phone', 'Photos and videos Future Chat saved on this phone', { data: 'data-a="clear"' }) + row('⬇️', 'Download my data', 'A copy of your account information', { data: 'data-a="export"' }) + '</div>' +
+      '<div class="fca-card">' + row('☁️', 'Chat backup', 'Back up, save a copy, restore cleared chats', { data: 'data-a="backup"' }) + row('🧹', 'Clear media on this phone', 'Photos and videos Future Chat saved on this phone', { data: 'data-a="clear"' }) + row('📞', 'Clear call history', 'Remove every call from your Calls list', { data: 'data-a="clrcalls"' }) + row('⬇️', 'Download my data', 'A copy of your account information', { data: 'data-a="export"' }) + '</div>' +
       '<div class="fca-card">' + row('🗑️', 'Clear all chats', 'Empty every chat on your account (you can restore from backup)', { data: 'data-a="clearall"', cls: 'danger' }, '') + '</div>' +
       '<p class="fca-note">Photos, videos and voice notes are kept on the phones they were sent to, not on our server.</p>';
     bind(bd, {
-      backup: () => push(scrBackup), clearall: () => clearChats(0, ''),
+      backup: () => push(scrBackup), clearall: () => clearChats(0, ''), clrcalls: clearCalls,
       clear: () => { if (!confirm('Remove the photos and videos Future Chat saved on this phone? Your messages stay.')) return; try { indexedDB.deleteDatabase('futurechat_media'); } catch (_) {} toast('Media cleared from this phone'); },
       export: async () => { try { const r = await fetch('/api/account/export', { headers: { Authorization: 'Bearer ' + tok() }, cache: 'no-store' }); if (!r.ok) throw new Error('Could not prepare your data right now.'); const txt = await r.text();
         if (navigator.share) { try { await navigator.share({ title: 'My Future Chat data', text: txt.slice(0, 90000) }); return; } catch (_) {} }
