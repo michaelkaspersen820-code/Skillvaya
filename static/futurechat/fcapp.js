@@ -1116,7 +1116,7 @@
   function scrTerms() {
     const bd = frame('Terms and policies', '');
     bd.innerHTML = '<div class="fca-card">' + row('📄', 'Terms, Rules & Safety', '', { data: 'data-a="t"' }) + row('🔒', 'Privacy Policy', '', { data: 'data-a="p"' }) + row('🗑️', 'Account deletion', '', { data: 'data-a="d"' }) + '</div>';
-    bind(bd, { t: () => window.open('/terms', '_blank'), p: () => window.open('/privacy', '_blank'), d: () => window.open('/account-deletion', '_blank') });
+    bind(bd, { t: () => window.open('https://futurechat-v5lx.onrender.com/terms.html', '_blank'), p: () => window.open('https://futurechat-v5lx.onrender.com/privacy.html', '_blank'), d: () => window.open('/account-deletion', '_blank') });
   }
   function scrAbout() {
     const bd = frame('About Future Chat', 'Stay close. Wherever life takes you.');
@@ -1165,7 +1165,7 @@
       '<label for="fcaEmail">Email</label><input id="fcaEmail" type="email" autocomplete="email" inputmode="email" required>' +
       (create ? '<label for="fcaPhone">Mobile number</label><input id="fcaPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="e.g. 082 123 4567" required>' : '') +
       '<label for="fcaPw">Password' + (create ? ' (8 or more characters)' : '') + '</label><input id="fcaPw" type="password" autocomplete="' + (create ? 'new-password' : 'current-password') + '" required>' +
-      '<label class="fca-tick"><input id="fcaTerms" type="checkbox"><span>I have read and agree to the <a href="/terms" target="_blank" rel="noopener">Terms, Rules &amp; Safety</a> and the <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>. I am 13 or older.</span></label>' +
+      '<label class="fca-tick"><input id="fcaTerms" type="checkbox"><span>I have read and agree to the <a href="https://futurechat-v5lx.onrender.com/terms.html" target="_blank" rel="noopener">Terms of Use</a> and the <a href="https://futurechat-v5lx.onrender.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>. I am 13 or older.</span></label>' +
       '<button class="fca-go" type="submit">' + (create ? 'Create my account' : 'Sign in') + '</button><div class="fca-msg" id="fcaMsg" role="alert"></div>' + (create ? '' : '<button type="button" class="fca-forgot" id="fcaForgot">Forgot your password?</button>') + '</form>' +
       '<p class="fca-note2" data-keep-brand>' + (create ? 'Your number lets friends and family find you and call you on Future Chat. We confirm it with a code.' : 'One account for Future Chat and Skillvaya: sign in with the same email and password.') +
       ' <a href="/account-deletion" target="_blank" rel="noopener">Delete an account</a></p></div>';
