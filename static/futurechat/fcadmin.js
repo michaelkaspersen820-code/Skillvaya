@@ -34,7 +34,17 @@
       '<div class="fca-card">' + row('🟢', 'Who\'s online now', s.online_now + (s.online_now === 1 ? ' person' : ' people'), { data: 'data-a="online"' }) + row('⚑', 'Complaints', s.open_reports + ' open', { data: 'data-a="reports"' }) +
       row('⛔', 'Bans', s.active_bans + ' banned now · spam is banned for 24 h automatically', { data: 'data-a="bans"' }) + row('🔎', 'Find a person', 'See their details, ban them or delete their account', { data: 'data-a="find"' }) + '</div>' +
       '<p class="fca-note">"Used it" counts people who opened Future Chat that day. Total accounts (Skillvaya + Future Chat): ' + s.total + '.</p>';
-    bind(bd, { joined: () => push(scrJoined), online: () => push(() => scrOnline(s)), reports: () => push(scrReports), bans: () => push(scrBans), find: () => push(scrFind) });
+    // TST-01: Testers (who joined the Google Play closed test and who is really using the apps)
+    const tstCard = document.createElement('div'); tstCard.className = 'fca-card';
+    tstCard.innerHTML = row('\uD83E\uDDEA', 'Testers', 'Who is really testing Skillvaya and Future Chat', { data: 'data-a="testers"' });
+    bd.appendChild(tstCard);
+    bind(bd, { joined: () => push(scrJoined), online: () => push(() => scrOnline(s)), reports: () => push(scrReports), bans: () => push(scrBans), find: () => push(scrFind), testers: () => push(scrTesters) });
+  }
+  function scrTesters() {   // TST-01
+    const bd = frame('Testers', 'Who is really testing your apps');
+    const box = document.createElement('div'); box.style.padding = '4px 2px'; bd.innerHTML = ''; bd.appendChild(box);
+    if (!window.SVTesters) { box.textContent = 'Could not load the Testers screen. Close and open Control again.'; return; }
+    window.SVTesters.render(box, p => api(p), (p, b) => post(p, b));
   }
   function personRow(p, sub) {
     return row(p.banned ? '⛔' : (sub === 'online now' ? '🟢' : '👤'), p.name, [p.phone, sub || ago(p.last_seen), p.banned ? until(p.banned) : ''].filter(Boolean).join(' · '), { data: 'data-p="' + p.id + '"' });
