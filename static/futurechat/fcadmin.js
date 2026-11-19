@@ -52,9 +52,19 @@
     let d; try { d = await api('/api/fca/admin/users?fc=1'); } catch (e) { bd.innerHTML = '<div class="fca-empty">' + esc(e.message) + '</div>'; return; }
     if (top() !== self) return;
     const fmt = iso => { try { return new Date(iso).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }); } catch (_) { return iso; } };
-    bd.innerHTML = '<p class="fca-note" style="margin-top:0">' + d.items.length + (d.items.length === 1 ? ' person has' : ' people have') + ' joined (confirmed their number).</p><div class="fca-card">' +
-      (d.items.length ? d.items.map(p => row(p.banned ? '⛔' : '👤', p.name, [p.phone, 'joined ' + fmt(p.joined_at || p.joined), 'last seen ' + ago(p.last_seen)].filter(Boolean).join(' · '), { data: 'data-p="' + p.id + '"' })).join('') : row('👥', 'Nobody yet', '', {}, '')) + '</div>';
+    bd.innerHTML = '<p class="fca-note" style="margin-top:0">' + d.items.length + (d.items.length === 1 ? ' person has' : ' people have') + ' joined (confirmed their number).</p>' +
+      '<div style="display:flex;gap:8px;align-items:center;margin:4px 0 8px"><label style="display:flex;gap:8px;align-items:center;flex:1"><input type="checkbox" id="fcaAll" style="width:20px;height:20px">Select all</label>' +
+      '<button class="fc-chip" id="fcaMsgSel" style="color:#1ed6c8;border-color:#1ed6c8">✉️ Message selected (0)</button></div><div class="fca-card">' +
+      (d.items.length ? d.items.map(p => '<div style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="fcaTick" value="' + p.id + '" style="width:20px;height:20px;margin-left:10px;flex:none" aria-label="Select ' + esc(p.name) + '"><div style="flex:1;min-width:0">' +
+        row(p.banned ? '⛔' : '👤', p.name, [p.phone, 'joined ' + fmt(p.joined_at || p.joined), 'last seen ' + ago(p.last_seen)].filter(Boolean).join(' · '), { data: 'data-p="' + p.id + '"' }) + '</div></div>').join('') : row('👥', 'Nobody yet', '', {}, '')) + '</div>' +
+      '<button class="fca-btn" data-a="everyone">📣 Message everyone on Future Chat</button>';
     wirePeople(bd, d.items);
+    const ticks = () => [...bd.querySelectorAll('.fcaTick:checked')].map(i => Number(i.value));
+    const upd = () => { const n = ticks().length; $('#fcaMsgSel', bd).textContent = '✉️ Message selected (' + n + ')'; $('#fcaAll', bd).checked = n && n === bd.querySelectorAll('.fcaTick').length; };
+    bd.querySelectorAll('.fcaTick').forEach(i => i.onchange = upd);
+    $('#fcaAll', bd).onchange = e => { bd.querySelectorAll('.fcaTick').forEach(i => { i.checked = e.target.checked; }); upd(); };
+    $('#fcaMsgSel', bd).onclick = () => { const ids = ticks(); if (!ids.length) { toast('Tick the people you want to message'); return; } ownerMessage({ user_ids: ids }, ids.length + (ids.length === 1 ? ' person' : ' people')); };
+    bind(bd, { everyone: () => ownerMessage({ all: true }, 'everyone on Future Chat (' + d.items.length + ')') });
   }
   async function scrFind() {
     const bd = frame('Find a person', 'Name, number or email');
@@ -68,13 +78,20 @@
     if (!p) return;
     const isOwner = p.role === 'admin';
     sheet('<h3>' + esc(p.name) + '</h3><p style="font-size:13px;color:#9cb7cc">' + [p.phone, p.email, 'joined ' + p.joined, 'last seen ' + ago(p.last_seen)].filter(Boolean).map(esc).join('<br>') + (p.banned ? '<br><b style="color:#ff9a9a">' + esc(until(p.banned)) + (p.banned.reason ? ' — ' + esc(p.banned.reason) : '') + '</b>' : '') + '</p>' +
-      (isOwner ? '<p>This is an owner account.</p>' : '<div class="fc-acts">' + (p.banned ? '<button class="fc-act" data-a="unban"><i>✅</i>Lift the ban</button>' : '') +
+      (isOwner ? '<p>This is an owner account.</p>' : '<div class="fc-acts"><button class="fc-act" data-a="chat"><i>💬</i>Send a message</button>' + (p.banned ? '<button class="fc-act" data-a="unban"><i>✅</i>Lift the ban</button>' : '') +
         '<button class="fc-act" data-a="b24"><i>⏳</i>Ban 24 hours</button><button class="fc-act" data-a="b168"><i>📅</i>Ban 7 days</button><button class="fc-act" data-a="b0"><i>⛔</i>Ban for good</button>' +
         '<button class="fc-act" data-a="del" style="color:#ff8a8a"><i>🗑️</i>Delete account</button></div><p style="font-size:12px;color:#9cb7cc">A ban stops them sending messages and starting chats on Future Chat. They can still read.</p>'), (el, done) => bind(el, {
       unban: async () => { try { const r = await post('/api/fca/admin/unban', { user_id: p.id }); done(); toast(r.message); refresh(); } catch (e) { toast(e.message); } },
       b24: () => doBan(p, 24, done), b168: () => doBan(p, 168, done), b0: () => doBan(p, 0, done),
-      del: () => { done(); delAccount(p); }
+      del: () => { done(); delAccount(p); },
+      chat: async () => { done(); try { const r = await post('/api/fc/start', { user_id: p.id }); (window.FutureChat || {}).openConv(r.conversation_id); } catch (e) { toast(e.message); } }
     }));
+  }
+  function ownerMessage(target, who) {
+    sheet('<h3>Message ' + esc(who) + '</h3><p>Each person gets it as a private message from you in Future Chat, with a notification.</p><textarea id="fcaOM" rows="5" maxlength="4000" placeholder="e.g. New in Future Chat: hold a chat to archive, block or delete it!"></textarea><button class="fc-btn" id="fcaOMGo">Send</button>', (el, done) => {
+      $('#fcaOMGo', el).onclick = async () => { const body = $('#fcaOM', el).value.trim(); if (!body) return; if (target.all && !confirm('Send this to everyone on Future Chat?')) return;
+        try { const r = await post('/api/fca/admin/message', Object.assign({ body }, target)); done(); toast('Sent to ' + r.sent + (r.sent === 1 ? ' person' : ' people')); } catch (e) { toast(e.message); } };
+    });
   }
   function doBan(p, hours, done) {
     done();

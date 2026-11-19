@@ -456,6 +456,28 @@ def handle_post(h, path, d):
         with A.conn() as c:
             c.execute("UPDATE fca_reports SET status=?,resolved_at=? WHERE id=?", ("open" if d.get("reopen") else "resolved", "" if d.get("reopen") else stamp, int(d.get("report_id") or 0)))
         return h.sendj({"ok": True})
+    if path == "/api/fca/admin/message":
+        # FCA-04: owner sends an update to everyone on Future Chat, or to the people ticked; each gets a private message.
+        body = str(d.get("body") or "").strip()[:4000]
+        if len(body) < 2: return h.sendj({"error": "Type your message first."}, 400)
+        with A.conn() as c:
+            if d.get("all"):
+                ids = [int(r["id"]) for r in c.execute("SELECT id FROM users WHERE phone_verified_at<>'' AND role<>'suspended'").fetchall()]
+            else:
+                ids = []
+                for x in (d.get("user_ids") or [])[:5000]:
+                    try: ids.append(int(x))
+                    except Exception: pass
+            ids = [i for i in dict.fromkeys(ids) if i != uid]
+            if not ids: return h.sendj({"error": "Choose who to message."}, 400)
+            sent = []
+            for to in ids:
+                if not c.execute("SELECT 1 FROM users WHERE id=?", (to,)).fetchone(): continue
+                conv = _direct(c, uid, to, stamp)
+                _post(c, conv, uid, body, {"owner_update": 1})
+                sent.append(conv)
+        for conv in sent: _push_conv(conv, u, body[:120])
+        return h.sendj({"ok": True, "sent": len(sent)})
     target = int(d.get("user_id") or 0)
     with A.conn() as c:
         t = c.execute("SELECT id,name,email,role FROM users WHERE id=?", (target,)).fetchone()
