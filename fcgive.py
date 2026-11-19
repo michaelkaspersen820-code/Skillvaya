@@ -104,7 +104,7 @@ def _link_by_phone():
 def _qualifies(c, friend_id):
     u = c.execute("SELECT phone_verified_at,phone_verify_method,created_at FROM users WHERE id=?", (friend_id,)).fetchone()
     if not u or not u["phone_verified_at"]: return False, "needs to add their phone number"
-    if not A.FV.is_confirmed(u): return False, "needs to confirm their number by SMS"
+    if not A.FV.is_confirmed(u): return False, "needs to confirm their phone number"
     n = int(c.execute("SELECT COUNT(*) AS n FROM fc_messages WHERE sender_id=? AND kind NOT IN ('system','call') AND deleted_at=''", (friend_id,)).fetchone()["n"])
     if n < MIN_MESSAGES: return False, "needs to send %d more message%s" % (MIN_MESSAGES - n, "" if MIN_MESSAGES - n == 1 else "s")
     # a real person talks to more than one person: chats with at least 2 different people count

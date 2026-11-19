@@ -21,7 +21,7 @@ CODE_RE = re.compile(r"\bFC[\s\-]?(\d{6})\b", re.I)
 
 
 def on():
-    return os.environ.get("FCV_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off") and bool(NUMBER)
+    return os.environ.get("FCV_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on") and bool(NUMBER)   # FCV-03: off -> email codes
 
 
 def bind(ns):
@@ -50,11 +50,11 @@ def pretty(e164):
 def confirmed_holder(c, phone, not_uid=0):
     """Another account that has PROVEN this number (by SIM SMS or Firebase SMS)."""
     return c.execute("SELECT id FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>? AND role<>'suspended' "
-                     "AND COALESCE(phone_verify_method,'') NOT IN ('self','email')", (phone, int(not_uid or 0))).fetchone()
+                     "AND COALESCE(phone_verify_method,'')<>'self'", (phone, int(not_uid or 0))).fetchone()   # FCV-03: email counts
 
 
 def is_confirmed(row):
-    return bool(row and row["phone_verified_at"] and str(row["phone_verify_method"] or "") not in ("self", "email"))
+    return bool(row and row["phone_verified_at"] and str(row["phone_verify_method"] or "") != "self")   # FCV-03: email-confirmed counts
 
 
 def _expired(created):

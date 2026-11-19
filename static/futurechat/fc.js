@@ -716,7 +716,7 @@
   async function verifyPhone(afterSignup) {
     let st = {}; try { st = await api('/api/phone/status'); } catch (_) {}
     if (st.mode === 'sim' && !st.confirmed) return verifyPhoneBySim(st, afterSignup);
-    if (st.verified && !afterSignup) { toast('Your number ' + st.phone + (st.method === 'email' ? ' is confirmed by email (not SMS-checked yet)' : st.method === 'self' ? ' is saved' : ' is verified')); return; }
+    if (st.verified && !afterSignup) { toast('Your number ' + st.phone + (st.method === 'email' ? ' is confirmed' : st.method === 'self' ? ' is saved' : ' is verified')); return; }
     if (st.mode === 'sim') return verifyPhoneBySim(st, afterSignup);
     if (st.mode === 'email') return verifyPhoneByEmail(st, afterSignup);
     return verifyPhoneByCode(st, afterSignup);
@@ -791,7 +791,7 @@
     sheet('<h3>Add your phone number</h3><p>' + (afterSignup ? 'One last step. ' : '') + 'Your number lets friends and family find you on Future Chat and call you. We\'ll email a 6-digit code to ' + esc(st.email_hint || 'your account email') + ' to confirm it\'s you.</p>' +
       '<input id="fcPN" type="tel" autocomplete="tel" placeholder="Phone number, e.g. 082 123 4567" value="' + esc(st.phone || '') + '"><button class="fc-btn" id="fcPSend">Email me a code</button>' +
       '<div id="fcPStep2" style="display:none"><input id="fcPC" class="fc-codes" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••"><button class="fc-btn" id="fcPConfirm">Confirm</button></div>' +
-      '<p id="fcPMsg" role="status"></p><p class="fc-muted" style="font-size:12px;opacity:.75">Your number is marked "confirmed by email" until SMS checks are switched on.</p>' + (afterSignup ? '<button class="fc-btn sec" id="fcPLater">Later</button>' : ''), (el, done) => {
+      '<p id="fcPMsg" role="status"></p><p class="fc-muted" style="font-size:12px;opacity:.75">Free - no SMS or airtime needed. One number can only be used on one account.</p>' + (afterSignup ? '<button class="fc-btn sec" id="fcPLater">Later</button>' : ''), (el, done) => {
       const msg = t => { $('#fcPMsg', el).textContent = t; };
       const later = $('#fcPLater', el); if (later) later.onclick = done;
       $('#fcPSend', el).onclick = async () => {
