@@ -64,7 +64,11 @@
     root = document.createElement('section'); root.id = 'fcRoot'; root.setAttribute('aria-label', 'Future Chat');
     document.body.appendChild(root);
     const nav = document.querySelector('.bottom-tabbar');
-    const setNav = () => { const n = document.querySelector('.bottom-tabbar'); const vis = n && getComputedStyle(n).display !== 'none' && n.getBoundingClientRect().height > 0; document.documentElement.style.setProperty('--fc-nav', (vis ? Math.round(window.innerHeight - n.getBoundingClientRect().top) : 0) + 'px'); };
+    const setNav = () => { const n = document.querySelector('.bottom-tabbar'); const vis = n && getComputedStyle(n).display !== 'none' && n.getBoundingClientRect().height > 0;
+      let top = vis ? n.getBoundingClientRect().top : window.innerHeight;
+      if (vis) { let t = Infinity; n.querySelectorAll('button,a').forEach(b => { const r = b.getBoundingClientRect(); if (r.height > 0 && r.top < t) t = r.top; }); if (t !== Infinity && t > top) top = t - 6; }   /*FC-NAVGAP-01*/
+      const h = vis ? Math.max(0, Math.round(window.innerHeight - top)) : 0;
+      document.documentElement.style.setProperty('--fc-nav', h + 'px'); if (root) root.classList.toggle('fc-on-nav', h > 0); };
     setNav(); window.addEventListener('resize', setNav); setTimeout(setNav, 600);
   }
   function setNavActive(on) {

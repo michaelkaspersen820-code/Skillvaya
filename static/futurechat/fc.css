@@ -84,6 +84,7 @@
 .fc-star{color:#ffc23d}
 .fc-hl .fc-b{outline:3px solid #42d3d0aa}
 .fc-composer{flex:0 0 auto;padding:6px 8px calc(8px + env(safe-area-inset-bottom,0px));background:#eaf0f7}
+#fcRoot.fc-on-nav .fc-composer{padding-bottom:6px}
 .fc-replybar{display:flex;align-items:center;gap:8px;background:#fff;border-left:4px solid #42d3d0;border-radius:12px;padding:8px 6px 8px 12px;margin:0 2px 6px;font-size:13px}
 .fc-replybar div{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fc-replybar b{display:block;color:#0b766e;font-size:12px}
