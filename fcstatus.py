@@ -136,6 +136,16 @@ def handle_get(h, path):
         return h.sendj({"me": {"id": uid, "name": u["name"]}, "mine": mine, "others": others, "sponsored": [a for a in sp if a.get("tier") not in ("shout", "propose")],
                         "sponsored_rings": _rings([a for a in sp if a.get("tier") not in ("shout", "propose")]),
                         "shoutouts": [a for a in sp if a.get("tier") in ("shout", "propose")]})
+    if path == "/api/fc/status/viewers":   # FCS-VIEWERS-01: tap "1 view" to see who it was
+        from urllib.parse import urlparse, parse_qs
+        try: sid = int((parse_qs(urlparse(h.path).query).get("id") or ["0"])[0])
+        except ValueError: sid = 0
+        with A.conn() as c:
+            s = c.execute("SELECT user_id FROM fc_statuses WHERE id=? AND deleted_at=''", (sid,)).fetchone()
+            if not s or int(s["user_id"]) != uid: return h.sendj({"error": "Only you can see who viewed your status."}, 403)
+            rows = c.execute("SELECT v.user_id,v.created_at,u.name FROM fc_status_views v JOIN users u ON u.id=v.user_id "
+                             "WHERE v.status_id=? ORDER BY v.created_at DESC LIMIT 500", (sid,)).fetchall()
+        return h.sendj({"viewers": [{"user_id": int(r["user_id"]), "name": r["name"] or "Future Chat friend", "at": r["created_at"]} for r in rows]})
     m = re.fullmatch(r"/api/fc/status/media/(\d+)", path)
     if m:
         sid = int(m.group(1))

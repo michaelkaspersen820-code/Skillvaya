@@ -40,6 +40,11 @@
     '#fcsView .cap{position:absolute;left:0;right:0;bottom:0;padding:14px 16px 18px;background:linear-gradient(transparent,rgba(0,0,0,.75));font-size:16px;line-height:1.4;white-space:pre-wrap}',
     '#fcsView .tapL,#fcsView .tapR{position:absolute;top:0;bottom:0;width:35%;z-index:2}#fcsView .tapL{left:0}#fcsView .tapR{right:0}',
     '#fcsView .foot{padding:10px 14px max(14px,env(safe-area-inset-bottom));display:flex;gap:10px;align-items:center;justify-content:center;min-height:54px}',
+    '#fcsView .seenbtn{border:0;background:rgba(255,255,255,.16);color:#fff;border-radius:999px;padding:10px 18px;font-size:15px;font-weight:700}',
+    '#fcsView .seenlist{position:absolute;left:0;right:0;bottom:0;max-height:62%;z-index:5;background:#101c2c;border-radius:20px 20px 0 0;display:flex;flex-direction:column;box-shadow:0 -10px 30px rgba(0,0,0,.5)}',
+    '#fcsView .seenlist .hd{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px}#fcsView .seenlist .hd b{font-size:17px}#fcsView .seenlist .hd button{border:0;background:rgba(255,255,255,.14);color:#fff;border-radius:999px;width:36px;height:36px;font-size:16px}',
+    '#fcsView .seenlist .bd{overflow-y:auto;padding:4px 12px max(16px,env(safe-area-inset-bottom))}#fcsView .seenlist .row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid rgba(255,255,255,.07)}',
+    '#fcsView .seenlist .av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#1ed6c8;color:#04202b;font-weight:800;flex:none}#fcsView .seenlist .nm{font-size:15px;font-weight:700}#fcsView .seenlist .nm small{display:block;font-weight:400;color:#9cb7cc;font-size:12.5px}#fcsView .seenlist .none{color:#9cb7cc;text-align:center;padding:18px}',
     '#fcsView .cta{border:0;border-radius:14px;padding:13px 22px;font-weight:800;font-size:16px;background:linear-gradient(90deg,#ffcf5c,#ff8a5c);color:#2a1300}',
     '#fcsView .adtag{display:inline-block;background:#ffcf5c;color:#2a1300;font-size:11px;font-weight:800;border-radius:6px;padding:2px 6px;margin-right:6px;vertical-align:1px}',
     '#fcsView .adbox{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;background:linear-gradient(160deg,#0b2447,#0d6f86)}',
@@ -121,10 +126,11 @@
       (it.kind === 'text' ? '<div class="txt" style="background:' + esc(it.bg) + '">' + esc(it.body) + '</div>'
         : it.kind === 'video' ? '<video playsinline autoplay></video>' + (it.body ? '<div class="cap">' + esc(it.body) + '</div>' : '')
         : '<img alt="">' + (it.body ? '<div class="cap">' + esc(it.body) + '</div>' : '')) + '</div>' +
-      '<div class="foot">' + (p.mine ? '<span>👁 ' + Number(it.views || 0) + (Number(it.views) === 1 ? ' view' : ' views') + '</span>' : '') + '</div>';
+      '<div class="foot">' + (p.mine ? '<button data-a="seen" class="seenbtn">👁 ' + Number(it.views || 0) + (Number(it.views) === 1 ? ' view' : ' views') + ' ›</button>' : '') + '</div>';
     V.el.querySelector('[data-a="x"]').onclick = closeViewer;
     const add = V.el.querySelector('[data-a="add"]'); if (add) add.onclick = () => { closeViewer(); compose(); };
     const del = V.el.querySelector('[data-a="del"]'); if (del) del.onclick = async () => { if (!confirm('Delete this status?')) return; try { await api('/api/fc/status/delete', { id: it.id }); toast('Status deleted'); } catch (e) { toast(e.message); } closeViewer(); };
+    const seen = V.el.querySelector('[data-a="seen"]'); if (seen) seen.onclick = () => viewers(it);
     V.el.querySelector('.tapL').onclick = () => step(-1);
     V.el.querySelector('.tapR').onclick = () => step(1);
     if (!p.mine && !it.viewed) { it.viewed = true; api('/api/fc/status/view', { id: it.id }).catch(() => {}); }
@@ -138,6 +144,20 @@
     const run = ms => { const t0 = performance.now(); const tick = () => { if (!V) return; const f = Math.min(1, (performance.now() - t0) / ms); bar.style.width = (f * 100) + '%'; if (f < 1) V.raf = requestAnimationFrame(tick); }; tick(); V.t = setTimeout(() => step(1), ms); };
     if (vid) { vid.onloadedmetadata = () => run(Math.min(60000, Math.max(3000, (vid.duration || 10) * 1000))); vid.onerror = () => run(4000); }
     else run(it.kind === 'text' ? Math.min(12000, 4000 + it.body.length * 45) : 6000);
+  }
+  // FCS-VIEWERS-01: who viewed my status. The status pauses while the list is open.
+  async function viewers(it) {
+    if (!V) return; clearTimeout(V.t); cancelAnimationFrame(V.raf);
+    const box = document.createElement('div'); box.className = 'seenlist';
+    box.innerHTML = '<div class="hd"><b>Viewed by</b><button data-a="seenx" aria-label="Close">✕</button></div><div class="bd">Loading…</div>';
+    V.el.appendChild(box);
+    box.querySelector('[data-a="seenx"]').onclick = e => { e.stopPropagation(); box.remove(); if (V) show(); };
+    try {
+      const d = await api('/api/fc/status/viewers?id=' + encodeURIComponent(it.id));
+      const list = d.viewers || [];
+      box.querySelector('.bd').innerHTML = list.length ? list.map(v => '<div class="row"><span class="av">' + esc((v.name || '?').trim().charAt(0).toUpperCase()) + '</span><span class="nm">' + esc(v.name) + '<small>' + esc(ago(v.at)) + '</small></span></div>').join('')
+        : '<p class="none">Nobody has viewed this status yet.</p>';
+    } catch (e) { box.querySelector('.bd').textContent = e.message; }
   }
   function step(dir) {
     if (!V) return; clearTimeout(V.t); cancelAnimationFrame(V.raf);
