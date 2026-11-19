@@ -6,7 +6,7 @@ ticket (Consumer Protection Act s36 promotional competition; Google Play contest
 How a friend is linked to the person who invited them, without hassle:
   1. Invite link /fc/i/<code> -> Google Play install referrer (fcref=<code>) -> the app claims it after sign-up, or
   2. The inviter shared to (or tried to chat with) the friend's phone number -> matched when the friend saves that number.
-A friend counts once they have a phone number on their account and have sent at least 3 messages within 30 days.
+A friend counts once they have a phone number on their account and have sent at least 3 messages, chatting with at least 2 different people, within 30 days.
 Routes: /api/fcg/*, landing page /fc/i/<code>, rules /giveaway-rules.
 """
 import datetime, hashlib, html, json, os, re, secrets, threading, time, urllib.parse
@@ -106,6 +106,10 @@ def _qualifies(c, friend_id):
     if not u or not u["phone_verified_at"]: return False, "needs to add their phone number"
     n = int(c.execute("SELECT COUNT(*) AS n FROM fc_messages WHERE sender_id=? AND kind NOT IN ('system','call') AND deleted_at=''", (friend_id,)).fetchone()["n"])
     if n < MIN_MESSAGES: return False, "needs to send %d more message%s" % (MIN_MESSAGES - n, "" if MIN_MESSAGES - n == 1 else "s")
+    # a real person talks to more than one person: chats with at least 2 different people count
+    partners = int(c.execute("SELECT COUNT(DISTINCT o.user_id) AS n FROM fc_members m JOIN fc_members o ON o.conversation_id=m.conversation_id AND o.user_id<>m.user_id "
+                             "WHERE m.user_id=? AND EXISTS (SELECT 1 FROM fc_messages x WHERE x.conversation_id=m.conversation_id AND x.sender_id=m.user_id)", (friend_id,)).fetchone()["n"])
+    if partners < 2: return False, "needs to chat with one more person"
     return True, ""
 
 
@@ -236,7 +240,7 @@ def rules_page(h):
 <ol>
 <li><b>Promoter:</b> Future Chat (Skillvaya), South Africa. Contact: through the Help and safety screen in the app.</li>
 <li><b>Prize:</b> %(prize)s each calendar month, paid by EFT into a South African bank account in the winner's name within 30 days of the draw. The prize can't be exchanged for anything else.</li>
-<li><b>Free to enter:</b> no payment or purchase is needed or possible. The only way to get a ticket is to invite a friend to Future Chat. You get 1 ticket for every friend who joins during that month through your invite link, invite code or an invite sent to their phone number, saves their phone number in the app and sends at least %(n)d messages within 30 days of joining.</li>
+<li><b>Free to enter:</b> no payment or purchase is needed or possible. The only way to get a ticket is to invite a friend to Future Chat. You get 1 ticket for every friend who joins during that month through your invite link, invite code or an invite sent to their phone number, saves their phone number in the app and sends at least %(n)d messages to at least 2 different people within 30 days of joining.</li>
 <li>Each friend counts once, for the first person who invited them. Fake, duplicate or bought accounts don't count, and anyone who tries to cheat can be disqualified.</li>
 <li><b>The draw:</b> the app draws 1 winner at random from all tickets on the 1st of the next month (South African time). More tickets = more chances. A record of every draw is kept for at least 3 years.</li>
 <li><b>Who can enter:</b> anyone with a Future Chat account. Winners under 18 must have a parent or guardian accept the prize for them. The owner, staff and anyone who helps run the giveaway, and their close family, can't win.</li>

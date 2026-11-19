@@ -862,7 +862,7 @@ def _email_phone_start(h, u, d):
             r = c.execute("SELECT country FROM users WHERE id=?", (uid,)).fetchone()
             phone = normalize_phone(d.get("phone"), (r["country"] if r else "") or "ZA")
             if not phone: return h.sendj({"error": "Enter your full phone number, e.g. 082 123 4567."}, 400)
-            if c.execute("SELECT id FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>?", (phone, uid)).fetchone():
+            if c.execute("SELECT id FROM users WHERE (phone_e164=? OR phone=?) AND id<>? AND role<>'suspended'", (phone, phone, uid)).fetchone():   # ONE-NUMBER-01
                 return h.sendj({"error": "This number is already linked to another Skillvaya account."}, 409)
             c.execute("DELETE FROM fc_phone_codes WHERE user_id=?", (uid,))
             c.execute("UPDATE users SET phone=?,phone_e164=?,phone_verified_at=?,phone_verify_method='self' WHERE id=?", (phone, phone, A.now(), uid))
@@ -893,7 +893,7 @@ def _email_phone_start(h, u, d):
         # rather than blocking the person. A later email or SMS check can take the number back.
         with A.conn() as c:
             c.execute("DELETE FROM fc_phone_codes WHERE user_id=?", (uid,))
-            if c.execute("SELECT id FROM users WHERE phone_e164=? AND phone_verified_at<>'' AND id<>?", (phone, uid)).fetchone():
+            if c.execute("SELECT id FROM users WHERE (phone_e164=? OR phone=?) AND id<>? AND role<>'suspended'", (phone, phone, uid)).fetchone():   # ONE-NUMBER-01
                 return h.sendj({"error": "This number is already linked to another Skillvaya account."}, 409)
             c.execute("UPDATE users SET phone=?,phone_e164=?,phone_verified_at=?,phone_verify_method='self' WHERE id=?", (phone, phone, A.now(), uid))
         return h.sendj({"ok": True, "saved": True, "phone": phone, "method": "self"})
