@@ -54,6 +54,23 @@ footer{margin-top:30px;font-size:13px;color:#8fb0cf}footer a{color:#5ff0e2;margi
     document.getElementById('codeline').innerHTML = 'Your invite code: <span class="code">' + code.toUpperCase() + '</span><br>It\'s added automatically when you install with the button above.';
     try { localStorage.setItem('fc_ref', code); } catch (e) {}
   }
+  // FCR-01: game room invite  ?room=CODE&n=Name
+  var room = (q.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  if (room.length >= 4) {
+    var g = document.getElementById('get');
+    var android = /android/i.test(navigator.userAgent);
+    document.getElementById('give').hidden = true;
+    document.getElementById('t').textContent = name ? name + ' invited you to a game room' : 'You\'re invited to a game room';
+    document.title = document.getElementById('t').textContent + ' · Future Chat';
+    document.getElementById('sub').textContent = 'Talk with your squad while you play - the voice keeps going while your game is open. Up to 6 people, low data, free.';
+    var open = document.createElement('a'); open.className = 'b'; open.textContent = '🎮 Join the room in Future Chat';
+    open.href = android ? 'intent://room/' + room + '#Intent;scheme=futurechat;package=za.co.futurechat.app;S.browser_fallback_url=' + encodeURIComponent('https://play.google.com/store/apps/details?id=za.co.futurechat.app&referrer=' + encodeURIComponent('fcroom=' + room)) + ';end' : 'futurechat://room/' + room;
+    g.parentNode.insertBefore(open, g);
+    g.href = 'https://play.google.com/store/apps/details?id=za.co.futurechat.app&referrer=' + encodeURIComponent('fcroom=' + room);
+    g.textContent = 'Don\'t have it yet? Get Future Chat';
+    g.style.background = 'rgba(255,255,255,.12)'; g.style.color = '#fff'; g.style.boxShadow = 'none'; g.style.fontSize = '16px';
+    document.getElementById('codeline').innerHTML = 'Room code: <span class="code">' + room + '</span><br>Already have the app? You can also type this code in Circles → Game Rooms → Join with a code.';
+  }
 })();
 </script>
 </body>

@@ -373,11 +373,11 @@
   function scrCircles() {
     const bd = frame('Circles', 'Your people and groups', { action: [SVG.plus, 'New circle', () => FC().newGroup && FC().newGroup()] });
     let groups = []; try { groups = (FC().state().list || []).filter(c => c.kind === 'group'); } catch (_) {}
-    let h = '<div class="fca-acts"><button class="fca-act" data-a="new"><i>➕</i>New circle</button><button class="fca-act" data-a="tasks"><i>✅</i>All tasks</button><button class="fca-act" data-a="stokvel"><i>💰</i>Stokvels</button></div>';
+    let h = '<div class="fca-acts" style="grid-template-columns:repeat(2,1fr)"><button class="fca-act" data-a="new"><i>➕</i>New circle</button><button class="fca-act" data-a="games"><i>🎮</i>Game Rooms</button><button class="fca-act" data-a="tasks"><i>✅</i>All tasks</button><button class="fca-act" data-a="stokvel"><i>💰</i>Stokvels</button></div>';
     if (!groups.length) h += '<div class="fca-empty"><span class="big">◎</span><b>No circles yet</b>A circle is a group of your people — family, friends, a team or a stokvel — with its own chat, tasks, polls and meetings.</div>';
     else h += '<div class="fca-gl">Your circles</div><div class="fca-card">' + groups.map(g => '<button type="button" class="fca-row" data-g="' + g.id + '">' + avatar(g.title, '', 'sm') + '<span class="tx"><b>' + esc(g.title) + '</b><small>' + esc(g.last ? (g.last.mine ? 'You: ' : '') + g.last.text.replace(/:([a-z0-9_]+):/g, '') : 'No messages yet') + '</small></span>' + (g.unread ? '<span class="end"><b class="fc-badge" style="display:inline-grid">' + g.unread + '</b></span>' : '<span class="chev">›</span>') + '</button>').join('') + '</div>';
     bd.innerHTML = h;
-    bind(bd, { new: () => FC().newGroup(), tasks: () => push(scrTasks), stokvel: () => toast(groups.length ? 'Open a circle, then choose Stokvel in its chat menu' : 'Create a circle first, then start a stokvel in it') });
+    bind(bd, { new: () => FC().newGroup(), games: () => FCX.gameRooms ? FCX.gameRooms() : toast('Game Rooms is loading - try again in a moment'), tasks: () => push(scrTasks), stokvel: () => toast(groups.length ? 'Open a circle, then choose Stokvel in its chat menu' : 'Create a circle first, then start a stokvel in it') });
     bd.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { const g = groups.find(x => x.id === Number(b.dataset.g)); push(() => scrCircle(g.id, g.title)); });
   }
   function scrCircle(id, title) { return FCX.circleHome ? FCX.circleHome(id, title) : scrCirclePlans(id, title); }
@@ -1234,6 +1234,11 @@
   const _title = Object.getOwnPropertyDescriptor(Document.prototype, 'title');
   try { Object.defineProperty(document, 'title', { get() { return _title.get.call(document); }, set(v) { _title.set.call(document, String(v).replace(/Skillvaya/g, 'Future Chat')); } }); } catch (_) {}
 
+  (function typing() {
+    const fix = () => { const t = document.getElementById('fcText'); if (!t || t.dataset.fct) return; t.dataset.fct = '1';
+      t.setAttribute('autocorrect', 'on'); t.setAttribute('autocapitalize', 'sentences'); t.setAttribute('spellcheck', 'true'); t.setAttribute('autocomplete', 'on'); t.setAttribute('inputmode', 'text'); t.setAttribute('enterkeyhint', 'enter'); };
+    new MutationObserver(fix).observe(document.documentElement, { childList: true, subtree: true }); fix();
+  })();
   FCX.kit = { api, post, esc, $, toast, sheet, avatar, when, dueText, localInput, frame, push, pop, draw, go, row, bind, openPanel, X, FC, toggles, bindToggles, choiceRows, bindChoices, savePrefs, loadMe, itemForm, itemList, itemSheet, scrCirclePlans, scrTasks, scrCelebrations, confetti, redraw, SVG };
 
   // ---------------------------------------------------------------- start

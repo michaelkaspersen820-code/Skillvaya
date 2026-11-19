@@ -44,6 +44,7 @@ import fcfamily as FF
 import fcpay as FP
 import fcgive as FG
 import fcadmin as FCA
+import fcrooms as FCR   # FCR-01 Game Rooms
 import fcverify as FV
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -3570,7 +3571,7 @@ function svShowCallModal(title,state,mode){svEnsureCallOverlays();const modal=do
 function svSetLocalStream(stream){const v=document.getElementById('svCallLocalVideo');if(v){v.srcObject=stream;v.play().catch(()=>{});}}
 function svSetRemoteStream(stream){const v=document.getElementById('svCallRemoteVideo');if(v){v.srcObject=stream;v.play().catch(()=>{});}}
 let svIceCache=null,svIceCacheAt=0;
-async function svGetIceServers(){const fallback=[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}];if(svIceCache&&Date.now()-svIceCacheAt<300000)return svIceCache;try{const d=await Promise.race([api('/api/ice-servers'),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),2500))]);if(d&&Array.isArray(d.iceServers)&&d.iceServers.length){svIceCache=d.iceServers;svIceCacheAt=Date.now();return svIceCache}}catch(_){}return fallback}
+async function svGetIceServers(){/* SV-ICE-02 */const fallback=[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}];if(svIceCache&&Date.now()-svIceCacheAt<300000)return svIceCache;let saved=null;try{saved=JSON.parse(localStorage.getItem('sv_ice')||'null')}catch(_){}try{const d=await Promise.race([api('/api/ice-servers'),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),saved?4000:9000))]);if(d&&Array.isArray(d.iceServers)&&d.iceServers.length){svIceCache=d.iceServers;svIceCacheAt=Date.now();try{localStorage.setItem('sv_ice',JSON.stringify(d.iceServers))}catch(_){}return svIceCache}}catch(_){}return saved&&saved.length?saved:fallback}
 async function svCreatePeer(call){
   const pc=new RTCPeerConnection({iceServers:await svGetIceServers(),iceCandidatePoolSize:10,bundlePolicy:'max-bundle'});
   call.pc=pc;call.remoteStream=new MediaStream();svSetRemoteStream(call.remoteStream);
@@ -5111,9 +5112,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 # FCAPP-01: the stand-alone Future Chat app (Google Play) opens this. Same page, accounts, chats and calls as
                 # Future Chat inside Skillvaya; fcapp.js only changes the frame (full-screen Future Chat, own sign-in, Account menu).
                 fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
-                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=19" defer></script>', '<script src="/futurechat/fc.js?v=20" defer></script><script src="/futurechat/fcapp.js?v=14" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=2" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/fcadmin.js?v=5" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=19" defer></script>', '<script src="/futurechat/fc.js?v=20" defer></script><script src="/futurechat/fcapp.js?v=15" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=2" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/fcadmin.js?v=5" defer></script><script src="/futurechat/fcrooms.js?v=1" defer></script>', 1)
                 # FCAPP-02: the full original Future Chat look, and no Skillvaya branding while the app loads.
-                fc_page = fc_page.replace('<link rel="stylesheet" href="/futurechat/fc.css?v=4">', '<link rel="stylesheet" href="/futurechat/fc.css?v=4"><link rel="stylesheet" href="/futurechat/fcapp.css?v=10"><style>#svSplash{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)!important;color:#fff!important}#svSplash .sv-splash-brand{color:#1ed6c8!important}#svSplash .sv-splash-caption{color:#cfe3f2!important}</style>', 1)
+                fc_page = fc_page.replace('<link rel="stylesheet" href="/futurechat/fc.css?v=4">', '<link rel="stylesheet" href="/futurechat/fc.css?v=4"><link rel="stylesheet" href="/futurechat/fcapp.css?v=11"><style>#svSplash{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)!important;color:#fff!important}#svSplash .sv-splash-brand{color:#1ed6c8!important}#svSplash .sv-splash-caption{color:#cfe3f2!important}</style>', 1)
                 fc_page = fc_page.replace('<div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div>', '<div class="sv-splash-brand">Future Chat</div><div class="sv-splash-caption">Stay close. Wherever life takes you.</div>', 1)
                 fc_html = fc_page.encode("utf-8")
                 self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(fc_html))); self.end_headers(); self.wfile.write(fc_html); return
@@ -5235,6 +5236,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return FG.handle_get(self,path)
             if path.startswith("/api/fca/"):
                 return FCA.handle_get(self,path)
+            if path.startswith("/api/fcr/"):
+                return FCR.handle_get(self,path)
             if path.startswith("/api/fcv/"):
                 return FV.handle_get(self,path)
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
@@ -5687,6 +5690,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return FG.handle_post(self,path,d)
             if path.startswith("/api/fca/"):
                 return FCA.handle_post(self,path,d)
+            if path.startswith("/api/fcr/"):
+                return FCR.handle_post(self,path,d)
             if path.startswith("/api/fcv/"):
                 return FV.handle_post(self,path,d)
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
@@ -6985,6 +6990,8 @@ def fc_setup():
     with conn() as c: FG.init(c)
     FCA.bind(globals())
     with conn() as c: FCA.init(c)
+    FCR.bind(globals())
+    with conn() as c: FCR.init(c)
     FV.bind(globals())
     with conn() as c: FV.init(c)
     KAI.bind(globals())
