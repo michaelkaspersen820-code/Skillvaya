@@ -166,7 +166,7 @@
     await loadShop(); if (top() !== self) return;
     const cr = (P.me && P.me.credits) || {};
     bd.innerHTML = '<div class="fcp-grid">' +
-      tile('📣', 'Shout-out', 'Birthday, congrats, new baby, RIP… in Sponsored status', 'R5 a day', 'shout') +
+      tile('📣', 'Shout-out', 'Birthday, congrats, new baby, RIP… in Status', 'R5 a day', 'shout') +
       tile('💍', 'Propose', 'Ask the big question where everyone can see', 'R29', 'propose') +
       tile('🎁', 'Premium card', 'Animated card with a tune and your voice', price('futurechat_card_premium') + (cr.card ? ' · ' + cr.card + ' ready' : ''), 'card') +
       tile('💌', 'Invitation', 'Wedding, party, church — with RSVP', price('futurechat_event_invite') + (cr.event ? ' · ' + cr.event + ' ready' : ''), 'event') +
@@ -179,6 +179,7 @@
   }
   const tile = (i, t, s, p, a) => '<button class="fcp-tile" data-a="' + a + '"><i>' + i + '</i><b>' + esc(t) + '</b><small>' + esc(s) + '</small><em>' + esc(p) + '</em></button>';
   P.open = () => { go('you'); push(scrShop); };
+  P.shout = propose => { openPanel(); push(() => scrShout(propose)); };
   function pickChat(cb) {
     const c = curConv(); if (c) { cb(c); return; }
     const list = chats();
@@ -200,18 +201,20 @@
     thanks: ['🙏', 'Thank you', '#0f766e', '#84cc16'], grad: ['🎓', 'Graduation', '#1e3a8a', '#ca8a04'], wedding: ['💒', 'Wedding', '#a16207', '#fde68a'], faith: ['🕊️', 'Blessings', '#0369a1', '#a5f3fc'],
     memorial: ['🕯️', 'In loving memory', '#1f2937', '#475569'], lost: ['🔎', 'Lost & found', '#b45309', '#f59e0b'], propose: ['💍', 'Proposal', '#831843', '#f43f5e'] };
   function scrShout(propose) {
-    const bd = frame(propose ? 'Propose 💍' : 'Send a shout-out', propose ? 'Ask the big question in Status' : 'Seen by everyone who opens Sponsored');
-    let design = propose ? 'propose' : 'bday', plan = propose ? 'futurechat_propose_1d' : 'futurechat_shout_1d';
-    bd.innerHTML = (propose ? '<div class="fcp-prop"><div class="rings">💍</div><b>Will you marry me?</b><p>Your proposal shows in Sponsored status for a day, with hearts and roses. Your partner also gets a special card in your chat with a <b>YES</b> button — and when they say yes, everyone sees it.</p></div>'
+    const bd = frame(propose ? 'Propose 💍' : 'Send a shout-out', propose ? 'Ask the big question in Status' : 'Shows in Shout-outs at the top of Status');
+    let design = propose ? 'propose' : 'bday', plan = propose ? 'futurechat_propose_1d' : 'futurechat_shout_1d', audience = 'all';
+    bd.innerHTML = (propose ? '<div class="fcp-prop"><div class="rings">💍</div><b>Will you marry me?</b><p>Your proposal shows in Shout-outs in Status for a day, with hearts and roses. Your partner also gets a special card in your chat with a <b>YES</b> button — and when they say yes, everyone sees it.</p></div>'
         : '<div class="fcp-designs">' + Object.keys(DESIGNS).filter(k => k !== 'propose').map(k => '<button data-d="' + k + '" class="' + (k === design ? 'on' : '') + '" style="background:linear-gradient(135deg,' + DESIGNS[k][2] + ',' + DESIGNS[k][3] + ')"><i>' + DESIGNS[k][0] + '</i><span>' + DESIGNS[k][1] + '</span></button>').join('') + '</div>') +
       (propose ? '<label class="fca-field"><span>Your partner\'s Future Chat number</span><input id="fcpTo" type="tel" placeholder="e.g. 082 123 4567"></label>' : '') +
       '<label class="fca-field"><span>' + (propose ? 'Your question' : 'Headline') + '</span><input id="fcpH" maxlength="60" placeholder="' + (propose ? 'e.g. Lerato, will you marry me?' : 'e.g. Happy 40th, Mom! 🎉') + '"></label>' +
       '<label class="fca-field"><span>' + (propose ? 'A few words from your heart' : 'Message (optional)') + '</span><textarea id="fcpB" rows="3" maxlength="180"></textarea></label>' +
       '<div class="fca-field"><span>Photo (optional)</span><input id="fcpF" type="file" hidden accept="image/jpeg,image/png,image/webp"><button type="button" class="fca-pick" id="fcpPick"><i>📎</i><span><b id="fcpPN">Add a photo</b><small>Tap to choose from your phone</small></span></button></div>' +
+      '<div class="fca-gl">Who sees it</div><div class="fca-seg" id="fcpAud" style="margin-bottom:12px"><button data-au="all" class="on">🌍 Everyone</button><button data-au="contacts">👥 Only my contacts</button></div>' +
       (propose ? '' : '<div class="fca-gl">How long</div><div class="fcaad-plans"><button data-p="futurechat_shout_1d" class="on"><b>1 day</b><em>R5</em></button><button data-p="futurechat_shout_3d"><b>3 days</b><em>R15</em></button></div>') +
       '<p class="fca-note">Every shout-out is checked before it shows. Be kind: no insults, private details or things that could hurt someone. If it isn\'t approved, you get your money back.</p>' +
       '<button class="fca-btn" data-a="go">' + (propose ? 'Propose · R29' : 'Send shout-out') + '</button>';
     bd.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { design = b.dataset.d; bd.querySelectorAll('[data-d]').forEach(x => x.classList.toggle('on', x === b)); if (design === 'memorial') $('#fcpH', bd).placeholder = 'e.g. Rest in peace, Gogo Thandi'; });
+    bd.querySelectorAll('[data-au]').forEach(b => b.onclick = () => { audience = b.dataset.au; bd.querySelectorAll('[data-au]').forEach(x => x.classList.toggle('on', x === b)); });
     bd.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { plan = b.dataset.p; bd.querySelectorAll('[data-p]').forEach(x => x.classList.toggle('on', x === b)); });
     $('#fcpPick', bd).onclick = () => $('#fcpF', bd).click();
     $('#fcpF', bd).onchange = () => { const f = $('#fcpF', bd).files[0]; $('#fcpPN', bd).textContent = f ? f.name : 'Add a photo'; };
@@ -221,7 +224,7 @@
       const media = f ? { mime: f.type, data_base64: await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(String(fr.result)); fr.readAsDataURL(f); }) } : null;
       b.disabled = true; b.textContent = 'Sending…';
       try {
-        const d = await post('/api/home-ads/create', { kind: f ? 'photo' : 'word', headline: head, body: $('#fcpB', bd).value.trim(), cta: '', advertiser: ((X.me || {}).name || '').split(' ')[0], product_id: plan, design, to_phone: propose ? $('#fcpTo', bd).value : '', media });
+        const d = await post('/api/home-ads/create', { kind: f ? 'photo' : 'word', headline: head, body: $('#fcpB', bd).value.trim(), cta: '', advertiser: ((X.me || {}).name || '').split(' ')[0], product_id: plan, design, audience, to_phone: propose ? $('#fcpTo', bd).value : '', media });
         if (d.status === 'active' || d.status === 'queued') { toast(propose ? 'Your proposal is live 💍 Good luck!' : 'Your shout-out is live 📣'); pop(); return; }
         if (!(window.SkillvayaBilling && window.SkillvayaBilling.purchaseAd)) { toast('Update Future Chat from Google Play to pay in the app'); b.disabled = false; return; }
         window.haAdResult = json => { let r = {}; try { r = JSON.parse(json); } catch (_) {} toast(r.ok ? (propose ? 'Paid 💍 It goes live as soon as it\'s checked' : 'Paid 📣 It goes live as soon as it\'s checked') : (r.cancelled ? 'Cancelled. You were not charged.' : (r.message || 'Payment not confirmed yet'))); b.disabled = false; if (r.ok) pop(); };
@@ -237,7 +240,7 @@
     const fx = prop ? '<div class="fcp-fx hearts">' + Array.from({ length: 14 }, (_, i) => '<span style="left:' + (i * 7 + 3) + '%;animation-delay:' + (i * .37).toFixed(2) + 's">' + ['❤️', '🌹', '💖', '💍'][i % 4] + '</span>').join('') + '</div>'
       : x.design === 'memorial' ? '' : '<div class="fcp-fx">' + Array.from({ length: 10 }, (_, i) => '<span style="left:' + (i * 10 + 4) + '%;animation-delay:' + (i * .45).toFixed(2) + 's">' + [dz[0], '✨', '🎉', '💫'][i % 4] + '</span>').join('') + '</div>';
     const said = prop && x.answer === 'yes' ? '<div class="fcp-yes">💍 ' + esc(x.to_name || 'They') + ' said YES! 🎉</div>' : '';
-    return { label: prop ? '💍 A proposal' : (x.design === 'memorial' ? '🕯️ In memory' : '📣 Shout-out'), from: ad.advertiser || 'Someone',
+    return { label: (prop ? '💍 A proposal' : (x.design === 'memorial' ? '🕯️ In memory' : '📣 Shout-out')) + (x.audience === 'contacts' ? ' · contacts' : ''), from: ad.advertiser || 'Someone',
       html: '<div class="fcp-stage' + (x.design === 'memorial' ? ' quiet' : '') + '" style="background:linear-gradient(160deg,' + dz[2] + ',' + dz[3] + ')">' + fx +
         (/^image\//.test(ad.mime || '') ? '<img src="' + esc(ad.media) + '" alt="">' : '<div class="big">' + dz[0] + '</div>') + '<h3>' + esc(ad.headline) + '</h3>' + (ad.body ? '<p>' + esc(ad.body) + '</p>' : '') + said + '<small>— ' + esc(ad.advertiser || '') + '</small></div>' };
   };

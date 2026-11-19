@@ -131,7 +131,7 @@ COLS = "id,user_id,kind,headline,body,cta,target,advertiser,media_mime,product_i
 def _extra_public(r):
     try: ex = json.loads(r["extra"] or "{}")
     except Exception: ex = {}
-    return {k: ex[k] for k in ("design", "to_name", "answer") if k in ex}
+    return {k: ex[k] for k in ("design", "to_name", "answer", "audience") if k in ex}
 
 # Small in-memory cache so popular ad media is not decoded from the database on every view.
 _MEDIA = collections.OrderedDict()
@@ -318,7 +318,7 @@ def handle_post(h, path, d):
         if tier in ("shout", "propose"):
             design = "propose" if tier == "propose" else str(d.get("design") or "congrats")
             if design not in SHOUT_DESIGNS: design = "congrats"
-            extra = {"design": design}
+            extra = {"design": design, "audience": "contacts" if d.get("audience") == "contacts" else "all"}
             target = ""
             if tier == "propose":
                 ph = A.FC.normalize_phone(str(d.get("to_phone") or ""))

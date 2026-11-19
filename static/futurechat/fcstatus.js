@@ -20,7 +20,7 @@
   const css = document.createElement('style');
   css.textContent = [
     '#fcStatusStrip{display:flex;gap:14px;overflow-x:auto;padding:10px 4px 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}',
-    '#fcStatusStrip::-webkit-scrollbar{display:none}',
+    '#fcStatusStrip::-webkit-scrollbar{display:none}','#fcStatusStrip .fcs-ring.so{background:conic-gradient(#f43f5e,#f59e0b,#ec4899,#f43f5e)!important}',
     '#fcStatusStrip .fcs-it{display:block!important;flex:none!important;width:66px!important;height:auto!important;min-height:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;padding:0!important;margin:0!important;color:#dbe9f7!important;font:inherit;text-align:center;cursor:pointer}',
     '#fcStatusStrip .fcs-ring{display:block!important;box-sizing:border-box;position:relative;width:60px!important;height:60px!important;margin:0 auto;border-radius:50%;padding:3px;background:conic-gradient(#5fd3e6,#8ab8ff,#5fd3e6)}',
     '#fcStatusStrip .fcs-av{box-sizing:border-box}#fcStatusStrip .fcs-nm{display:block!important;color:#dbe9f7!important;font-size:11.5px!important;line-height:1.3!important;max-width:66px}',
@@ -70,6 +70,7 @@
     const me = d.me || {};
     let html = '<button class="fcs-it" data-k="me" aria-label="My status"><span class="fcs-ring ' + (d.mine.length ? 'seen' : 'none') + '"><span class="fcs-av" style="background:hsl(' + hue(me.name) + ',55%,38%)">' + esc(initials(me.name)) + '</span><span class="fcs-plus">+</span></span><span class="fcs-nm">My status</span></button>';
     if (!d.sponsored || !d.sponsored.length) d.sponsored = [HOUSE_AD];
+    if (d.shoutouts && d.shoutouts.length) html += '<button class="fcs-it" data-k="so" aria-label="Shout-outs"><span class="fcs-ring so"><span class="fcs-av" style="background:linear-gradient(135deg,#be185d,#f59e0b);font-size:20px">📣</span></span><span class="fcs-nm">Shout-outs</span></button>';
     html += '<button class="fcs-it" data-k="ad" aria-label="Sponsored status"><span class="fcs-ring ad"><span class="fcs-av" style="background:#3a2a00;font-size:12px">AD</span></span><span class="fcs-nm">Sponsored</span></button>';
     (d.others || []).forEach((p, i) => { html += '<button class="fcs-it" data-k="p" data-i="' + i + '" aria-label="' + esc(p.name) + ' status"><span class="fcs-ring ' + (p.unseen ? '' : 'seen') + '"><span class="fcs-av" style="background:hsl(' + hue(p.name) + ',55%,38%)">' + esc(initials(p.name)) + '</span></span><span class="fcs-nm">' + esc(p.name.split(' ')[0]) + '</span></button>'; });
     if (strip.dataset.html !== html) { strip.innerHTML = html; strip.dataset.html = html; }
@@ -77,6 +78,7 @@
       const k = b.dataset.k;
       if (k === 'me') { if (d.mine.length) openViewer([{ name: 'My status', items: d.mine, mine: true }], 0); else compose(); }
       else if (k === 'ad') openAds(d.sponsored);
+      else if (k === 'so') openAds(d.shoutouts);
       else openViewer(d.others.map(p => ({ name: p.name, items: p.items })), Number(b.dataset.i));
     });
     const plus = strip.querySelector('[data-k="me"] .fcs-plus');

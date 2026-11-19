@@ -73,10 +73,17 @@ def _sponsored(uid=0):
             rows = c.execute("SELECT " + HA.COLS + " FROM home_ads WHERE status='active' ORDER BY starts_at DESC LIMIT 200").fetchall()
             seen = {int(r["ad_id"]): int(r["n"]) for r in c.execute("SELECT ad_id,n FROM fc_ad_seen WHERE user_id=? AND day=?", (uid, day)).fetchall()} if uid else {}
         ads = []
+        friends_of = {}
         for r in rows:
             cap = HA.SHOWS_PER_PERSON.get(r["kind"], 2)
             if seen.get(int(r["id"]), 0) >= cap: continue
-            ads.append(HA._public(r))
+            a = HA._public(r)
+            if a.get("tier") in ("shout", "propose") and (a.get("x") or {}).get("audience") == "contacts" and int(r["user_id"]) != uid:
+                owner = int(r["user_id"])
+                if owner not in friends_of:
+                    with A.conn() as c2: friends_of[owner] = _contacts(c2, owner)
+                if uid not in friends_of[owner]: continue
+            ads.append(a)
         key = lambda a: hashlib.sha1(("%s:%s:%s" % (uid, day, a["id"])).encode()).hexdigest()
         fc = sorted([a for a in ads if a.get("fc")], key=key); other = sorted([a for a in ads if not a.get("fc")], key=key)
         ads = (fc + other)[:HA.FC_CAPACITY]
@@ -126,7 +133,9 @@ def handle_get(h, path):
         others = sorted(people.values(), key=lambda p: p["latest"], reverse=True)   # newest first
         others.sort(key=lambda p: p["unseen"] == 0)                                  # then unseen before seen (stable)
         sp = _sponsored(uid)
-        return h.sendj({"me": {"id": uid, "name": u["name"]}, "mine": mine, "others": others, "sponsored": sp, "sponsored_rings": _rings(sp)})
+        return h.sendj({"me": {"id": uid, "name": u["name"]}, "mine": mine, "others": others, "sponsored": [a for a in sp if a.get("tier") not in ("shout", "propose")],
+                        "sponsored_rings": _rings([a for a in sp if a.get("tier") not in ("shout", "propose")]),
+                        "shoutouts": [a for a in sp if a.get("tier") in ("shout", "propose")]})
     m = re.fullmatch(r"/api/fc/status/media/(\d+)", path)
     if m:
         sid = int(m.group(1))
