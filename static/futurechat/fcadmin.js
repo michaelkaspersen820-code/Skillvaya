@@ -271,6 +271,34 @@
         del: async () => { done(); try { await post('/api/fcx/calls/delete', { id: c.id }); toast('Removed from call history'); if (rowEl) rowEl.remove(); } catch (e) { toast(e.message); } }
       }));
   }
+
+  // ---------------------------------------------------------------- FC-CALLWAIT-01: someone else calls while you're on a Future Chat call
+  let cwId = '', cwBusy = false;
+  async function callWaitingTick() {
+    const modal = document.getElementById('svVideoCallModal');
+    const inCall = modal && !modal.classList.contains('hidden');
+    let bar = document.getElementById('fcaCW');
+    if (!inCall) { if (bar) bar.remove(); cwId = ''; return; }
+    if (cwBusy) return; cwBusy = true;
+    try {
+      const meId = Number(((window.FutureChat && window.FutureChat.state && window.FutureChat.state().me) || {}).id || 0);
+      const d = await api('/api/video-calls');
+      const w = (d.items || []).find(x => x.status === 'ringing' && meId && Number(x.callee_id) === meId && Number(x.caller_id) !== meId);
+      bar = document.getElementById('fcaCW');
+      if (!w) { if (bar) bar.remove(); cwId = ''; return; }
+      if (cwId === String(w.id) && bar) return;
+      cwId = String(w.id); if (bar) bar.remove();
+      bar = document.createElement('div'); bar.id = 'fcaCW';
+      bar.style.cssText = 'position:fixed;left:10px;right:10px;top:calc(10px + env(safe-area-inset-top));z-index:2147483000;background:#0f2a3d;border:2px solid #1ed6c8;border-radius:16px;padding:12px 14px;color:#fff;box-shadow:0 12px 30px rgba(0,0,0,.45);font:15px system-ui,sans-serif';
+      bar.innerHTML = '<div style="display:flex;align-items:center;gap:10px"><span style="font-size:24px">' + (w.media_type === 'video' ? '🎥' : '📞') + '</span><div style="flex:1;min-width:0"><b style="display:block">' + esc(w.caller_name || 'Someone') + ' is calling</b><small style="color:#9cb7cc">You\'re on another call</small></div></div>' +
+        '<div style="display:flex;gap:8px;margin-top:10px"><button data-cw="no" style="flex:1;padding:10px;border-radius:12px;border:0;background:#d84a4a;color:#fff;font-weight:700">Decline</button><button data-cw="yes" style="flex:1;padding:10px;border-radius:12px;border:0;background:#1ed6c8;color:#06283a;font-weight:700">End &amp; answer</button></div>';
+      document.body.appendChild(bar);
+      const id = String(w.id);
+      bar.querySelector('[data-cw="no"]').onclick = async () => { bar.remove(); try { await post('/api/video-calls', { action: 'reject', call_id: id }); toast('Call declined'); } catch (e) { toast(e.message); } };
+      bar.querySelector('[data-cw="yes"]').onclick = () => { bar.remove(); cwId = ''; try { if (typeof window.closeSkillvayaVideoCall === 'function') window.closeSkillvayaVideoCall(true); } catch (_) {} toast('Connecting the new call…'); };
+    } catch (_) {} finally { cwBusy = false; }
+  }
+  setInterval(callWaitingTick, 3000);
   A.open = () => { openPanel(); go('you'); push(scrControl); };
   try { if (/[?&]fca=1/.test(location.search)) setTimeout(() => { me().then(m => { if (m && m.owner) A.open(); }); }, 1500); } catch (_) {}
 })();
