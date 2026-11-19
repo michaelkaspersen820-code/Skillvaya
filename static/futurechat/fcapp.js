@@ -1185,7 +1185,7 @@
       (create ? '<label for="fcaName">Your name</label><input id="fcaName" type="text" autocomplete="name" required>' : '') +
       '<label for="fcaEmail">Email</label><input id="fcaEmail" type="email" autocomplete="email" inputmode="email" required>' +
       (create ? '<label for="fcaPhone">Mobile number</label><input id="fcaPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="e.g. 082 123 4567" required>' : '') +
-      '<label for="fcaPw">Password' + (create ? ' (8 or more characters)' : '') + '</label><input id="fcaPw" type="password" autocomplete="' + (create ? 'new-password' : 'current-password') + '" required>' +
+      '<label for="fcaPw">Password' + (create ? ' (4 or more characters)' : '') + '</label><input id="fcaPw" type="password" autocomplete="' + (create ? 'new-password' : 'current-password') + '" required>' +
       '<label class="fca-tick"><input id="fcaTerms" type="checkbox"><span>I have read and agree to the <a href="https://futurechat-v5lx.onrender.com/terms.html" target="_blank" rel="noopener">Terms of Use</a> and the <a href="https://futurechat-v5lx.onrender.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>. I am 13 or older.</span></label>' +
       '<button class="fca-go" type="submit">' + (create ? 'Create my account' : 'Sign in') + '</button><div class="fca-msg" id="fcaMsg" role="alert"></div>' + (create ? '' : '<button type="button" class="fca-forgot" id="fcaForgot">Forgot your password?</button>') + '</form>' +
       '<p class="fca-note2" data-keep-brand>' + (create ? 'Your number lets friends and family find you and call you on Future Chat. We confirm it with a code.' : 'One account for Future Chat and Skillvaya: sign in with the same email and password.') +
@@ -1222,7 +1222,7 @@
       try {
         let d;
         const cc = (() => { try { return (typeof window.svCountry === 'function' && window.svCountry()) || 'ZA'; } catch (_) { return 'ZA'; } })();
-        if (create) d = await post('/api/signup', { name: v('fcaName').trim(), email: v('fcaEmail').trim(), phone: v('fcaPhone').trim(), password: v('fcaPw'), role: 'customer', country: cc, accept_terms: true });
+        if (create) d = await post('/api/signup', { name: v('fcaName').trim(), email: v('fcaEmail').trim(), phone: v('fcaPhone').trim(), password: v('fcaPw'), role: 'customer', country: cc, accept_terms: true, app: 'futurechat' });
         else d = await post('/api/login', { email: v('fcaEmail').trim(), password: v('fcaPw'), accept_terms: true });
         try { localStorage.setItem('skillvaya_token', d.token); localStorage.setItem('sv_token', d.token); localStorage.setItem('skillvaya_user', JSON.stringify({ id: d.user.id, name: d.user.name, email: d.user.email, role: d.user.role })); } catch (_) {}
         location.replace('/futurechat-app' + (create ? '?fc_verify=1' : ''));

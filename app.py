@@ -47,6 +47,7 @@ import fcadmin as FCA
 import fcrooms as FCR   # FCR-01 Game Rooms
 import fcverify as FV
 import testers as TST   # TST-01 who is really testing
+import loginguard as LG   # LG-01 wrong-password limit
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 TERMS_VERSION = "2026-10-21-v1.2"
@@ -4839,7 +4840,7 @@ class Handler(BaseHTTPRequestHandler):
             data=page.encode(); self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(data))); self.end_headers(); self.wfile.write(data); return
         if path == "/reset-password":
             page = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Choose a new password</title><style>body{font:16px system-ui;background:#f2f6fb;color:#142b4a;min-height:100vh;display:grid;place-items:center;margin:0;padding:18px}.card{background:white;width:min(100%,440px);padding:28px;border-radius:16px}label{display:block;margin:16px 0 6px}input,button{box-sizing:border-box;width:100%;padding:13px;border-radius:9px;font:inherit}input{border:1px solid #c8d5e5}button{margin-top:16px;background:#102f5a;color:white;border:0;font-weight:700}a{color:#1b5d99}#status{min-height:24px}</style></head><body><main class="card"><h1>Choose a new password</h1><p>Use at least 12 characters. The link expires after 30 minutes and works once.</p><form id="f"><label>New password</label><input id="pw" type="password" minlength="12" maxlength="256" autocomplete="new-password" required><label>Confirm password</label><input id="confirm" type="password" minlength="12" maxlength="256" autocomplete="new-password" required><button>Update password</button><p id="status" role="status"></p></form><a href="/">Back to sign in</a></main><script>document.getElementById('f').onsubmit=async e=>{e.preventDefault();let s=document.getElementById('status'),p=document.getElementById('pw').value,c=document.getElementById('confirm').value;if(p!==c){s.textContent='Passwords do not match.';return}let token=new URLSearchParams(location.search).get('token');if(!token){s.textContent='Invalid link. Request another.';return}try{let r=await fetch('/api/password-reset/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:p})}),d=await r.json();if(!r.ok)throw Error(d.error||'Could not reset password');s.textContent='Password updated. You can now sign in.';e.target.reset()}catch(x){s.textContent=x.message}};</script></body></html>"""
-            if "app=fc" in (urlparse(self.path).query or ""): page=page.replace("</style>","body{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)}.card{color:#142b4a}button{background:#12a89c}a{color:#0c7f76}</style>",1).replace("</body>","<script>/* FC-EYE-01 */document.querySelectorAll('input[type=password]').forEach(function(i){var w=document.createElement('div');w.style.position='relative';i.parentNode.insertBefore(w,i);w.appendChild(i);i.style.paddingRight='48px';var b=document.createElement('button');b.type='button';b.style.cssText='position:absolute;right:6px;top:50%;transform:translateY(-50%);width:auto;margin:0;padding:8px;background:none;border:0;font-size:20px;line-height:1;cursor:pointer;color:#142b4a';function set(v){i.type=v?'text':'password';b.textContent=v?'\\ud83d\\ude48':'\\ud83d\\udc41';b.setAttribute('aria-label',v?'Hide password':'Show password')}b.onclick=function(){set(i.type==='password')};set(false);w.appendChild(b)});</script></body>",1).replace('minlength="12"','minlength="8"').replace("Use at least 12 characters.","Use at least 8 characters.").replace("JSON.stringify({token,password:p})","JSON.stringify({token,password:p,app:'fc'})",1).replace("<main class=\"card\">","<main class=\"card\"><div style=\"font-weight:800;color:#0c7f76;letter-spacing:.04em;margin-bottom:6px\">FUTURE CHAT</div>",1).replace("<a href=\"/\">Back to sign in</a>","<p style=\"margin:14px 0 0\">After saving, go back to the Future Chat app on your phone and sign in with your new password.</p>",1)   # FC-RESET-01
+            if "app=fc" in (urlparse(self.path).query or ""): page=page.replace("</style>","body{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)}.card{color:#142b4a}button{background:#12a89c}a{color:#0c7f76}</style>",1).replace("</body>","<script>/* FC-EYE-01 */document.querySelectorAll('input[type=password]').forEach(function(i){var w=document.createElement('div');w.style.position='relative';i.parentNode.insertBefore(w,i);w.appendChild(i);i.style.paddingRight='48px';var b=document.createElement('button');b.type='button';b.style.cssText='position:absolute;right:6px;top:50%;transform:translateY(-50%);width:auto;margin:0;padding:8px;background:none;border:0;font-size:20px;line-height:1;cursor:pointer;color:#142b4a';function set(v){i.type=v?'text':'password';b.textContent=v?'\\ud83d\\ude48':'\\ud83d\\udc41';b.setAttribute('aria-label',v?'Hide password':'Show password')}b.onclick=function(){set(i.type==='password')};set(false);w.appendChild(b)});</script></body>",1).replace('minlength="12"','minlength="4"').replace("Use at least 12 characters.","Use at least 4 characters.").replace("JSON.stringify({token,password:p})","JSON.stringify({token,password:p,app:'fc'})",1).replace("<main class=\"card\">","<main class=\"card\"><div style=\"font-weight:800;color:#0c7f76;letter-spacing:.04em;margin-bottom:6px\">FUTURE CHAT</div>",1).replace("<a href=\"/\">Back to sign in</a>","<p style=\"margin:14px 0 0\">After saving, go back to the Future Chat app on your phone and sign in with your new password.</p>",1)   # FC-RESET-01
             data=page.encode(); self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(data))); self.end_headers(); self.wfile.write(data); return
         if path == "/account-deletion":
             page_path=os.path.join(ROOT,"account_deletion.html")
@@ -5119,7 +5120,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 # FCAPP-01: the stand-alone Future Chat app (Google Play) opens this. Same page, accounts, chats and calls as
                 # Future Chat inside Skillvaya; fcapp.js only changes the frame (full-screen Future Chat, own sign-in, Account menu).
                 fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
-                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fc.js?v=22" defer></script><script src="/futurechat/fcapp.js?v=17" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=2" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/fcadmin.js?v=6" defer></script><script src="/futurechat/testers.js?v=1" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fc.js?v=22" defer></script><script src="/futurechat/fcapp.js?v=18" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=2" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/fcadmin.js?v=6" defer></script><script src="/futurechat/testers.js?v=1" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
                 # FCAPP-02: the full original Future Chat look, and no Skillvaya branding while the app loads.
                 fc_page = fc_page.replace('<link rel="stylesheet" href="/futurechat/fc.css?v=4">', '<link rel="stylesheet" href="/futurechat/fc.css?v=4"><link rel="stylesheet" href="/futurechat/fcapp.css?v=11"><style>#svSplash{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)!important;color:#fff!important}#svSplash .sv-splash-brand{color:#1ed6c8!important}#svSplash .sv-splash-caption{color:#cfe3f2!important}</style>', 1)
                 fc_page = fc_page.replace('<div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div>', '<div class="sv-splash-brand">Future Chat</div><div class="sv-splash-caption">Stay close. Wherever life takes you.</div>', 1)
@@ -5883,7 +5884,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return self.sendj({"ok":True,"message":"We sent a reset link to "+masked+". Emails can take a few minutes to arrive \u2014 check your inbox and spam folder. Every link we send works for 30 minutes, so you don't need to ask again."},202)
             if path == "/api/password-reset/confirm":
                 raw=str(d.get("token","")).strip(); password=d.get("password","")
-                minpw=8 if str(d.get("app",""))=="fc" else 12   # FC-EYE-01: Future Chat sign-up allows 8+, so its reset does too
+                minpw=4 if str(d.get("app",""))=="fc" else 12   # FC-EYE-01: Future Chat sign-up allows 8+, so its reset does too
                 if not isinstance(password,str) or len(password)<minpw or len(password)>256: return self.sendj({"error":"Choose a password between %d and 256 characters."%minpw},400)
                 if len(raw)<30 or len(raw)>200: return self.sendj({"error":"This reset link is invalid or expired. Request a new one."},400)
                 th=hashlib.sha256(raw.encode()).hexdigest(); current=datetime.datetime.now(datetime.timezone.utc)
@@ -5901,6 +5902,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     user=c.execute("SELECT id FROM users WHERE id=?",(row["user_id"],)).fetchone()
                     if not user: return self.sendj({"error":"This account no longer exists."},400)
                     c.execute("UPDATE users SET password_hash=? WHERE id=?",(hashpw(password),row["user_id"]))
+                    em=c.execute("SELECT email FROM users WHERE id=?",(row["user_id"],)).fetchone()
+                    if em: c.execute("DELETE FROM lg_fails WHERE email=?",(str(em["email"] or "").strip().lower(),))   # LG-01
                     c.execute("UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND id<>? AND used_at=''",(now(),row["user_id"],row["id"]))
                 # Force re-authentication on every session after a password reset.
                 for session_token, session_user in list(SESSIONS.items()):
@@ -6556,7 +6559,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 terms_accepted = d.get("accept_terms") is True
                 terms_version = setting("terms_version", TERMS_VERSION)
                 if not terms_accepted: return self.sendj({"error":"You must read and accept the Skillvaya Terms, Conditions, Rules & Safety before creating an account."},400)
-                if not name or "@" not in email or len(pw)<8 or role not in ("customer","provider"): return self.sendj({"error":"Enter a name, valid email, password of 8+ characters, and valid account type."},400)
+                minpw=4 if str(d.get("app",""))=="futurechat" else 8   # LG-01: Future Chat allows short passwords (guessing is stopped by the wrong-password limit)
+                if not name or "@" not in email or len(pw)<minpw or role not in ("customer","provider"): return self.sendj({"error":"Enter a name, valid email, password of %d+ characters, and valid account type."%minpw},400)
                 phone=FC.normalize_phone(phone,country or "ZA")
                 if not phone: return self.sendj({"error":"Enter your mobile number. It's used for Future Chat, calls and verifying your account."},400)
                 with conn() as c:
@@ -6572,8 +6576,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return self.sendj({"token":t,"user":u})
             if path=="/api/login":
                 email=d.get("email","").lower().strip(); pw=d.get("password","")
+                lock=LG.locked_message(email)   # LG-01
+                if lock: return self.sendj({"error":lock,"locked":True},429)
                 with conn() as c: row=c.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone()
-                if not row or not verify_password(row["password_hash"],pw):return self.sendj({"error":"Email or password is incorrect."},401)
+                if not row or not verify_password(row["password_hash"],pw):
+                    LG.failed(email)
+                    return self.sendj({"error":"Email or password is incorrect."},401)
+                LG.cleared(email)
                 if row["role"]=="suspended": return self.sendj({"error":"This account is suspended. Contact Skillvaya support if you believe this is a mistake."},403)
                 if row["role"]!="admin" and d.get("accept_terms") is not True:
                     return self.sendj({"error":"Please read the current Terms, Conditions, Rules & Safety and tick the agreement box before signing in.","terms_required":True,"terms_url":"/terms"},400)
@@ -7021,6 +7030,8 @@ def fc_setup():
     with conn() as c: FCA.init(c)
     TST.bind(globals())
     with conn() as c: TST.init(c)
+    LG.bind(globals())
+    with conn() as c: LG.init(c)
     FCR.bind(globals())
     with conn() as c: FCR.init(c)
     FV.bind(globals())
