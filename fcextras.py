@@ -189,6 +189,10 @@ def _touch(uid):
                 c.execute("UPDATE fcx_prefs SET last_seen=? WHERE user_id=?", (stamp, uid))
             else:
                 c.execute("INSERT INTO fcx_prefs(user_id,data,last_seen,updated_at) VALUES(?,?,?,?)", (uid, "{}", stamp, stamp))
+            try:
+                import fcadmin as FA   # FCA-01: daily active people for Future Chat Control
+                FA.day(c, uid)
+            except Exception: pass
     except Exception as exc:
         print("Future Chat last seen skipped:", type(exc).__name__)
 
@@ -902,11 +906,19 @@ def handle_post(h, path, d):
         ids = [int(x) for x in (d.get("conversations") or []) if str(x).isdigit()][:100]
         if not body: return h.sendj({"error": "Type your message first."}, 400)
         if not ids: return h.sendj({"error": "Choose at least one chat."}, 400)
+        import fcadmin as FA   # FCA-01: same spam rules as sending one by one; businesses use their client list
+        if len(ids) > 10 and u.get("role") != "admin":
+            return h.sendj({"error": "You can send one message to up to 10 chats at once. Businesses can message all their clients from You > My clients."}, 400)
         sent = []
         with A.conn() as c:
             for cid in ids:
                 if not _member(c, cid, uid) or direct_block(c, cid, uid): continue
+                bad = FA.check_send(c, u, cid, body, "text", {}, 0)
+                if bad:
+                    if sent: break
+                    return h.sendj(*bad)
                 _post_in_chat(c, cid, u, body, {"broadcast": 1}); sent.append(cid)
+                FA.log_send(c, uid, cid, body, "text", {}, 0)
         for cid in sent: _push_conv(cid, u, body[:120])
         return h.sendj({"ok": True, "sent": len(sent)})
     if path == "/api/fcx/report":

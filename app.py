@@ -43,6 +43,7 @@ import fcextras as FX
 import fcfamily as FF
 import fcpay as FP
 import fcgive as FG
+import fcadmin as FCA
 import fcverify as FV
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -5110,7 +5111,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 # FCAPP-01: the stand-alone Future Chat app (Google Play) opens this. Same page, accounts, chats and calls as
                 # Future Chat inside Skillvaya; fcapp.js only changes the frame (full-screen Future Chat, own sign-in, Account menu).
                 fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
-                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=19" defer></script>', '<script src="/futurechat/fc.js?v=19" defer></script><script src="/futurechat/fcapp.js?v=14" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=2" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=19" defer></script>', '<script src="/futurechat/fc.js?v=20" defer></script><script src="/futurechat/fcapp.js?v=14" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=2" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/fcadmin.js?v=1" defer></script>', 1)
                 # FCAPP-02: the full original Future Chat look, and no Skillvaya branding while the app loads.
                 fc_page = fc_page.replace('<link rel="stylesheet" href="/futurechat/fc.css?v=4">', '<link rel="stylesheet" href="/futurechat/fc.css?v=4"><link rel="stylesheet" href="/futurechat/fcapp.css?v=10"><style>#svSplash{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)!important;color:#fff!important}#svSplash .sv-splash-brand{color:#1ed6c8!important}#svSplash .sv-splash-caption{color:#cfe3f2!important}</style>', 1)
                 fc_page = fc_page.replace('<div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div>', '<div class="sv-splash-brand">Future Chat</div><div class="sv-splash-caption">Stay close. Wherever life takes you.</div>', 1)
@@ -5232,6 +5233,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return FP.handle_get(self,path)
             if path.startswith("/api/fcg/"):
                 return FG.handle_get(self,path)
+            if path.startswith("/api/fca/"):
+                return FCA.handle_get(self,path)
             if path.startswith("/api/fcv/"):
                 return FV.handle_get(self,path)
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
@@ -5682,6 +5685,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return FP.handle_post(self,path,d)
             if path.startswith("/api/fcg/"):
                 return FG.handle_post(self,path,d)
+            if path.startswith("/api/fca/"):
+                return FCA.handle_post(self,path,d)
             if path.startswith("/api/fcv/"):
                 return FV.handle_post(self,path,d)
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
@@ -6978,6 +6983,8 @@ def fc_setup():
     with conn() as c: FP.init(c)
     FG.bind(globals())
     with conn() as c: FG.init(c)
+    FCA.bind(globals())
+    with conn() as c: FCA.init(c)
     FV.bind(globals())
     with conn() as c: FV.init(c)
     KAI.bind(globals())

@@ -358,6 +358,7 @@
           '<div class="tot"><span>Total</span><span>R' + tot.toLocaleString('en-ZA') + '</span></div>' + (m.meta.valid ? '<small style="color:#55667d">Valid ' + esc(m.meta.valid) + '</small>' : '') +
           (!m.mine ? '<button class="pri" data-acceptq="' + m.id + '">Accept quote</button>' : '') + '</div>';
       }
+      if (m.meta && m.meta.fwd) inner = '<div style="font-size:11.5px;font-style:italic;color:#8fa9bd;margin-bottom:3px">↪ ' + (Number(m.meta.fwd) > 5 ? 'Forwarded many times' : 'Forwarded') + '</div>' + inner;   // FCA-01
       const sp = m.meta && window.FCX && window.FCX.special ? (function () { try { return window.FCX.special(m); } catch (_) { return ''; } })() : '';
       if (sp) inner += sp;
       else if (m.meta && m.meta.card && window.FCX && window.FCX.greet) inner += window.FCX.greet(m);
@@ -595,7 +596,7 @@
         try {
           const files = [];
           for (const a of m.attachments || []) { const u = await blobFor(a.id); const blob = await (await fetch(u)).blob(); files.push({ filename: a.filename, mime_type: a.mime_type, data_base64: await toB64(blob) }); }
-          await api('/api/fc/send', { c: Number(b.dataset.c), kind: m.kind === 'system' ? 'text' : m.kind, body: m.body, meta: m.meta || {}, files });
+          await api('/api/fc/send', { c: Number(b.dataset.c), kind: m.kind === 'system' ? 'text' : m.kind, body: m.body, meta: Object.assign({}, m.meta || {}, { fwd: (Number((m.meta || {}).fwd) || 0) + 1 }), files });   // FCA-01 forward count
           toast('Forwarded');
         } catch (e) { toast(e.message); }
       });

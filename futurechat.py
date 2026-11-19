@@ -638,6 +638,9 @@ def handle_post(h, path, d):
         return h.sendj({"on_future_chat": found, "invite": others[:400], "checked": len(book)})
     if path == "/api/fc/start":
         with A.conn() as c:
+            import fcadmin as FA   # FCA-01
+            bad = FA.can_start(c, u)
+            if bad: return h.sendj(*bad)
             if d.get("business_id"):
                 b = c.execute("SELECT id,user_id,name FROM businesses WHERE id=?", (int(d["business_id"]),)).fetchone()
                 if not b: return h.sendj({"error": "That business could not be found."}, 404)
@@ -709,6 +712,9 @@ def handle_post(h, path, d):
         with A.conn() as c:
             _require_member(c, conv_id, u)
             if _blocked(c, conv_id, uid): return h.sendj({"error": "You can't send messages in this chat because one of you blocked the other."}, 403)
+            import fcadmin as FA   # FCA-01: forward limits, mass-message / bot detection, bans
+            bad = FA.check_send(c, u, conv_id, body, kind, meta, len(decoded))
+            if bad: return h.sendj(*bad)
             if reply_to and not c.execute("SELECT 1 FROM fc_messages WHERE id=? AND conversation_id=?", (reply_to, conv_id)).fetchone(): reply_to = 0
             mid = c.execute("INSERT INTO fc_messages(conversation_id,sender_id,body,kind,meta,reply_to,created_at) VALUES(?,?,?,?,?,?,?) RETURNING id",
                             (conv_id, uid, body, kind, meta_s, reply_to, stamp)).fetchone()["id"]
@@ -717,6 +723,7 @@ def handle_post(h, path, d):
                 att_ids.append(int(c.execute("INSERT INTO fc_attachments(message_id,conversation_id,filename,mime_type,size_bytes,data_base64,created_at) VALUES(?,?,?,?,?,?,?) RETURNING id",
                           (mid, conv_id, name, mime, size, b64, stamp)).fetchone()["id"]))
             c.execute("UPDATE fc_conversations SET last_message_id=?,updated_at=? WHERE id=?", (mid, stamp, conv_id))
+            FA.log_send(c, uid, conv_id, body, kind, meta, len(decoded))
             c.execute("UPDATE fc_members SET last_read_id=?,archived=0 WHERE conversation_id=? AND user_id=?", (mid, conv_id, uid))
             c.execute("UPDATE fc_members SET archived=0 WHERE conversation_id=?", (conv_id,))
             snippet = _snippet({"kind": kind, "body": body, "deleted_at": ""})
@@ -796,6 +803,10 @@ def handle_post(h, path, d):
             _require_member(c, conv_id, u)
             rows = c.execute("SELECT m.sender_id,u2.name,m.body,m.kind,m.created_at FROM fc_messages m JOIN users u2 ON u2.id=m.sender_id WHERE m.conversation_id=? ORDER BY m.id DESC LIMIT 20", (conv_id,)).fetchall()[::-1]
         lines = "\n".join("[%s] %s (#%s): %s" % (r["created_at"][:16], r["name"], r["sender_id"], (r["body"] or r["kind"])[:300]) for r in rows)
+        try:
+            import fcadmin as FA   # FCA-01: complaints list in Future Chat Control
+            with A.conn() as c: FA.add_report(c, uid, conv_id, reason, lines, int(d.get("user") or 0))
+        except Exception as exc: print("Future Chat report store skipped:", type(exc).__name__)
         A.notify("complaint", "Future Chat report: " + reason, "Reported by %s (#%d) in conversation #%d.\n\nRecent messages:\n%s" % (u["name"], uid, conv_id, lines))
         return h.sendj({"ok": True})
     if path == "/api/phone/verify":
