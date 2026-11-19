@@ -18,7 +18,7 @@ PLAY_URL = "https://play.google.com/store/apps/details?id=za.co.futurechat.app"
 # The giveaway starts after the Play Store launch: friends who join before this month never count.
 START = os.environ.get("FCG_START", "2026-12").strip()
 # Future Chat's own website (invite links, rules) - not the Skillvaya site.
-SITE = os.environ.get("FUTURECHAT_SITE", "https://futurechat.onrender.com").strip().rstrip("/")
+SITE = os.environ.get("FUTURECHAT_SITE", "https://futurechat-v5lx.onrender.com").strip().rstrip("/")
 def _ref_month(): m = _month(); return m if m >= START else "pre"
 
 
