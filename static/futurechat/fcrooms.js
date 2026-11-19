@@ -202,7 +202,7 @@
     (c.members || []).forEach(m => { if (m.id !== c.me) sendSignal(m.id, 'bye', {}); });
     applyMic();
     c.talkT = setInterval(tickTalk, 160);
-    const n = NATIVE(); if (n) { try { n.roomStart(JSON.stringify({ code, title: c.title, game: c.game })); } catch (_) {} }
+    const n = NATIVE(); if (n) { try { n.roomStart(JSON.stringify({ code, title: brand(c.title), game: c.game })); } catch (_) {} }
     bar(); beat();
     if (!(opts && opts.quiet)) R.show();
     if (n && typeof n.overlayAllowed === 'function') { try { if (!n.overlayAllowed() && !localStorage.getItem('fcr_bubble_asked')) setTimeout(askBubble, 900); } catch (_) {} }
@@ -233,10 +233,11 @@
   };
   window.fcRoomJoin = code => { if (code) R.openCode(code); };
   let lastNative = '';
+  const brand = t => String(t || '').replace(/Skillvaya/gi, 'Future Chat');
   function nativeUpdate() {
     const n = NATIVE(), c = cur(); if (!n || !c || typeof n.roomUpdate !== 'function') return;
-    const people = (c.members || []).map(m => ({ name: m.me ? 'You' : m.name.split(' ')[0], talking: m.me ? (c.meTalk && micLive()) : !!(c.peers.get(m.id) || {}).talk, muted: m.me ? !micLive() : !!m.muted }));
-    const s = JSON.stringify({ title: c.title, game: c.game, muted: c.muted, ptt: c.ptt, live: micLive(), people });
+    const people = (c.members || []).map(m => ({ name: m.me ? 'You' : brand(m.name.split(' ')[0]), talking: m.me ? (c.meTalk && micLive()) : !!(c.peers.get(m.id) || {}).talk, muted: m.me ? !micLive() : !!m.muted }));
+    const s = JSON.stringify({ title: brand(c.title), game: c.game, muted: c.muted, ptt: c.ptt, live: micLive(), people });
     if (s === lastNative) return; lastNative = s;
     try { n.roomUpdate(s); } catch (_) {}
   }
