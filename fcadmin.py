@@ -327,7 +327,10 @@ def handle_get(h, path):
     if path == "/api/fca/admin/users":
         term = (q.get("q") or [""])[0].strip()[:80]
         with A.conn() as c:
-            if term:
+            if (q.get("fc") or [""])[0]:   # FCA-03: everyone who joined Future Chat (confirmed number), newest first
+                rows = c.execute("SELECT id,name,phone_e164 AS phone,email,role,phone_verified_at AS created_at FROM users WHERE phone_verified_at<>''"
+                                 " ORDER BY phone_verified_at DESC LIMIT 1000").fetchall()
+            elif term:
                 like = "%" + term.lower() + "%"
                 digits = re.sub(r"\D", "", term)
                 rows = c.execute("SELECT id,name,phone_e164 AS phone,email,role,created_at FROM users WHERE LOWER(name) LIKE ? OR LOWER(email) LIKE ?"

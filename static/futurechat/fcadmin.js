@@ -29,12 +29,12 @@
     let s; try { s = await api('/api/fca/admin/stats?days=30'); } catch (e) { bd.innerHTML = '<div class="fca-empty">' + esc(e.message) + '</div>'; return; }
     if (top() !== self) return;
     bd.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:8px">' + tile(s.online_now, 'online now', 'online') + tile(s.today_active, 'used it today') + tile(s.mau, 'used it this month') + '</div>' +
-      '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">' + tile(s.fc_total, 'joined Future Chat') + tile(s.open_reports, 'open complaints', 'reports') + tile(s.active_bans, 'banned now', 'bans') + '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">' + tile(s.fc_total, 'joined Future Chat', 'joined') + tile(s.open_reports, 'open complaints', 'reports') + tile(s.active_bans, 'banned now', 'bans') + '</div>' +
       chart('People joining per day', s.labels, s.joined, '#1ed6c8') + chart('People using the app per day', s.labels, s.active, '#5aa9ff') + chart('Messages sent per day', s.labels, s.messages, '#b38cff') +
       '<div class="fca-card">' + row('🟢', 'Who\'s online now', s.online_now + (s.online_now === 1 ? ' person' : ' people'), { data: 'data-a="online"' }) + row('⚑', 'Complaints', s.open_reports + ' open', { data: 'data-a="reports"' }) +
       row('⛔', 'Bans', s.active_bans + ' banned now · spam is banned for 24 h automatically', { data: 'data-a="bans"' }) + row('🔎', 'Find a person', 'See their details, ban them or delete their account', { data: 'data-a="find"' }) + '</div>' +
       '<p class="fca-note">"Used it" counts people who opened Future Chat that day. Total accounts (Skillvaya + Future Chat): ' + s.total + '.</p>';
-    bind(bd, { online: () => push(() => scrOnline(s)), reports: () => push(scrReports), bans: () => push(scrBans), find: () => push(scrFind) });
+    bind(bd, { joined: () => push(scrJoined), online: () => push(() => scrOnline(s)), reports: () => push(scrReports), bans: () => push(scrBans), find: () => push(scrFind) });
   }
   function personRow(p, sub) {
     return row(p.banned ? '⛔' : (sub === 'online now' ? '🟢' : '👤'), p.name, [p.phone, sub || ago(p.last_seen), p.banned ? until(p.banned) : ''].filter(Boolean).join(' · '), { data: 'data-p="' + p.id + '"' });
@@ -45,6 +45,16 @@
     const draw = st => { bd.innerHTML = '<div class="fca-card">' + (st.online.length ? st.online.map(p => personRow(p, ago(p.last_seen))).join('') : row('😴', 'Nobody is online right now', '', {}, '')) + '</div>'; wirePeople(bd, st.online); };
     draw(s);
     const t = setInterval(async () => { if (top() !== self) { clearInterval(t); return; } try { draw(await api('/api/fca/admin/stats?days=7')); } catch (_) {} }, 30000);
+  }
+  async function scrJoined() {
+    const self = top(); const bd = frame('People on Future Chat', 'Everyone who joined, newest first');
+    bd.innerHTML = '<div class="fca-empty">Loading…</div>';
+    let d; try { d = await api('/api/fca/admin/users?fc=1'); } catch (e) { bd.innerHTML = '<div class="fca-empty">' + esc(e.message) + '</div>'; return; }
+    if (top() !== self) return;
+    const fmt = iso => { try { return new Date(iso).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }); } catch (_) { return iso; } };
+    bd.innerHTML = '<p class="fca-note" style="margin-top:0">' + d.items.length + (d.items.length === 1 ? ' person has' : ' people have') + ' joined (confirmed their number).</p><div class="fca-card">' +
+      (d.items.length ? d.items.map(p => row(p.banned ? '⛔' : '👤', p.name, [p.phone, 'joined ' + fmt(p.joined_at || p.joined), 'last seen ' + ago(p.last_seen)].filter(Boolean).join(' · '), { data: 'data-p="' + p.id + '"' })).join('') : row('👥', 'Nobody yet', '', {}, '')) + '</div>';
+    wirePeople(bd, d.items);
   }
   async function scrFind() {
     const bd = frame('Find a person', 'Name, number or email');
