@@ -50,7 +50,8 @@
     const days = Math.max(0, Math.ceil((new Date(d.draw_at) - Date.now()) / 864e5));
     const odds = d.all_tickets ? Math.round(100 * d.my_tickets / d.all_tickets) : 0;
     let h = '<div class="fcg-hero"><div class="fx">' + Array.from({ length: 9 }, (_, i) => '<span style="left:' + (i * 11 + 3) + '%;animation-delay:' + (i * .5).toFixed(1) + 's">' + ['💰', '🎉', '✨'][i % 3] + '</span>').join('') + '</div>' +
-      '<small>' + esc(d.month.toUpperCase()) + ' GIVEAWAY</small><b>Win ' + esc(d.prize) + '</b><p>Drawn in ' + days + (days === 1 ? ' day' : ' days') + ' · free to enter</p>' +
+      (d.starts ? '<small>STARTS 1 ' + esc(d.starts.toUpperCase()) + '</small><b>Win ' + esc(d.prize) + ' every month</b><p>Friends who join from 1 ' + esc(d.starts.split(' ')[0]) + ' count · free to enter</p>'
+        : '<small>' + esc(d.month.toUpperCase()) + ' GIVEAWAY</small><b>Win ' + esc(d.prize) + '</b><p>Drawn in ' + days + (days === 1 ? ' day' : ' days') + ' · free to enter</p>') +
       '<div class="tk"><div><em>' + d.my_tickets + '</em><span>your tickets</span></div><div><em>' + d.all_tickets + '</em><span>tickets in the draw</span></div>' + (d.my_tickets ? '<div><em>' + odds + '%</em><span>your chance</span></div>' : '') + '</div></div>' +
       '<button class="fca-btn" data-a="inv">🎁 Invite a friend</button>' +
       '<div class="fca-card">' + row('1️⃣', 'Invite friends', 'Share your link on WhatsApp, SMS or anywhere', {}, '') + row('2️⃣', 'They join and say hi', 'They save their number and send ' + d.min_messages + ' messages', {}, '') + row('3️⃣', 'You get a ticket', '1 friend = 1 ticket. More friends, more chances', {}, '') + '</div>';
@@ -62,7 +63,7 @@
     if (d.owner) h += '<div class="fca-gl">Owner</div><div class="fca-card">' + row('⚙️', 'Run the giveaway', 'Prize, leaders, winners and payments', { data: 'data-a="admin"' }) + '</div>';
     h += '<p class="fca-note">No purchase is needed or possible. Your phone number and chats are never shown to other players.</p>';
     bd.innerHTML = h;
-    bind(bd, { inv: () => invite(''), rules: () => window.open('/giveaway-rules', '_blank'), admin: () => push(scrAdmin) });
+    bind(bd, { inv: () => invite(''), rules: () => window.open((d.site || '') + '/giveaway-rules.html', '_blank'), admin: () => push(scrAdmin) });
   }
   G.open = () => { go('you'); push(scrGive); };
   async function scrAdmin() {

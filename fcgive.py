@@ -15,6 +15,11 @@ A = None
 MIN_MESSAGES = 3
 SA = datetime.timedelta(hours=2)
 PLAY_URL = "https://play.google.com/store/apps/details?id=za.co.futurechat.app"
+# The giveaway starts after the Play Store launch: friends who join before this month never count.
+START = os.environ.get("FCG_START", "2026-12").strip()
+# Future Chat's own website (invite links, rules) - not the Skillvaya site.
+SITE = os.environ.get("FUTURECHAT_SITE", "https://futurechat.onrender.com").strip().rstrip("/")
+def _ref_month(): m = _month(); return m if m >= START else "pre"
 
 
 def bind(ns):
@@ -93,7 +98,7 @@ def _link_by_phone():
             inv = c.execute("SELECT inviter_id,created_at FROM fcg_invites WHERE phone=? AND inviter_id<>? AND created_at<=? ORDER BY created_at LIMIT 1",
                             (u["phone_e164"], int(u["id"]), u["created_at"])).fetchone()
             if not inv: continue
-            c.execute("INSERT INTO fcg_refs(user_id,inviter_id,how,month,created_at) VALUES(?,?,?,?,?)", (int(u["id"]), int(inv["inviter_id"]), "phone", _month(), A.now()))
+            c.execute("INSERT INTO fcg_refs(user_id,inviter_id,how,month,created_at) VALUES(?,?,?,?,?)", (int(u["id"]), int(inv["inviter_id"]), "phone", _ref_month(), A.now()))
 
 
 def _qualifies(c, friend_id):
@@ -126,8 +131,8 @@ def _loop():
 def _draw_due():
     now = _sa()
     if now.hour < 8: return
-    prev = (now.replace(day=1) - datetime.timedelta(days=1))
-    draw(_month(prev))
+    prev = _month(now.replace(day=1) - datetime.timedelta(days=1))
+    if prev >= START: draw(prev)
 
 
 def draw(month):
@@ -184,6 +189,22 @@ def _base(h):
 
 
 def landing(h, path):
+    """Old-style links on this server go to Future Chat's own website."""
+    code = path.rsplit("/", 1)[-1]
+    uid = user_for(code)
+    name = ""
+    if uid:
+        with A.conn() as c:
+            r = c.execute("SELECT name FROM users WHERE id=?", (uid,)).fetchone()
+            name = ((r["name"] if r else "") or "").split(" ")[0]
+    h.send_response(302); h.send_header("Location", invite_link(code, name)); h.send_header("Content-Length", "0"); h.end_headers()
+
+
+def invite_link(code, first_name=""):
+    return SITE + "/?i=" + code + ("&n=" + urllib.parse.quote(first_name) if first_name else "")
+
+
+def _old_landing(h, path):
     code = path.rsplit("/", 1)[-1]
     uid = user_for(code)
     name = ""
@@ -238,6 +259,7 @@ def handle_get(h, path):
             for r in refs:
                 ok, why = _qualifies(c, int(r["user_id"]))
                 if ok and r["month"] == m: mine += 1
+                if r["month"] == "pre": ok, why = False, "joined before the giveaway started"
                 friends.append({"name": (r["name"] or "Friend").split(" ")[0], "month": r["month"], "ticket": ok, "why": why, "this_month": r["month"] == m})
             last = c.execute("SELECT d.*,u.name FROM fcg_draws d LEFT JOIN users u ON u.id=d.winner_id ORDER BY d.month DESC LIMIT 1").fetchone()
             invited = int(c.execute("SELECT COUNT(*) AS n FROM fcg_invites WHERE inviter_id=?", (uid,)).fetchone()["n"])
@@ -250,7 +272,8 @@ def handle_get(h, path):
         last_out = None
         if last:
             n = (last["name"] or "").split(); last_out = {"month": _month_label(last["month"]), "prize": last["prize"], "name": (n[0] + (" " + n[-1][0] + "." if len(n) > 1 else "")) if n else "", "tickets": int(last["tickets"])}
-        return h.sendj({"code": code, "link": _base(h) + "/fc/i/" + code, "prize": prize, "month": _month_label(m), "draw_at": nxt.isoformat(), "my_tickets": mine,
+        first = (u.get("name") or "").split(" ")[0] if hasattr(u, "get") else ""
+        return h.sendj({"code": code, "link": invite_link(code, first), "site": SITE, "starts": _month_label(START) if _month() < START else "", "prize": prize, "month": _month_label(m), "draw_at": nxt.isoformat(), "my_tickets": mine,
                         "all_tickets": total, "friends": friends, "invited": invited, "last": last_out, "won": won, "owner": owner, "min_messages": MIN_MESSAGES})
     if path == "/api/fcg/admin":
         with A.conn() as c:
@@ -282,7 +305,7 @@ def handle_post(h, path, d):
             try: new = (_now() - datetime.datetime.fromisoformat(me["created_at"].replace("Z", "+00:00"))).days <= 3
             except Exception: new = False
             if not new: return h.sendj({"ok": False, "reason": "Invite codes are for new accounts."})
-            c.execute("INSERT INTO fcg_refs(user_id,inviter_id,how,month,created_at) VALUES(?,?,?,?,?)", (uid, inviter, "link", _month(), A.now()))
+            c.execute("INSERT INTO fcg_refs(user_id,inviter_id,how,month,created_at) VALUES(?,?,?,?,?)", (uid, inviter, "link", _ref_month(), A.now()))
         return h.sendj({"ok": True})
     if path == "/api/fcg/admin":
         with A.conn() as c:
