@@ -158,10 +158,11 @@
   function showAd() {
     const ad = V.ads[V.ii];
     const isVid = /^video\//.test(ad.mime || ''), isImg = /^image\//.test(ad.mime || '');
+    const sh = window.FCX && window.FCX.shoutStage ? window.FCX.shoutStage(ad) : null;   // FCP-01: shout-outs and proposals
     V.el.innerHTML = '<div class="bars">' + V.ads.map((x, i) => '<div class="bar"><i style="width:' + (i < V.ii ? 100 : 0) + '%"></i></div>').join('') + '</div>' +
-      '<div class="top"><div><b><span class="adtag">Sponsored</span>' + esc(ad.advertiser || 'Business') + '</b><small>Paid business advert</small></div><div class="sp"><button data-a="x" aria-label="Close">✕</button></div></div>' +
+      '<div class="top"><div><b><span class="adtag">' + esc(sh ? sh.label : 'Sponsored') + '</span>' + esc(sh ? sh.from : (ad.advertiser || 'Business')) + '</b><small>' + (sh ? 'Paid shout-out' : 'Paid business advert') + '</small></div><div class="sp"><button data-a="x" aria-label="Close">✕</button></div></div>' +
       '<div class="stage"><div class="tapL"></div><div class="tapR"></div>' +
-      (isVid ? '<video src="' + esc(ad.media) + '" playsinline autoplay></video>' + ((ad.headline || ad.body) ? '<div class="cap"><b>' + esc(ad.headline) + '</b>' + (ad.body ? '\n' + esc(ad.body) : '') + '</div>' : '')
+      (sh ? sh.html : isVid ? '<video src="' + esc(ad.media) + '" playsinline autoplay></video>' + ((ad.headline || ad.body) ? '<div class="cap"><b>' + esc(ad.headline) + '</b>' + (ad.body ? '\n' + esc(ad.body) : '') + '</div>' : '')
         : isImg ? '<img src="' + esc(ad.media) + '" alt="' + esc(ad.headline) + '">' + ((ad.headline || ad.body) ? '<div class="cap"><b>' + esc(ad.headline) + '</b>' + (ad.body ? '\n' + esc(ad.body) : '') + '</div>' : '')
         : '<div class="adbox"><h3>' + esc(ad.headline) + '</h3><p>' + esc(ad.body) + '</p></div>') + '</div>' +
       '<div class="foot">' + (ad.target ? '<button class="cta" data-a="cta">' + esc(ad.cta || 'Find out more') + '</button>' : '') + '</div>';

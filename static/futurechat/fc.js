@@ -450,8 +450,11 @@
   async function sendFiles(files, caption) {
     for (let f of files) {
       f = await shrink(f);
-      if (f.size > 16 * 1024 * 1024) { toast(f.name + ' is bigger than 16 MB'); continue; }
       const kind = /^image\//.test(f.type) ? 'photo' : /^video\//.test(f.type) ? 'video' : /^audio\//.test(f.type) ? 'voice' : 'file';
+      if (f.size > 15 * 1024 * 1024) {   // FCP-01: big files go in pieces (up to 48 MB with Future Chat Plus)
+        if (window.FCX && window.FCX.bigSend) { const d = await window.FCX.bigSend(f, kind, caption, S.conv.id); if (d) { caption = ''; if (d.attachments && d.attachments[0]) { localPut(d.attachments[0], f); S.media.delete(d.attachments[0]); } await loadMsgs(false); } continue; }
+        toast(f.name + ' is bigger than 16 MB'); continue;
+      }
       toast('Sending ' + (kind === 'file' ? f.name : kind) + '…');
       try { const d = await sendRaw({ c: S.conv.id, kind, body: caption || '', reply_to: S.reply ? S.reply.id : 0, files: [{ filename: f.name, mime_type: f.type || 'application/octet-stream', data_base64: await toB64(f) }] }); caption = ''; if (d && d.attachments && d.attachments[0]) { localPut(d.attachments[0], f); S.media.delete(d.attachments[0]); } } catch (_) {}
     }

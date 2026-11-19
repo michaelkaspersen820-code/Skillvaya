@@ -41,6 +41,7 @@ import homeads as HA
 import fcstatus as FST
 import fcextras as FX
 import fcfamily as FF
+import fcpay as FP
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 TERMS_VERSION = "2026-10-21-v1.2"
@@ -3649,7 +3650,7 @@ async function startSkillvayaVideoCall(businessId,customerId,mode='video',fcOpts
   if(!me){view('settings');profileAuthMode('signin');alert('Sign in before starting a call.');return;}
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof RTCPeerConnection==='undefined'){alert('This browser or WebView does not support Skillvaya calls. Update your browser/app and try again.');return;}
   let call=null,mediaPromise=null;
-  const constraints=mode==='voice'?{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false}:{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}}};
+  const constraints=mode==='voice'?{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false}:{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:(window.FCX_HD?{facingMode:{ideal:'user'},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:30}}:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}})};
   try{
     svShowCallModal(mode==='voice'?'Skillvaya voice call':'Skillvaya video call','Requesting microphone permissionÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦',mode);
     mediaPromise=svGetCallMedia(constraints,mode);
@@ -3677,7 +3678,7 @@ async function acceptSkillvayaVideoCall(){
   svIncomingAcceptingCallId=incomingId;svProcessedIncomingCalls.add(incomingId);
   const mode=incoming.media_type==='voice'?'voice':'video';
   let call=null,mediaPromise=null;
-  const constraints=mode==='voice'?{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false}:{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}}};
+  const constraints=mode==='voice'?{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false}:{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:(window.FCX_HD?{facingMode:{ideal:'user'},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:30}}:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}})};
   try{
     svShowCallModal(mode==='voice'?'Skillvaya voice call':'Skillvaya video call','Preparing microphone and connectionÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦',mode);
     mediaPromise=svGetCallMedia(constraints,mode);
@@ -4162,7 +4163,7 @@ function svAfterLogin(){svFutureChatStatus();svRefreshProviderTools()}
 function check(tag){try{if(sent>=3)return;var nav=document.querySelector('.bottom-tabbar');if(!nav)return;var hidden=[].filter.call(nav.children,function(c){var r=c.getBoundingClientRect(),s=getComputedStyle(c);return !(r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden')});if(!hidden.length)return;sent++;var rep={tag:tag,path:location.pathname,ua:navigator.userAgent,lang:document.documentElement.lang,dir:document.documentElement.dir,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,body:document.body.className,signedIn:!!(window.me),role:window.me&&window.me.role||'',hasSvLang:typeof svLang==='function',sw:!!(navigator.serviceWorker&&navigator.serviceWorker.controller),count:nav.children.length,hidden:hidden.map(function(c){return {id:c.id,why:why(c)}})};fetch('/api/diag/tabs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rep).slice(0,20000)}).catch(function(){})}catch(_){}}
 setTimeout(function(){check('load+6s')},6000);document.addEventListener('click',function(e){if(e.target&&e.target.closest&&e.target.closest('.bottom-tabbar button'))setTimeout(function(){check('tap:'+(e.target.closest('button').id||''))},1500)},true)})();
 try{if(typeof closeSkillvayaVideoCall==='function'&&!closeSkillvayaVideoCall.__fx){const o=closeSkillvayaVideoCall;closeSkillvayaVideoCall=function(){try{svFxStop();svFx.id='none';if(window.svLens){window.svLens.i=-1;window.svLens.e=-1}}catch(_){}return o.apply(this,arguments)};closeSkillvayaVideoCall.__fx=1}if(typeof svAttachCallMedia==='function'&&!svAttachCallMedia.__fx){const a=svAttachCallMedia;svAttachCallMedia=async function(call,stream){const prev=svFx.id;svFxStop();const ok=await a.apply(this,arguments);if(ok&&prev&&prev!=='none'){try{await svApplyCallFx(prev)}catch(_){}}return ok};svAttachCallMedia.__fx=1}}catch(_){}
-</script><script src="/futurechat/chatmoji.js?v=2" defer></script><script src="/futurechat/calllens.js?v=8" defer></script><script src="/futurechat/fc.js?v=15" defer></script><script src="/futurechat/fcstatus.js?v=5" defer></script><script src="/homeads/ha.js?v=2" defer></script></body></html>'''
+</script><script src="/futurechat/chatmoji.js?v=2" defer></script><script src="/futurechat/calllens.js?v=8" defer></script><script src="/futurechat/fc.js?v=16" defer></script><script src="/futurechat/fcstatus.js?v=6" defer></script><script src="/homeads/ha.js?v=2" defer></script></body></html>'''
 SV_DIAG_TABS=[]
 SESSIONS={}
 def issue_session(user):
@@ -4229,7 +4230,7 @@ class Handler(BaseHTTPRequestHandler):
         n=int(self.headers.get("Content-Length","0"))
         path=urlparse(getattr(self,"path","")).path
         # Allow larger JSON only for the explicitly bounded in-chat image/video upload endpoint.
-        max_bytes=20_000_000 if path=="/api/messages/attachments" else 16_000_000 if path=="/api/kai/chat/completions" else 8_000_000 if path in ("/api/kai/transcribe","/api/kai/mem") else 24_000_000 if path=="/api/fc/send" else 18_000_000 if path=="/api/home-ads/create" else 3_000_000
+        max_bytes=20_000_000 if path=="/api/messages/attachments" else 16_000_000 if path=="/api/kai/chat/completions" else 8_000_000 if path in ("/api/kai/transcribe","/api/kai/mem") else 24_000_000 if path=="/api/fc/send" else 18_000_000 if path=="/api/home-ads/create" else 5_000_000 if path=="/api/fcp/upload/chunk" else 8_000_000 if path=="/api/fcp/card" else 3_000_000
         if n<0 or n>max_bytes: raise ValueError("Request too large")
         return json.loads(self.rfile.read(n) or b"{}")
     def user(self,want_photo=False):
@@ -5105,7 +5106,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 # FCAPP-01: the stand-alone Future Chat app (Google Play) opens this. Same page, accounts, chats and calls as
                 # Future Chat inside Skillvaya; fcapp.js only changes the frame (full-screen Future Chat, own sign-in, Account menu).
                 fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
-                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=15" defer></script>', '<script src="/futurechat/fc.js?v=15" defer></script><script src="/futurechat/fcapp.js?v=11" defer></script><script src="/futurechat/fcfamily.js?v=2" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=16" defer></script>', '<script src="/futurechat/fc.js?v=16" defer></script><script src="/futurechat/fcapp.js?v=11" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=1" defer></script>', 1)
                 # FCAPP-02: the full original Future Chat look, and no Skillvaya branding while the app loads.
                 fc_page = fc_page.replace('<link rel="stylesheet" href="/futurechat/fc.css?v=3">', '<link rel="stylesheet" href="/futurechat/fc.css?v=3"><link rel="stylesheet" href="/futurechat/fcapp.css?v=10"><style>#svSplash{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)!important;color:#fff!important}#svSplash .sv-splash-brand{color:#1ed6c8!important}#svSplash .sv-splash-caption{color:#cfe3f2!important}</style>', 1)
                 fc_page = fc_page.replace('<div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div>', '<div class="sv-splash-brand">Future Chat</div><div class="sv-splash-caption">Stay close. Wherever life takes you.</div>', 1)
@@ -5223,6 +5224,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return FX.handle_get(self,path)
             if path.startswith("/api/fcf/"):
                 return FF.handle_get(self,path)
+            if path.startswith("/api/fcp/"):
+                return FP.handle_get(self,path)
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
                 return FC.handle_get(self,path)
             if path.startswith("/api/kai/"):
@@ -5667,6 +5670,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return FX.handle_post(self,path,d)
             if path.startswith("/api/fcf/"):
                 return FF.handle_post(self,path,d)
+            if path.startswith("/api/fcp/"):
+                return FP.handle_post(self,path,d)
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
                 return FC.handle_post(self,path,d)
             if path.startswith("/api/kai/"):
@@ -6953,6 +6958,8 @@ def fc_setup():
     with conn() as c: FX.init(c)
     FF.bind(globals())
     with conn() as c: FF.init(c)
+    FP.bind(globals())
+    with conn() as c: FP.init(c)
     KAI.bind(globals())
     OWN.bind(KAI.A, KAI._verify)
     with conn() as c: KAI.init(c)

@@ -266,6 +266,10 @@ def handle_post(h, path, d):
         if kind == "game":
             qs = [int(x) for x in (d.get("qs") or []) if str(x).isdigit()][:10]
             if len(qs) < 3: return h.sendj({"error": "Choose some questions."}, 400)
+            import fcpay as FP
+            if str(d.get("pack") or "") in FP.QUIZ_PACKS:
+                with A.conn() as c0:
+                    if not FP.has_unlock(c0, uid, "quiz:" + str(d.get("pack"))): return h.sendj({"error": "Get this quiz pack in the Shop first.", "buy": "futurechat_quiz_" + str(d.get("pack"))}, 402)
             opts = {"pack": str(d.get("pack") or "gk")[:12], "qs": qs}
         due = FX._iso(d.get("due_at")) if kind == "chore" else ""
         with A.conn() as c:

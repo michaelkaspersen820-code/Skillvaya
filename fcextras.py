@@ -909,8 +909,10 @@ def handle_post(h, path, d):
         if when > (_now() + datetime.timedelta(days=370)).isoformat(): return h.sendj({"error": "You can schedule up to a year ahead."}, 400)
         with A.conn() as c:
             if not _member(c, cid, uid): return h.sendj({"error": "You are not part of this chat."}, 403)
-            if c.execute("SELECT COUNT(*) AS n FROM fcx_scheduled WHERE user_id=? AND sent_at='' AND cancelled=0", (uid,)).fetchone()["n"] >= 50:
-                return h.sendj({"error": "You already have 50 messages waiting to be sent."}, 400)
+            import fcpay as FP
+            lim = FP.scheduled_limit(c, uid)
+            if c.execute("SELECT COUNT(*) AS n FROM fcx_scheduled WHERE user_id=? AND sent_at='' AND cancelled=0", (uid,)).fetchone()["n"] >= lim:
+                return h.sendj({"error": "You already have %d messages waiting to be sent." % lim + (" Get Future Chat Plus to schedule as many as you like." if lim < 50 else ""), "plus": lim < 50}, 400)
             sid = c.execute("INSERT INTO fcx_scheduled(user_id,conversation_id,body,meta,send_at,created_at) VALUES(?,?,?,?,?,?) RETURNING id",
                             (uid, cid, body, json.dumps(meta)[:4000], when, A.now())).fetchone()["id"]
         return h.sendj({"ok": True, "id": int(sid), "send_at": when})

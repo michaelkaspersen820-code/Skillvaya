@@ -285,13 +285,49 @@
       ['🧈🪰', ['Butterfly', 'Dragonfly', 'Bread fly', 'Bee'], 0], ['🍿🎬', ['Popcorn machine', 'Movie night', 'Corn field', 'Cinema queue'], 1], ['🎂🕯️', ['Candle shop', 'Birthday', 'Power cut', 'Bakery'], 1],
       ['🌊🏄', ['Surfing', 'Boat trip', 'Fishing', 'Swimming pool'], 0], ['🐶🏠', ['Dog house', 'Home alone', 'Vet', 'Pet sitter'], 0], ['✋👜', ['Shopping', 'Handbag', 'Pickpocket', 'Glove'], 1],
       ['💙🌙', ['Once in a blue moon', 'Good night', 'Cold night', 'Blue sky'], 0], ['🍎📅👨‍⚕️', ['Doctor\'s appointment', 'An apple a day keeps the doctor away', 'Fruit market', 'Healthy week'], 1], ['🐘🧠', ['An elephant never forgets', 'Big head', 'Smart zoo', 'Heavy thinking'], 0],
-      ['🥚🌱', ['Eggplant', 'Easter', 'Breakfast', 'Garden'], 0], ['☔🎀', ['Rainbow', 'Gift wrap', 'Rain dance', 'Wet hair'], 0]]]
+      ['🥚🌱', ['Eggplant', 'Easter', 'Breakfast', 'Garden'], 0], ['☔🎀', ['Rainbow', 'Gift wrap', 'Rain dance', 'Wet hair'], 0]]],
+    // FCP-01 paid packs (R5 each in the Shop) — append-only like the others
+    bible: ['✝️ Bible', [
+      ['Who built the ark?', ['Moses', 'Noah', 'Abraham', 'David'], 1], ['How many disciples did Jesus choose?', ['7', '10', '12', '40'], 2], ['Who was swallowed by a great fish?', ['Jonah', 'Peter', 'Elijah', 'Daniel'], 0],
+      ['What is the first book of the Bible?', ['Exodus', 'Psalms', 'Genesis', 'Matthew'], 2], ['Who defeated Goliath?', ['Samson', 'Saul', 'Solomon', 'David'], 3], ['In which town was Jesus born?', ['Nazareth', 'Bethlehem', 'Jerusalem', 'Jericho'], 1],
+      ['Who was the mother of Jesus?', ['Martha', 'Mary', 'Elizabeth', 'Ruth'], 1], ['For how many days and nights did it rain in the flood?', ['7', '12', '40', '100'], 2], ['Who led the Israelites out of Egypt?', ['Moses', 'Joshua', 'Aaron', 'Jacob'], 0],
+      ['At the wedding in Cana, Jesus turned water into…', ['Milk', 'Oil', 'Wine', 'Honey'], 2], ['Which disciple betrayed Jesus?', ['Thomas', 'Peter', 'Judas Iscariot', 'John'], 2], ['What is the last book of the Bible?', ['Revelation', 'Acts', 'Malachi', 'Jude'], 0]]],
+    soccer: ['⚽ Soccer', [
+      ['Which country won the 2010 World Cup, held in South Africa?', ['Netherlands', 'Spain', 'Germany', 'Brazil'], 1], ['Which country has won the most men\'s World Cups?', ['Germany', 'Italy', 'Argentina', 'Brazil'], 3],
+      ['How long is a normal soccer match?', ['60 minutes', '80 minutes', '90 minutes', '120 minutes'], 2], ['What is South Africa\'s men\'s national team called?', ['Bafana Bafana', 'Banyana Banyana', 'Amajita', 'Proteas'], 0],
+      ['Banyana Banyana won which tournament in 2022?', ['Women\'s Africa Cup of Nations', 'Women\'s World Cup', 'Olympic gold', 'COSAFA Cup only'], 0], ['How many points does a team get for a win in most leagues?', ['1', '2', '3', '4'], 2],
+      ['Which card sends a player off the field?', ['Yellow', 'Red', 'Green', 'Blue'], 1], ['Which country hosted the 2014 World Cup?', ['Russia', 'South Africa', 'Brazil', 'Qatar'], 2], ['Who won the 2022 men\'s World Cup?', ['France', 'Argentina', 'Croatia', 'Morocco'], 1],
+      ['What is it called when a player scores three goals in one match?', ['Hat-trick', 'Treble', 'Triple kick', 'Golden boot'], 0], ['Who won the 2023 Women\'s World Cup?', ['England', 'USA', 'Spain', 'Sweden'], 2], ['How many players does each team have on the field?', ['9', '10', '11', '12'], 2]]],
+    science: ['🔬 Science', [
+      ['Which gas do people need to breathe in to live?', ['Carbon dioxide', 'Oxygen', 'Helium', 'Nitrogen'], 1], ['At sea level, water boils at…', ['50 °C', '90 °C', '100 °C', '120 °C'], 2], ['What force pulls things down towards the Earth?', ['Magnetism', 'Friction', 'Gravity', 'Wind'], 2],
+      ['How many bones does an adult human have?', ['106', '206', '306', '406'], 1], ['What is the centre of an atom called?', ['Nucleus', 'Electron', 'Cell', 'Core'], 0], ['What is the name for how plants make food from sunlight?', ['Digestion', 'Photosynthesis', 'Evaporation', 'Respiration'], 1],
+      ['Which organ pumps blood around the body?', ['Lungs', 'Liver', 'Brain', 'Heart'], 3], ['What is the chemical symbol for gold?', ['Go', 'Gd', 'Au', 'Ag'], 2], ['What is the closest star to Earth?', ['The Sun', 'Sirius', 'Polaris', 'Alpha Centauri'], 0],
+      ['How many planets are in our solar system?', ['7', '8', '9', '10'], 1], ['Which part of a plant is usually under the ground?', ['Leaves', 'Flowers', 'Roots', 'Fruit'], 2], ['What do we call water turning into vapour?', ['Freezing', 'Melting', 'Evaporation', 'Condensation'], 2]]],
+    world: ['🌍 Around the world', [
+      ['What is the capital of Kenya?', ['Mombasa', 'Nairobi', 'Kampala', 'Addis Ababa'], 1], ['Which is the largest country by area?', ['China', 'Canada', 'USA', 'Russia'], 3], ['What is the capital of Japan?', ['Kyoto', 'Osaka', 'Tokyo', 'Seoul'], 2],
+      ['On which continent is Egypt?', ['Asia', 'Africa', 'Europe', 'Middle America'], 1], ['What is the highest mountain in the world?', ['Kilimanjaro', 'K2', 'Mont Blanc', 'Mount Everest'], 3], ['What is the capital of Australia?', ['Sydney', 'Melbourne', 'Canberra', 'Perth'], 2],
+      ['Which ocean lies between Africa and Australia?', ['Atlantic', 'Indian', 'Pacific', 'Arctic'], 1], ['What is the capital of Brazil?', ['Rio de Janeiro', 'São Paulo', 'Brasília', 'Salvador'], 2], ['How many countries are in Africa?', ['44', '50', '54', '60'], 2],
+      ['Which country is shaped like a boot?', ['Spain', 'Italy', 'Greece', 'Portugal'], 1], ['What is the capital of Canada?', ['Toronto', 'Vancouver', 'Ottawa', 'Montreal'], 2], ['In which country is Mount Kilimanjaro?', ['Kenya', 'Uganda', 'Tanzania', 'Ethiopia'], 2]]],
+    animals: ['🦒 Animals', [
+      ['What is the largest land animal?', ['Rhino', 'Hippo', 'African elephant', 'Giraffe'], 2], ['What is a baby kangaroo called?', ['Cub', 'Joey', 'Kid', 'Pup'], 1], ['How many hearts does an octopus have?', ['1', '2', '3', '8'], 2],
+      ['Which is the largest bird?', ['Eagle', 'Ostrich', 'Emu', 'Albatross'], 1], ['What do giant pandas mostly eat?', ['Fish', 'Bamboo', 'Berries', 'Insects'], 1], ['What is a group of lions called?', ['A pack', 'A herd', 'A pride', 'A flock'], 2],
+      ['Which animal is famous for changing colour?', ['Chameleon', 'Gecko', 'Frog', 'Snake'], 0], ['How many legs does an insect have?', ['4', '6', '8', '10'], 1], ['Which mammal can truly fly?', ['Flying squirrel', 'Bat', 'Sugar glider', 'Owl'], 1],
+      ['What is a baby cat called?', ['Puppy', 'Cub', 'Kitten', 'Foal'], 2], ['Which South African beach is famous for its penguins?', ['Clifton', 'Boulders Beach', 'Umhlanga', 'Muizenberg'], 1], ['Which bird dives fastest of all?', ['Peregrine falcon', 'Fish eagle', 'Ostrich', 'Swallow'], 0]]],
+    history: ['🏛️ History', [
+      ['Who was the first person to walk on the Moon?', ['Buzz Aldrin', 'Yuri Gagarin', 'Neil Armstrong', 'John Glenn'], 2], ['In which year was Nelson Mandela released from prison?', ['1985', '1990', '1994', '1999'], 1],
+      ['Who is credited with inventing the telephone?', ['Thomas Edison', 'Alexander Graham Bell', 'Nikola Tesla', 'Isaac Newton'], 1], ['In which country are the pyramids of Giza?', ['Mexico', 'Sudan', 'Egypt', 'Peru'], 2],
+      ['In which year did World War II end?', ['1918', '1939', '1945', '1950'], 2], ['Which ship sank in 1912 after hitting an iceberg?', ['Titanic', 'Lusitania', 'Britannic', 'Mayflower'], 0], ['Robben Island lies off which city?', ['Durban', 'Port Elizabeth', 'Cape Town', 'East London'], 2],
+      ['Who was the first person in space?', ['Yuri Gagarin', 'Neil Armstrong', 'Valentina Tereshkova', 'Alan Shepard'], 0], ['Youth Day (16 June) remembers which 1976 event?', ['The Soweto uprising', 'The first democratic election', 'The end of World War II', 'The Freedom Charter'], 0],
+      ['Who painted the ceiling of the Sistine Chapel?', ['Leonardo da Vinci', 'Raphael', 'Michelangelo', 'Rembrandt'], 2], ['In which year did the Berlin Wall fall?', ['1979', '1989', '1991', '2000'], 1], ['Who was the first woman to fly solo across the Atlantic?', ['Amelia Earhart', 'Marie Curie', 'Rosa Parks', 'Florence Nightingale'], 0]]]
   };
+  const PAID = ['bible', 'soccer', 'science', 'world', 'animals', 'history'];
+  const owns = k => PAID.indexOf(k) < 0 || !!(FCX.shop && FCX.shop.has && FCX.shop.has('quiz:' + k));
   function gameForm(conv, after) {
-    sheet('<h3>🎮 Family quiz</h3><p>Everyone plays on their own phone. Scores go in the chat.</p><div class="fc-acts">' + Object.keys(PACKS).map(k => '<button class="fc-act" data-p="' + k + '"><i>' + PACKS[k][0].split(' ')[0] + '</i>' + esc(PACKS[k][0].replace(/^\S+\s/, '')) + '</button>').join('') + '</div>' +
+    sheet('<h3>🎮 Family quiz</h3><p>Everyone plays on their own phone. Scores go in the chat.</p><div class="fc-acts">' + Object.keys(PACKS).map(k => '<button class="fc-act" data-p="' + k + '"><i>' + PACKS[k][0].split(' ')[0] + '</i><span style="flex:1">' + esc(PACKS[k][0].replace(/^\S+\s/, '')) + '</span>' + (owns(k) ? '' : '<small style="color:#fde047;font-weight:800">🔒 Get</small>') + '</button>').join('') + '</div>' +
       '<div class="fca-seg" style="margin-top:10px"><button data-n="5" class="on">5 questions</button><button data-n="10">10 questions</button></div>', (el, done) => {
       let n = 5; el.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { n = Number(b.dataset.n); el.querySelectorAll('[data-n]').forEach(x => x.classList.toggle('on', x === b)); });
       el.querySelectorAll('[data-p]').forEach(b => b.onclick = async () => {
+        if (!owns(b.dataset.p)) { if (!(FCX.shop && await FCX.shop.buy('futurechat_quiz_' + b.dataset.p))) return; try { await api('/api/fcp/me').then(m => { FCX.shop.me = m; }); } catch (_) {} }
         const k = b.dataset.p, all = PACKS[k][1].map((_, i) => i); for (let i = all.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; }
         try { const r = await post('/api/fcf/game', { c: conv, title: PACKS[k][0].replace(/^\S+\s/, ''), pack: k, qs: all.slice(0, n) }); done(); refreshChat(); if (after) after(); playGame(r.id, after); } catch (e) { toast(e.message); }
       });

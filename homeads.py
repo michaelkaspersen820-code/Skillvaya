@@ -29,7 +29,12 @@ PLANS = {
     "futurechat_ad_video_3d": ("video", 3, 5000, "Video ad · 3 days"),
     "futurechat_ad_video_5d": ("video", 5, 7500, "Video ad · 5 days"),
     "futurechat_ad_video_7d": ("video", 7, 10000, "Video ad · 1 week"),
+    # FCP-01: personal shout-outs and proposals for everyone (same fair turns in Sponsored status)
+    "futurechat_shout_1d": ("shout", 1, 500, "Shout-out · 1 day"),
+    "futurechat_shout_3d": ("shout", 3, 1500, "Shout-out · 3 days"),
+    "futurechat_propose_1d": ("propose", 1, 2900, "Proposal · 1 day"),
 }
+SHOUT_DESIGNS = ("bday", "congrats", "baby", "love", "thanks", "memorial", "lost", "wedding", "grad", "faith", "propose")
 # Future Chat Status: each "Sponsored" status holds up to RING_SIZE ads (about 5 minutes at 30 s each); the app adds
 # another Sponsored status as more ads run, up to MAX_RINGS. When all are full, a new paid ad waits for the next free place.
 RING_SIZE, MAX_RINGS = 10, 5
@@ -52,6 +57,17 @@ def _activate_queued(c):
         days = PLANS.get(r["product_id"], ("", 1))[1]
         c.execute("UPDATE home_ads SET status='active',starts_at=?,ends_at=?,updated_at=? WHERE id=? AND status='queued'",
                   (_iso(start), _iso(start + datetime.timedelta(days=days)), A.now(), int(r["id"])))
+        if PLANS.get(r["product_id"], ("",))[0] == "propose": threading.Thread(target=_went_live, args=(int(r["id"]),), daemon=True).start()
+
+
+def _went_live(ad_id):
+    try:
+        import fcpay
+        with A.conn() as c:
+            r = c.execute("SELECT product_id FROM home_ads WHERE id=?", (ad_id,)).fetchone()
+        if r and PLANS.get(r["product_id"], ("",))[0] == "propose": fcpay.proposal_live(ad_id)
+    except Exception as exc:
+        print("Future Chat proposal card skipped:", type(exc).__name__)
 PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
 VIDEO_TYPES = {"video/mp4", "video/webm", "video/quicktime"}
 MAX_PHOTO = 2 * 1024 * 1024
@@ -99,6 +115,7 @@ def _expire(c):
 def _public(r, with_owner=False):
     d = {"id": int(r["id"]), "kind": r["kind"], "headline": r["headline"], "body": r["body"], "cta": r["cta"],
          "target": r["target"], "advertiser": r["advertiser"], "mime": r["media_mime"], "fc": is_fc(r["product_id"]),
+         "tier": PLANS.get(r["product_id"] or "", ("word",))[0], "x": _extra_public(r),
          "media": ("/api/home-ads/media/%d?v=%s" % (int(r["id"]), hashlib.sha1((r["updated_at"] or "").encode()).hexdigest()[:8])) if r["media_mime"] else ""}
     if with_owner:
         plan = PLANS.get(r["product_id"] or "")
@@ -108,7 +125,13 @@ def _public(r, with_owner=False):
     return d
 
 
-COLS = "id,user_id,kind,headline,body,cta,target,advertiser,media_mime,product_id,status,order_id,paid_at,starts_at,ends_at,views,clicks,note,created_at,updated_at"
+COLS = "id,user_id,kind,headline,body,cta,target,advertiser,media_mime,product_id,status,order_id,paid_at,starts_at,ends_at,views,clicks,note,created_at,updated_at,extra"
+
+
+def _extra_public(r):
+    try: ex = json.loads(r["extra"] or "{}")
+    except Exception: ex = {}
+    return {k: ex[k] for k in ("design", "to_name", "answer") if k in ex}
 
 # Small in-memory cache so popular ad media is not decoded from the database on every view.
 _MEDIA = collections.OrderedDict()
@@ -290,8 +313,23 @@ def handle_post(h, path, d):
         if product_id not in PLANS: return h.sendj({"error": "Choose how long your ad should run."}, 400)
         if (PLANS[product_id][0] == "video") != (kind == "video"): return h.sendj({"error": "Video ads use the video price; word and photo ads use the standard price."}, 400)
         if len(headline) < 3: return h.sendj({"error": "Add a short headline (at least 3 characters)."}, 400)
-        try: target = _clean_target(d.get("target"))
-        except ValueError as e: return h.sendj({"error": str(e)}, 400)
+        extra = {}
+        tier = PLANS[product_id][0]
+        if tier in ("shout", "propose"):
+            design = "propose" if tier == "propose" else str(d.get("design") or "congrats")
+            if design not in SHOUT_DESIGNS: design = "congrats"
+            extra = {"design": design}
+            target = ""
+            if tier == "propose":
+                ph = A.FC.normalize_phone(str(d.get("to_phone") or ""))
+                with A.conn() as c:
+                    who = c.execute("SELECT id,name FROM users WHERE phone_e164=? AND phone_verified_at<>''", (ph,)).fetchone() if ph else None
+                if not who: return h.sendj({"error": "Your partner needs to be on Future Chat so they can answer. Check their number."}, 404)
+                if int(who["id"]) == uid: return h.sendj({"error": "That's your own number."}, 400)
+                extra.update({"to": int(who["id"]), "to_name": (who["name"] or "").split(" ")[0]})
+        else:
+            try: target = _clean_target(d.get("target"))
+            except ValueError as e: return h.sendj({"error": str(e)}, 400)
         mime, b64 = "", ""
         if kind in ("photo", "video"):
             m = d.get("media") or {}
@@ -308,8 +346,8 @@ def handle_post(h, path, d):
         status = "pending_review" if owner else "pending_payment"
         with A.conn() as c:
             c.execute("DELETE FROM home_ads WHERE user_id=? AND status='pending_payment' AND created_at<?", (uid, _iso(_now_dt() - datetime.timedelta(days=2))))
-            ad_id = c.execute("INSERT INTO home_ads(user_id,kind,headline,body,cta,target,advertiser,media_mime,media_b64,product_id,status,paid_at,note,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id",
-                              (uid, kind, headline, body, cta, target, advertiser, mime, b64, product_id, status, stamp if owner else "", "Owner ad (free)" if owner else "", stamp, stamp)).fetchone()["id"]
+            ad_id = c.execute("INSERT INTO home_ads(user_id,kind,headline,body,cta,target,advertiser,media_mime,media_b64,product_id,status,paid_at,note,created_at,updated_at,extra) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id",
+                              (uid, kind, headline, body, cta, target, advertiser, mime, b64, product_id, status, stamp if owner else "", "Owner ad (free)" if owner else "", stamp, stamp, json.dumps(extra))).fetchone()["id"]
         if owner: return _approve(h, u, int(ad_id))
         return h.sendj({"ok": True, "id": int(ad_id), "product_id": product_id, "obfuscated_profile": "ad-%d" % int(ad_id)})
     if path == "/api/home-ads/delete":
@@ -398,6 +436,9 @@ def _approve(h, u, ad_id):
     if queued:
         if int(ad["user_id"]) != int(u["id"]): _notify(ad["user_id"], "Your ad is approved", (ad["headline"] or "Your ad") + " is approved and starts as soon as a Sponsored place opens (usually within a day). Your days start then.")
         return h.sendj({"ok": True, "id": ad_id, "status": "queued", "days": days})
+    if int(ad["user_id"]) != int(u["id"]):
+        pass
+    _went_live(ad_id)
     if int(ad["user_id"]) != int(u["id"]):
         _notify(ad["user_id"], "Your ad is live", (ad["headline"] or "Your ad") + " is now showing " + ("in Future Chat Status" if is_fc(ad["product_id"]) else "on the Skillvaya homepage") + " for %d %s." % (days, "day" if days == 1 else "days"))
     return h.sendj({"ok": True, "id": ad_id, "status": "active", "days": days})
