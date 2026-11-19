@@ -51,6 +51,7 @@ def init(c):
         CREATE INDEX IF NOT EXISTS idx_fca_clients_client ON fca_clients(client_id);
         CREATE TABLE IF NOT EXISTS fca_bcasts(id %(pk)s, biz_id BIGINT NOT NULL, body TEXT NOT NULL, sent INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
     """ % {"pk": pk})
+    if "hidden" not in A.table_columns(c, "fc_members"): c.execute("ALTER TABLE fc_members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")   # FCA-02
     threading.Thread(target=_loop, name="FutureChatControl", daemon=True).start()
 
 
@@ -360,6 +361,22 @@ def handle_get(h, path):
 def handle_post(h, path, d):
     d = d or {}
     u = h.require(); uid = int(u["id"])
+    if path == "/api/fca/chat/delete":
+        # FCA-02 (WhatsApp-style "Delete chat" from the chat list): only for this person. Direct chats are cleared and hidden
+        # until someone sends a new message; groups: you leave the group and it disappears.
+        cid = int(d.get("c") or 0); stamp = A.now()
+        with A.conn() as c:
+            if not c.execute("SELECT 1 FROM fc_members WHERE conversation_id=? AND user_id=?", (cid, uid)).fetchone():
+                return h.sendj({"error": "Chat not found."}, 404)
+            cv = c.execute("SELECT kind,last_message_id FROM fc_conversations WHERE id=?", (cid,)).fetchone()
+            if cv["kind"] == "group":
+                c.execute("DELETE FROM fc_members WHERE conversation_id=? AND user_id=?", (cid, uid))
+                c.execute("INSERT INTO fc_messages(conversation_id,sender_id,body,kind,created_at) VALUES(?,?,?,?,?)", (cid, uid, (u.get("name") or "Someone") + " left", "system", stamp))
+                return h.sendj({"ok": True, "left": True})
+            last = int(cv["last_message_id"] or 0)
+            c.execute("UPDATE fc_members SET hidden=1,cleared_id=?,cleared_at=?,archived=0,pinned=0,last_read_id=CASE WHEN last_read_id<? THEN ? ELSE last_read_id END"
+                      " WHERE conversation_id=? AND user_id=?", (last, stamp, last, last, cid, uid))
+        return h.sendj({"ok": True})
     if path == "/api/fca/optout":
         biz = int(d.get("biz") or 0)
         if not biz: return h.sendj({"error": "Which business?"}, 400)

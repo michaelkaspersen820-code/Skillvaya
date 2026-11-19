@@ -184,6 +184,66 @@
     const prof = bd.querySelector('.fca-prof'); if (prof) prof.after(box); else bd.prepend(box);
     draw(); me().then(draw);
   };
+
+  // ---------------------------------------------------------------- FCA-02: hold a chat or a call for options (like WhatsApp)
+  const FCc = () => window.FutureChat || {};
+  let holdT = null, held = false, sx = 0, sy = 0, lastOpen = 0;
+  const holdTarget = e => (e.target && e.target.closest) ? e.target.closest('.fc-row[data-c], #fcaCallList [data-i]') : null;
+  const cancelHold = () => { clearTimeout(holdT); holdT = null; };
+  function openHold(t) {
+    if (Date.now() - lastOpen < 900) return; lastOpen = Date.now();
+    if (t.matches('.fc-row[data-c]')) chatMenu(Number(t.dataset.c)); else callMenu(Number(t.dataset.i), t);
+  }
+  document.addEventListener('touchstart', e => {
+    held = false; const t = holdTarget(e); if (!t) return;
+    const pt = e.touches[0]; sx = pt.clientX; sy = pt.clientY; cancelHold();
+    holdT = setTimeout(() => { held = true; if (navigator.vibrate) navigator.vibrate(15); openHold(t); }, 480);
+  }, { passive: true, capture: true });
+  document.addEventListener('touchmove', e => { const pt = e.touches[0]; if (Math.abs(pt.clientX - sx) > 10 || Math.abs(pt.clientY - sy) > 10) cancelHold(); }, { passive: true, capture: true });
+  document.addEventListener('touchend', cancelHold, { passive: true, capture: true });
+  document.addEventListener('touchcancel', cancelHold, { passive: true, capture: true });
+  document.addEventListener('contextmenu', e => { const t = holdTarget(e); if (!t) return; e.preventDefault(); cancelHold(); openHold(t); }, true);
+  document.addEventListener('click', e => { if (held && holdTarget(e)) { e.preventDefault(); e.stopPropagation(); held = false; } }, true);
+
+  async function setting(cid, patch, msg) { try { await post('/api/fc/settings', Object.assign({ c: cid }, patch)); toast(msg); try { FCc().reloadList(); } catch (_) {} } catch (e) { toast(e.message); } }
+  async function block(uid, on, name) {
+    if (on && !confirm('Block ' + (name || 'this person') + '? They won\'t be able to message or call you.')) return;
+    try { await post('/api/fcx/block', { user_id: uid, on }); toast(on ? 'Blocked' : 'Unblocked'); const pr = X.peers || {}; Object.keys(pr).forEach(k => { if (pr[k] && pr[k].user_id === uid) pr[k].blocked = on; }); } catch (e) { toast(e.message); }
+  }
+  function chatMenu(cid) {
+    let c = null; try { c = (FCc().state().list || []).find(x => x.id === cid); } catch (_) {}
+    if (!c) return;
+    const p = (X.peers || {})[String(cid)] || {}, group = c.kind === 'group';
+    const acts = [['pin', c.pinned ? '📌' : '📌', c.pinned ? 'Unpin chat' : 'Pin chat'], ['mute', '🔕', c.muted ? 'Unmute notifications' : 'Mute notifications'],
+      ['arch', '🗂️', c.archived ? 'Unarchive chat' : 'Archive chat']];
+    if (!group && p.user_id) acts.push(['block', '🚫', p.blocked ? 'Unblock ' + c.title : 'Block ' + c.title]);
+    acts.push(['del', '🗑️', group ? 'Exit group and delete' : 'Delete chat']);
+    sheet('<h3>' + esc(c.title) + '</h3><div class="fc-acts">' + acts.map(a => '<button class="fc-act" data-a="' + a[0] + '"' + (a[0] === 'del' ? ' style="color:#ff8a8a"' : '') + '><i>' + a[1] + '</i>' + esc(a[2]) + '</button>').join('') + '</div>', (el, done) => bind(el, {
+      pin: () => { done(); setting(cid, { pinned: !c.pinned }, c.pinned ? 'Unpinned' : 'Pinned'); },
+      mute: () => { done(); setting(cid, { muted: !c.muted }, c.muted ? 'Notifications on' : 'Muted'); },
+      arch: () => { done(); setting(cid, { archived: !c.archived }, c.archived ? 'Unarchived' : 'Archived'); },
+      block: () => { done(); block(p.user_id, !p.blocked, c.title); },
+      del: async () => {
+        done();
+        if (!confirm(group ? 'Exit "' + c.title + '" and delete it from your chats?' : 'Delete your chat with ' + c.title + '? The messages are removed for you only. If they message you again, the chat comes back.')) return;
+        try { await post('/api/fca/chat/delete', { c: cid }); toast(group ? 'You left the group' : 'Chat deleted'); FCc().reloadList(); } catch (e) { toast(e.message); }
+      }
+    }));
+  }
+  async function callMenu(i, rowEl) {
+    let c = null; try { c = ((await api('/api/fcx/calls')).items || [])[i]; } catch (_) {}
+    if (!c) return;
+    const p = Object.values(X.peers || {}).find(x => x && x.user_id === c.other_id) || {};
+    sheet('<h3>' + esc(c.name) + '</h3><div class="fc-acts">' +
+      (c.conversation_id ? '<button class="fc-act" data-a="msg"><i>💬</i>Message</button><button class="fc-act" data-a="voice"><i>📞</i>Voice call</button><button class="fc-act" data-a="video"><i>🎥</i>Video call</button>' : '') +
+      (c.other_id ? '<button class="fc-act" data-a="block"><i>🚫</i>' + (p.blocked ? 'Unblock ' : 'Block ') + esc(c.name) + '</button>' : '') +
+      '<button class="fc-act" data-a="del" style="color:#ff8a8a"><i>🗑️</i>Delete from call history</button></div>', (el, done) => bind(el, {
+        msg: () => { done(); FCc().openConv(c.conversation_id); },
+        voice: () => { done(); FCc().callConv(c.conversation_id, 'voice'); }, video: () => { done(); FCc().callConv(c.conversation_id, 'video'); },
+        block: () => { done(); block(c.other_id, !p.blocked, c.name); },
+        del: async () => { done(); try { await post('/api/fcx/calls/delete', { id: c.id }); toast('Removed from call history'); if (rowEl) rowEl.remove(); } catch (e) { toast(e.message); } }
+      }));
+  }
   A.open = () => { openPanel(); go('you'); push(scrControl); };
   try { if (/[?&]fca=1/.test(location.search)) setTimeout(() => { me().then(m => { if (m && m.owner) A.open(); }); }, 1500); } catch (_) {}
 })();

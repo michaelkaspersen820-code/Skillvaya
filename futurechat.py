@@ -426,7 +426,8 @@ def handle_get(h, path):
                 " (SELECT u3.phone_verified_at FROM users u3 WHERE u3.id=?) AS my_verified"
                 " FROM fc_members m JOIN fc_conversations cv ON cv.id=m.conversation_id"
                 " LEFT JOIN fc_messages lm ON lm.id=cv.last_message_id LEFT JOIN businesses b ON b.id=cv.business_id LEFT JOIN users cu ON cu.id=cv.customer_id"
-                " WHERE m.user_id=? ORDER BY cv.updated_at DESC LIMIT 400", (uid, uid, uid, uid)).fetchall()
+                " WHERE m.user_id=? AND NOT (COALESCE(m.hidden,0)=1 AND cv.last_message_id<=m.cleared_id)"   # FCA-02: deleted chats stay hidden until a new message
+                " ORDER BY cv.updated_at DESC LIMIT 400", (uid, uid, uid, uid)).fetchall()
         items, verified = [], False
         for r in rows:
             verified = bool(r["my_verified"])
