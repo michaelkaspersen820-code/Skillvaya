@@ -719,7 +719,11 @@
     if (st.verified && !afterSignup) { toast('Your number ' + st.phone + (st.method === 'email' ? ' is confirmed by email (not SMS-checked yet)' : st.method === 'self' ? ' is saved' : ' is verified')); return; }
     if (st.mode === 'sim') return verifyPhoneBySim(st, afterSignup);
     if (st.mode === 'email') return verifyPhoneByEmail(st, afterSignup);
-    sheet('<h3>Verify your phone number</h3><p>' + (afterSignup ? 'One last step. ' : '') + 'We\'ll send a 6-digit code by SMS. Your number lets people find you on Future Chat and call you.</p>' +
+    return verifyPhoneByCode(st, afterSignup);
+  }
+  // FCV-02: Google (Firebase) texts a 6-digit code to the number. Receiving an SMS is free, so this works with no airtime.
+  function verifyPhoneByCode(st, afterSignup) {
+    sheet('<h3>' + (st.mode === 'sim' ? 'Get a free code by SMS' : 'Verify your phone number') + '</h3><p>' + (afterSignup ? 'One last step. ' : '') + 'We\'ll send a 6-digit code by SMS. Receiving it is free, even with no airtime.</p>' +
       '<input id="fcPN" type="tel" autocomplete="tel" placeholder="Phone number, e.g. 082 123 4567" value="' + esc(st.phone || '') + '"><button class="fc-btn" id="fcPSend">Send code</button>' +
       '<div id="fcPStep2" style="display:none"><input id="fcPC" class="fc-codes" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••"><button class="fc-btn" id="fcPConfirm">Verify</button></div>' +
       '<p id="fcPMsg" role="status"></p>' + (afterSignup ? '<button class="fc-btn sec" id="fcPLater">Later</button>' : '') + '<div id="fcRecaptcha"></div>', (el, done) => {
@@ -755,9 +759,11 @@
     sheet('<h3>Confirm your number</h3><p>' + (afterSignup ? 'One last step. ' : '') + 'Your SMS app will open with a short code already typed in. <b>Just tap Send.</b> It costs one normal SMS and proves this number is really yours.</p>' +
       '<input id="fcPN" type="tel" autocomplete="tel" placeholder="Your phone number, e.g. 082 123 4567" value="' + esc(st.phone || '') + '"><button class="fc-btn" id="fcPSend">Open SMS app</button>' +
       '<div id="fcPWait" style="display:none;text-align:center;margin:10px 0"><div style="font-size:30px;line-height:1">📨</div><p style="margin:6px 0">Waiting for your SMS…</p><p class="fc-muted" style="font-size:12.5px;opacity:.8" id="fcPHow"></p><button class="fc-btn sec" id="fcPAgain">Open SMS app again</button></div>' +
-      '<p id="fcPMsg" role="status"></p><p class="fc-muted" style="font-size:12px;opacity:.75">Send it from the phone that has this SIM. The code works for 30 minutes.</p>' + (afterSignup ? '<button class="fc-btn sec" id="fcPLater">Later</button>' : ''), (el, done) => {
+      '<p id="fcPMsg" role="status"></p><p class="fc-muted" style="font-size:12px;opacity:.75">Send it from the phone that has this SIM. The code works for 30 minutes.</p>' +
+      '<button class="fc-btn sec" id="fcPFree">No airtime? Get a free code by SMS instead</button>' + (afterSignup ? '<button class="fc-btn sec" id="fcPLater">Later</button>' : ''), (el, done) => {
       const msg = t => { $('#fcPMsg', el).textContent = t; };
       let timer = 0, last = null;
+      $('#fcPFree', el).onclick = () => { if (timer) clearInterval(timer); timer = 0; const ph = $('#fcPN', el).value.trim() || st.phone || ''; done(); verifyPhoneByCode(Object.assign({}, st, { phone: ph }), afterSignup); };
       const stop = () => { if (timer) clearInterval(timer); timer = 0; };
       const finish = d => { stop(); done(); S.verified = true; toast('Number ' + (d.phone || '') + ' confirmed ✓'); if (S.open && !S.conv) loadList(); };
       const later = $('#fcPLater', el); if (later) later.onclick = () => { stop(); done(); };
