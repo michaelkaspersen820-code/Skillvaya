@@ -1182,10 +1182,16 @@
     const form = el.querySelector('#fcaForm'), msg = el.querySelector('#fcaMsg'), btn = el.querySelector('.fca-go');
     const fg = el.querySelector('#fcaForgot');
     if (fg) fg.onclick = async () => {
-      const email = ((el.querySelector('#fcaEmail') || {}).value || '').trim();
-      if (!email || email.indexOf('@') < 0) { msg.style.color = '#ffd0d0'; msg.textContent = 'Type your email above first, then tap Forgot your password.'; return; }
-      fg.disabled = true;
-      try { const d = await post('/api/password-reset/request', { email }); msg.style.color = '#bff3d6'; msg.textContent = (d.message || 'If an account matches that email, a reset link is on its way.') + ' Check your inbox and spam folder.'; }
+      // FC-RESET-01: email or phone number; the server says plainly if no account matches or where the link went.
+      let email = ((el.querySelector('#fcaEmail') || {}).value || '').trim();
+      if (!email || email.indexOf('@') < 0) {
+        const typed = prompt('Type the email address or phone number you signed up with:', email || '');
+        if (typed === null) return;
+        email = typed.trim();
+        if (!email) { msg.style.color = '#ffd0d0'; msg.textContent = 'Type your email address or phone number first.'; return; }
+      }
+      fg.disabled = true; msg.style.color = '#cfe3f2'; msg.textContent = 'Sending your reset link…';
+      try { const d = await post('/api/password-reset/request', { email, app: 'futurechat' }); msg.style.color = '#bff3d6'; msg.textContent = d.message || 'Reset link sent. Check your inbox and spam folder.'; }
       catch (err) { msg.style.color = '#ffd0d0'; msg.textContent = err.message; }
       fg.disabled = false;
     };

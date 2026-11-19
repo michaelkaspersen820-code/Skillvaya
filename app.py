@@ -1258,7 +1258,7 @@ def build_ice_servers(user=None):
         elif static_user and static_cred:
             servers.append({"urls":urls,"username":static_user,"credential":static_cred})
     return servers
-def send_owner_email(subject, body, recipient=None):
+def send_owner_email(subject, body, recipient=None, brand="Skillvaya"):
     recipient=recipient or setting("owner_email")
     host=os.environ.get("SKILLVAYA_SMTP_HOST","")
     port=int(os.environ.get("SKILLVAYA_SMTP_PORT","587") or "587")
@@ -1273,8 +1273,8 @@ def send_owner_email(subject, body, recipient=None):
         # other providers treat these as normal mail instead of filtering them to Spam.
         from email.utils import formataddr, formatdate, make_msgid, parseaddr
         import html as _html
-        m=EmailMessage(); m["Subject"]="Skillvaya: "+subject
-        m["From"]=formataddr(("Skillvaya", parseaddr(sender)[1] or sender)); m["To"]=recipient
+        m=EmailMessage(); m["Subject"]=brand+": "+subject
+        m["From"]=formataddr((brand, parseaddr(sender)[1] or sender)); m["To"]=recipient
         m["Reply-To"]=parseaddr(sender)[1] or sender
         m["Date"]=formatdate(localtime=False); m["Message-ID"]=make_msgid(domain=(parseaddr(sender)[1].split("@")[-1] or "skillvaya.app"))
         m["Auto-Submitted"]="auto-generated"
@@ -1282,8 +1282,8 @@ def send_owner_email(subject, body, recipient=None):
         _paras="".join("<p style=\"margin:0 0 14px\">"+_html.escape(p).replace("\n","<br>")+"</p>" for p in str(body).split("\n\n") if p.strip())
         m.add_alternative("<!doctype html><html><body style=\"margin:0;padding:24px;background:#f3f6fb;font-family:Arial,Helvetica,sans-serif;color:#142b4a\">"
             "<div style=\"max-width:520px;margin:0 auto;background:#ffffff;border-radius:12px;padding:24px;border:1px solid #dce6f5\">"
-            "<div style=\"font-size:20px;font-weight:bold;color:#102f5a;margin-bottom:16px\">Skillvaya</div>"+_paras+
-            "</div><div style=\"max-width:520px;margin:12px auto 0;font-size:12px;color:#6b7c93;text-align:center\">Sent by Skillvaya because of activity on your account.</div></body></html>", subtype="html")
+            "<div style=\"font-size:20px;font-weight:bold;color:#102f5a;margin-bottom:16px\">"+_html.escape(brand)+"</div>"+_paras+
+            "</div><div style=\"max-width:520px;margin:12px auto 0;font-size:12px;color:#6b7c93;text-align:center\">Sent by "+_html.escape(brand)+" because of activity on your account.</div></body></html>", subtype="html")
         with smtplib.SMTP(host,port,timeout=12) as server:
             server.starttls(); server.login(user,password); server.send_message(m)
         return True
@@ -4836,6 +4836,7 @@ class Handler(BaseHTTPRequestHandler):
             data=page.encode(); self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(data))); self.end_headers(); self.wfile.write(data); return
         if path == "/reset-password":
             page = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Choose a new password</title><style>body{font:16px system-ui;background:#f2f6fb;color:#142b4a;min-height:100vh;display:grid;place-items:center;margin:0;padding:18px}.card{background:white;width:min(100%,440px);padding:28px;border-radius:16px}label{display:block;margin:16px 0 6px}input,button{box-sizing:border-box;width:100%;padding:13px;border-radius:9px;font:inherit}input{border:1px solid #c8d5e5}button{margin-top:16px;background:#102f5a;color:white;border:0;font-weight:700}a{color:#1b5d99}#status{min-height:24px}</style></head><body><main class="card"><h1>Choose a new password</h1><p>Use at least 12 characters. The link expires after 30 minutes and works once.</p><form id="f"><label>New password</label><input id="pw" type="password" minlength="12" maxlength="256" autocomplete="new-password" required><label>Confirm password</label><input id="confirm" type="password" minlength="12" maxlength="256" autocomplete="new-password" required><button>Update password</button><p id="status" role="status"></p></form><a href="/">Back to sign in</a></main><script>document.getElementById('f').onsubmit=async e=>{e.preventDefault();let s=document.getElementById('status'),p=document.getElementById('pw').value,c=document.getElementById('confirm').value;if(p!==c){s.textContent='Passwords do not match.';return}let token=new URLSearchParams(location.search).get('token');if(!token){s.textContent='Invalid link. Request another.';return}try{let r=await fetch('/api/password-reset/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:p})}),d=await r.json();if(!r.ok)throw Error(d.error||'Could not reset password');s.textContent='Password updated. You can now sign in.';e.target.reset()}catch(x){s.textContent=x.message}};</script></body></html>"""
+            if "app=fc" in (urlparse(self.path).query or ""): page=page.replace("</style>","body{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)}.card{color:#142b4a}button{background:#12a89c}a{color:#0c7f76}</style>",1).replace("<main class=\"card\">","<main class=\"card\"><div style=\"font-weight:800;color:#0c7f76;letter-spacing:.04em;margin-bottom:6px\">FUTURE CHAT</div>",1).replace("<a href=\"/\">Back to sign in</a>","<p style=\"margin:14px 0 0\">After saving, go back to the Future Chat app on your phone and sign in with your new password.</p>",1)   # FC-RESET-01
             data=page.encode(); self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(data))); self.end_headers(); self.wfile.write(data); return
         if path == "/account-deletion":
             page_path=os.path.join(ROOT,"account_deletion.html")
@@ -5115,7 +5116,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 # FCAPP-01: the stand-alone Future Chat app (Google Play) opens this. Same page, accounts, chats and calls as
                 # Future Chat inside Skillvaya; fcapp.js only changes the frame (full-screen Future Chat, own sign-in, Account menu).
                 fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
-                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fc.js?v=22" defer></script><script src="/futurechat/fcapp.js?v=15" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=2" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/fcadmin.js?v=5" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fc.js?v=22" defer></script><script src="/futurechat/fcapp.js?v=16" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=2" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/fcadmin.js?v=5" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
                 # FCAPP-02: the full original Future Chat look, and no Skillvaya branding while the app loads.
                 fc_page = fc_page.replace('<link rel="stylesheet" href="/futurechat/fc.css?v=4">', '<link rel="stylesheet" href="/futurechat/fc.css?v=4"><link rel="stylesheet" href="/futurechat/fcapp.css?v=11"><style>#svSplash{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)!important;color:#fff!important}#svSplash .sv-splash-brand{color:#1ed6c8!important}#svSplash .sv-splash-caption{color:#cfe3f2!important}</style>', 1)
                 fc_page = fc_page.replace('<div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div>', '<div class="sv-splash-brand">Future Chat</div><div class="sv-splash-caption">Stay close. Wherever life takes you.</div>', 1)
@@ -5834,28 +5835,44 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return self.sendj({"ok":True})
 
             if path == "/api/password-reset/request":
-                email=str(d.get("email","")).strip().lower()[:254]
-                generic={"ok":True,"message":"If an account matches that email, a secure password-reset link will be sent shortly."}
-                if not email or "@" not in email: return self.sendj(generic,202)
+                # FC-RESET-01: find the account by email OR phone number, and tell people plainly what happened
+                # (no account found / already sent / could not send) instead of always saying "a link is on its way".
+                fcb=str(d.get("app","")).strip().lower()=="futurechat"; brand="Future Chat" if fcb else "Skillvaya"
+                ident=str(d.get("email","") or d.get("phone","")).strip()[:254]
+                if not ident: return self.sendj({"error":"Type the email address or phone number of your account first."},400)
                 with conn() as c:
-                    user=c.execute("SELECT id,email,name FROM users WHERE lower(email)=?",(email,)).fetchone()
-                    if not user: return self.sendj(generic,202)
+                    if "@" in ident:
+                        user=c.execute("SELECT id,email,name FROM users WHERE lower(trim(email))=? AND role<>'suspended' ORDER BY id DESC LIMIT 1",(ident.lower(),)).fetchone()
+                    else:
+                        ph=FC.normalize_phone(ident,sv_country(d.get("country")) or "ZA")
+                        user=c.execute("SELECT id,email,name FROM users WHERE (phone_e164=? OR phone=?) AND role<>'suspended' AND email LIKE '%@%' ORDER BY (COALESCE(phone_verified_at,'')<>'') DESC, id DESC LIMIT 1",(ph,ph)).fetchone() if ph else None
+                    if not user:
+                        if not fcb: return self.sendj({"ok":True,"message":"If an account matches that email, a secure password-reset link will be sent shortly."},202)   # Skillvaya unchanged
+                        return self.sendj({"error":"We couldn't find a "+brand+" account with that "+("email address" if "@" in ident else "phone number")+". Check it for typos, try the "+("phone number" if "@" in ident else "email address")+" you signed up with, or create a new account.","not_found":True},404)
+                    email=str(user["email"]).strip()
+                    masked=(email[:2]+"\u2022\u2022\u2022@"+email.split("@",1)[1]) if "@" in email else email
                     recent=c.execute("SELECT created_at FROM password_reset_tokens WHERE user_id=? ORDER BY id DESC LIMIT 1",(user["id"],)).fetchone()
                     if recent:
                         try:
                             last=datetime.datetime.fromisoformat(recent["created_at"])
-                            if (datetime.datetime.now(datetime.timezone.utc)-last).total_seconds()<60: return self.sendj(generic,202)
+                            if (datetime.datetime.now(datetime.timezone.utc)-last).total_seconds()<60:
+                                if not fcb: return self.sendj({"ok":True,"message":"If an account matches that email, a secure password-reset link will be sent shortly."},202)
+                                return self.sendj({"ok":True,"message":"We already sent a reset link to "+masked+" less than a minute ago. Check your inbox and spam folder, or try again in a minute."},202)
                         except (ValueError,TypeError): pass
                     c.execute("UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at=''",(now(),user["id"]))
                     raw=secrets.token_urlsafe(32); th=hashlib.sha256(raw.encode()).hexdigest()
                     created=now(); expires=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(minutes=30)).isoformat()
                     c.execute("INSERT INTO password_reset_tokens(user_id,token_hash,created_at,expires_at,used_at) VALUES(?,?,?,?, '')",(user["id"],th,created,expires))
                 base=os.environ.get("SKILLVAYA_PUBLIC_URL","https://skillvaya.onrender.com").strip().rstrip("/")
-                link=base+"/reset-password?token="+urllib.parse.quote(raw,safe="")
-                body="Hello "+str(user["name"] or "Skillvaya user")+",\n\nWe received a request to reset your Skillvaya password. Open this one-time link within 30 minutes:\n\n"+link+"\n\nIf you did not request this, ignore this email. Your current password remains unchanged. Do not share this link."
-                if not send_owner_email("Reset your password",body,recipient=email):
+                link=base+"/reset-password?token="+urllib.parse.quote(raw,safe="")+("&app=fc" if fcb else "")
+                body="Hello "+str(user["name"] or (brand+" user"))+",\n\nWe received a request to reset your "+brand+" password. Open this one-time link within 30 minutes:\n\n"+link+"\n\nIf you did not request this, ignore this email. Your current password remains unchanged. Do not share this link."
+                if not send_owner_email("Reset your password",body,recipient=email,brand=brand):
                     with conn() as c: c.execute("UPDATE password_reset_tokens SET used_at=? WHERE token_hash=? AND used_at=''",(now(),th))
-                return self.sendj(generic,202)
+                    print("password reset email could not be sent for user %s"%user["id"],flush=True)
+                    if not fcb: return self.sendj({"ok":True,"message":"If an account matches that email, a secure password-reset link will be sent shortly."},202)
+                    return self.sendj({"error":"We couldn't send the reset email just now. Please try again in a few minutes."},503)
+                if not fcb: return self.sendj({"ok":True,"message":"If an account matches that email, a secure password-reset link will be sent shortly."},202)
+                return self.sendj({"ok":True,"message":"We sent a reset link to "+masked+". It can take a minute to arrive \u2014 check your inbox and spam folder. The link works for 30 minutes."},202)
             if path == "/api/password-reset/confirm":
                 raw=str(d.get("token","")).strip(); password=d.get("password","")
                 if not isinstance(password,str) or len(password)<12 or len(password)>256: return self.sendj({"error":"Choose a password between 12 and 256 characters."},400)
