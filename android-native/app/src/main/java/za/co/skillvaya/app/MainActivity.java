@@ -53,6 +53,15 @@ import com.chaquo.python.Python;
 import com.chaquo.python.android.AndroidPlatform;
 
 public class MainActivity extends Activity {
+    /** TST-01: which app store installed Skillvaya ("com.android.vending" = Google Play), for the owner's Testers screen. */
+    private String installerName() {
+        String n = null;
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 30) n = getPackageManager().getInstallSourceInfo(getPackageName()).getInstallingPackageName();
+            else n = getPackageManager().getInstallerPackageName(getPackageName());
+        } catch (Exception ignored) {}
+        return n == null || n.isEmpty() ? "unknown" : n.replaceAll("[^A-Za-z0-9._-]", "");
+    }
     private SpeechRecognizer nativeSpeechRecognizer;
     private boolean nativeVoiceActive = false;
     private boolean nativeVoiceStopRequested = false;
@@ -395,7 +404,7 @@ public class MainActivity extends Activity {
         loadingHandler.post(loadingAnimation);
         loadingHandler.postDelayed(pushTokenRegistrationRetry, 5000);
         WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true); settings.setUserAgentString(settings.getUserAgentString() + " SkillvayaNative");
+        settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true); settings.setUserAgentString(settings.getUserAgentString() + " SkillvayaNative SkillvayaApp/" + BuildConfig.VERSION_NAME + " Installer/" + installerName());   // TST-01
         // Call audio/video and the in-app ring tone start from timers and network events, not from a tap, so the WebView
         // must be allowed to play media without a direct user gesture or the other person is silent.
         settings.setMediaPlaybackRequiresUserGesture(false);
