@@ -710,7 +710,9 @@
   // ---------- phone verification (Firebase via the Skillvaya app, or the web)
   async function verifyPhone(afterSignup) {
     let st = {}; try { st = await api('/api/phone/status'); } catch (_) {}
+    if (st.mode === 'sim' && !st.confirmed) return verifyPhoneBySim(st, afterSignup);
     if (st.verified && !afterSignup) { toast('Your number ' + st.phone + (st.method === 'email' ? ' is confirmed by email (not SMS-checked yet)' : st.method === 'self' ? ' is saved' : ' is verified')); return; }
+    if (st.mode === 'sim') return verifyPhoneBySim(st, afterSignup);
     if (st.mode === 'email') return verifyPhoneByEmail(st, afterSignup);
     sheet('<h3>Verify your phone number</h3><p>' + (afterSignup ? 'One last step. ' : '') + 'We\'ll send a 6-digit code by SMS. Your number lets people find you on Future Chat and call you.</p>' +
       '<input id="fcPN" type="tel" autocomplete="tel" placeholder="Phone number, e.g. 082 123 4567" value="' + esc(st.phone || '') + '"><button class="fc-btn" id="fcPSend">Send code</button>' +
@@ -739,6 +741,37 @@
         msg('Checking…');
         if (n && n.confirmPhoneCode) { n.confirmPhoneCode(code); return; }
         try { const cred = await web.confirm(code); finish(await cred.user.getIdToken()); } catch (e) { msg('That code didn\'t work. Check it or send a new one.'); }
+      };
+    });
+  }
+  // FCV-01: prove the number with ONE normal SMS from the person's own SIM. Their SMS app opens with the code
+  // already typed in; they tap Send. The server sees which number it came from.
+  function verifyPhoneBySim(st, afterSignup) {
+    sheet('<h3>Confirm your number</h3><p>' + (afterSignup ? 'One last step. ' : '') + 'Your SMS app will open with a short code already typed in. <b>Just tap Send.</b> It costs one normal SMS and proves this number is really yours.</p>' +
+      '<input id="fcPN" type="tel" autocomplete="tel" placeholder="Your phone number, e.g. 082 123 4567" value="' + esc(st.phone || '') + '"><button class="fc-btn" id="fcPSend">Open SMS app</button>' +
+      '<div id="fcPWait" style="display:none;text-align:center;margin:10px 0"><div style="font-size:30px;line-height:1">📨</div><p style="margin:6px 0">Waiting for your SMS…</p><p class="fc-muted" style="font-size:12.5px;opacity:.8" id="fcPHow"></p><button class="fc-btn sec" id="fcPAgain">Open SMS app again</button></div>' +
+      '<p id="fcPMsg" role="status"></p><p class="fc-muted" style="font-size:12px;opacity:.75">Send it from the phone that has this SIM. The code works for 30 minutes.</p>' + (afterSignup ? '<button class="fc-btn sec" id="fcPLater">Later</button>' : ''), (el, done) => {
+      const msg = t => { $('#fcPMsg', el).textContent = t; };
+      let timer = 0, last = null;
+      const stop = () => { if (timer) clearInterval(timer); timer = 0; };
+      const finish = d => { stop(); done(); S.verified = true; toast('Number ' + (d.phone || '') + ' confirmed ✓'); if (S.open && !S.conv) loadList(); };
+      const later = $('#fcPLater', el); if (later) later.onclick = () => { stop(); done(); };
+      const openSms = r => { location.href = 'sms:' + r.to + '?body=' + encodeURIComponent(r.body); };
+      $('#fcPAgain', el).onclick = () => { if (last) openSms(last); };
+      $('#fcPSend', el).onclick = async () => {
+        const raw = $('#fcPN', el).value; if (raw.replace(/\D/g, '').length < 9) { msg('Enter your full phone number.'); return; }
+        msg('');
+        try {
+          const r = await api('/api/fcv/start', { phone: raw }); last = r;
+          $('#fcPWait', el).style.display = 'block'; $('#fcPSend', el).style.display = 'none';
+          $('#fcPHow', el).textContent = 'Or send "' + r.code + '" by SMS to ' + r.to_pretty + ' from ' + r.phone + '.';
+          openSms(r);
+          stop(); const t0 = Date.now();
+          timer = setInterval(async () => {
+            if (!el.isConnected || Date.now() - t0 > 30 * 60 * 1000) return stop();
+            try { const s = await api('/api/fcv/status'); if (s.confirmed) finish(s); } catch (_) {}
+          }, 3000);
+        } catch (e) { msg(e.message); }
       };
     });
   }
@@ -799,7 +832,7 @@
       let snooze = 0; try { snooze = Number(localStorage.getItem('sv_phone_ask_snooze') || 0); } catch (_) {}
       let st = {}; try { st = await api('/api/phone/status'); } catch (_) { return; }
       phoneCard(st);
-      if (st.verified || Date.now() < snooze) { asked = true; return; }
+      if ((st.mode === 'sim' ? st.confirmed : st.verified) || Date.now() < snooze) { asked = true; return; }
       asked = true;
       try { localStorage.setItem('sv_phone_ask_snooze', String(Date.now() + 24 * 3600 * 1000)); } catch (_) {}
       verifyPhone(true);
@@ -808,8 +841,8 @@
       const s = document.getElementById('settings'); if (!s) return;
       let c = document.getElementById('svPhoneCard');
       if (!c) { c = document.createElement('div'); c.id = 'svPhoneCard'; c.className = 'card'; c.style.cssText = 'margin:16px 0;border-radius:16px;padding:14px 16px!important;overflow:visible!important;box-sizing:border-box;background:#fff;border:1px solid #dce7f5;color:#122238'; const ref = document.getElementById('svDataSaverCard'); if (ref) s.insertBefore(c, ref); else s.appendChild(c); }
-      const label = st.verified ? (st.method === 'email' ? 'Confirmed by email' : st.method === 'self' ? 'Saved' : 'Verified') : 'Not added yet';
-      c.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span><strong>Phone number</strong><span class="muted tiny" style="display:block">' + esc(st.verified ? st.phone : 'Add your number so customers, providers, friends and family can reach you on Future Chat.') + ' · ' + label + '</span></span><button type="button" class="primary" style="flex:none;padding:8px 14px;border-radius:10px">' + (st.verified ? 'Change' : 'Add number') + '</button></div>';
+      const label = st.verified ? (st.method === 'email' ? 'Confirmed by email' : st.method === 'self' ? (st.mode === 'sim' ? 'Not confirmed yet' : 'Saved') : 'Verified') : 'Not added yet';
+      c.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span><strong>Phone number</strong><span class="muted tiny" style="display:block">' + esc(st.verified ? st.phone : 'Add your number so customers, providers, friends and family can reach you on Future Chat.') + ' · ' + label + '</span></span><button type="button" class="primary" style="flex:none;padding:8px 14px;border-radius:10px">' + (st.mode === 'sim' && st.verified && !st.confirmed ? 'Confirm' : st.verified ? 'Change' : 'Add number') + '</button></div>';
       c.querySelector('button').onclick = () => verifyPhone(true);
     };
     setTimeout(askPhone, 2500); setInterval(askPhone, 20000);

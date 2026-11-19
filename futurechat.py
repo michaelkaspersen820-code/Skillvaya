@@ -549,9 +549,11 @@ def handle_get(h, path):
     if path == "/api/phone/status":
         with A.conn() as c:
             r = c.execute("SELECT phone,phone_e164,phone_verified_at,phone_verify_method,country,email FROM users WHERE id=?", (uid,)).fetchone()
+        sim = (not _sms_enabled()) and A.FV.on()
         return h.sendj({"phone": (r["phone_e164"] or r["phone"] or "") if r else "", "verified": bool(r and r["phone_verified_at"]),
                         "method": (r["phone_verify_method"] or "sms") if (r and r["phone_verified_at"]) else "",
-                        "mode": "sms" if _sms_enabled() else "email", "email_hint": _mask_email(r["email"] if r else ""),
+                        "confirmed": A.FV.is_confirmed(r), "sim_to": A.FV.pretty(A.FV.NUMBER) if sim else "",
+                        "mode": "sms" if _sms_enabled() else ("sim" if sim else "email"), "email_hint": _mask_email(r["email"] if r else ""),
                         "country": (r["country"] if r else "") or "ZA", "web_config": _web_config()})
     return h.sendj({"error": "Not found"}, 404)
 
@@ -857,6 +859,8 @@ def _code_hash(uid, code):
 def _email_phone_start(h, u, d):
     import secrets, datetime
     uid = int(u["id"])
+    if not _sms_enabled() and A.FV.on():   # FCV-01: numbers are proven by one SMS from the person's own SIM now
+        return h.sendj({"error": "Confirm your number with one SMS instead. Update the app if you don't see that option.", "use_sim": True}, 400)
     if d.get("skip"):  # SV93-SKIPMAIL: the email didn't arrive, so save the number now (marked unconfirmed).
         with A.conn() as c:
             r = c.execute("SELECT country FROM users WHERE id=?", (uid,)).fetchone()
