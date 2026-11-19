@@ -1162,6 +1162,19 @@
   window.fcAppMenu = () => go('you');
 
   // ---------------------------------------------------------------- sign in / create account (unchanged flow, own look)
+  // FC-EYE-01: eye button inside a password box so people can see what they typed.
+  function addEye(inp) {
+    if (!inp || inp.dataset.eye) return;
+    inp.dataset.eye = '1';
+    const w = document.createElement('div'); w.style.cssText = 'position:relative';
+    inp.parentNode.insertBefore(w, inp); w.appendChild(inp);
+    inp.style.paddingRight = '48px'; inp.style.boxSizing = 'border-box'; inp.style.width = '100%';
+    const b = document.createElement('button'); b.type = 'button';
+    b.style.cssText = 'position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:0;font-size:20px;line-height:1;cursor:pointer;padding:8px;color:inherit;opacity:.85;margin:0;width:auto;min-width:0;box-shadow:none';
+    const set = show => { inp.type = show ? 'text' : 'password'; b.textContent = show ? '\uD83D\uDE48' : '\uD83D\uDC41'; b.setAttribute('aria-label', show ? 'Hide password' : 'Show password'); b.title = b.getAttribute('aria-label'); };
+    b.onclick = () => { set(inp.type === 'password'); inp.focus(); };
+    set(false); w.appendChild(b);
+  }
   function showAuth(mode) {
     let el = document.getElementById('fcaAuth');
     if (!el) { el = document.createElement('div'); el.id = 'fcaAuth'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Future Chat sign in'); document.body.appendChild(el); }
@@ -1179,6 +1192,7 @@
       ' <a href="/account-deletion" target="_blank" rel="noopener">Delete an account</a></p></div>';
     el.querySelectorAll('.fca-tabs button').forEach(b => b.onclick = () => showAuth(b.dataset.m));
     el.querySelector('#fcaLangBtn').onclick = () => langPicker(() => setTimeout(() => showAuth(mode), 300));
+    addEye(el.querySelector('#fcaPw'));   // FC-EYE-01
     const form = el.querySelector('#fcaForm'), msg = el.querySelector('#fcaMsg'), btn = el.querySelector('.fca-go');
     const fg = el.querySelector('#fcaForgot');
     if (fg) fg.onclick = async () => {
@@ -1191,9 +1205,14 @@
         if (!email) { msg.style.color = '#ffd0d0'; msg.textContent = 'Type your email address or phone number first.'; return; }
       }
       fg.disabled = true; msg.style.color = '#cfe3f2'; msg.textContent = 'Sending your reset link…';
-      try { const d = await post('/api/password-reset/request', { email, app: 'futurechat' }); msg.style.color = '#bff3d6'; msg.textContent = d.message || 'Reset link sent. Check your inbox and spam folder.'; }
+      let sent = false;
+      try { const d = await post('/api/password-reset/request', { email, app: 'futurechat' }); msg.style.color = '#bff3d6'; msg.textContent = d.message || 'Reset link sent. Check your inbox and spam folder.'; sent = true; }
       catch (err) { msg.style.color = '#ffd0d0'; msg.textContent = err.message; }
-      fg.disabled = false;
+      if (!sent) { fg.disabled = false; return; }
+      // FC-RESET-02: one tap is enough; lock the button for 60 s so people don't fire off repeat emails while Gmail delivers.
+      const label = fg.textContent; let left = 60;
+      const tick = () => { if (left <= 0) { fg.disabled = false; fg.textContent = label; return; } fg.textContent = 'Email sent \u2014 you can ask again in ' + left + ' s'; left--; setTimeout(tick, 1000); };
+      tick();
     };
     form.onsubmit = async e => {
       e.preventDefault(); msg.style.color = ''; msg.textContent = '';
