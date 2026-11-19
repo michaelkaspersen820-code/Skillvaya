@@ -261,6 +261,7 @@
     catch (e) { if (e.data && e.data.verify_required) { if (done) done(); verifyPhone(false); } else toast(e.message); }
   }
   function invite(phone) {
+    if (window.FCX && window.FCX.invite) return window.FCX.invite(phone);   // FCG-01: personal link + giveaway ticket
     const text = 'Join me on Future Chat in Skillvaya — free chats, calls, Chatmoji and Lenses: https://skillvaya.onrender.com/download';
     if (phone) { location.href = 'sms:' + phone + '?body=' + encodeURIComponent(text); return; }
     if (navigator.share) navigator.share({ title: 'Future Chat', text }).catch(() => {});

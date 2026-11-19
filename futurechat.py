@@ -650,6 +650,10 @@ def handle_post(h, path, d):
                     if not phone: return h.sendj({"error": "Enter a valid phone number."}, 400)
                     other = c.execute("SELECT id,name FROM users WHERE phone_e164=? AND phone_verified_at<>''", (phone,)).fetchone()
                     if not other:
+                        try:
+                            import fcgive   # FCG-01: remember who invited this number (giveaway ticket when they join)
+                            fcgive.record_invite(uid, phone)
+                        except Exception: pass
                         return h.sendj({"invite": True, "phone": phone, "error": "That number isn't on Future Chat yet.",
                                         "share_text": "Join me on Future Chat in Skillvaya — chat, Chatmoji and calls: https://skillvaya.onrender.com/download"}, 404)
                 if not other: return h.sendj({"error": "That person can't be found."}, 404)

@@ -42,6 +42,7 @@ import fcstatus as FST
 import fcextras as FX
 import fcfamily as FF
 import fcpay as FP
+import fcgive as FG
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 TERMS_VERSION = "2026-10-21-v1.2"
@@ -4163,7 +4164,7 @@ function svAfterLogin(){svFutureChatStatus();svRefreshProviderTools()}
 function check(tag){try{if(sent>=3)return;var nav=document.querySelector('.bottom-tabbar');if(!nav)return;var hidden=[].filter.call(nav.children,function(c){var r=c.getBoundingClientRect(),s=getComputedStyle(c);return !(r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden')});if(!hidden.length)return;sent++;var rep={tag:tag,path:location.pathname,ua:navigator.userAgent,lang:document.documentElement.lang,dir:document.documentElement.dir,vw:innerWidth,vh:innerHeight,dpr:devicePixelRatio,body:document.body.className,signedIn:!!(window.me),role:window.me&&window.me.role||'',hasSvLang:typeof svLang==='function',sw:!!(navigator.serviceWorker&&navigator.serviceWorker.controller),count:nav.children.length,hidden:hidden.map(function(c){return {id:c.id,why:why(c)}})};fetch('/api/diag/tabs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rep).slice(0,20000)}).catch(function(){})}catch(_){}}
 setTimeout(function(){check('load+6s')},6000);document.addEventListener('click',function(e){if(e.target&&e.target.closest&&e.target.closest('.bottom-tabbar button'))setTimeout(function(){check('tap:'+(e.target.closest('button').id||''))},1500)},true)})();
 try{if(typeof closeSkillvayaVideoCall==='function'&&!closeSkillvayaVideoCall.__fx){const o=closeSkillvayaVideoCall;closeSkillvayaVideoCall=function(){try{svFxStop();svFx.id='none';if(window.svLens){window.svLens.i=-1;window.svLens.e=-1}}catch(_){}return o.apply(this,arguments)};closeSkillvayaVideoCall.__fx=1}if(typeof svAttachCallMedia==='function'&&!svAttachCallMedia.__fx){const a=svAttachCallMedia;svAttachCallMedia=async function(call,stream){const prev=svFx.id;svFxStop();const ok=await a.apply(this,arguments);if(ok&&prev&&prev!=='none'){try{await svApplyCallFx(prev)}catch(_){}}return ok};svAttachCallMedia.__fx=1}}catch(_){}
-</script><script src="/futurechat/chatmoji.js?v=2" defer></script><script src="/futurechat/calllens.js?v=8" defer></script><script src="/futurechat/fc.js?v=16" defer></script><script src="/futurechat/fcstatus.js?v=7" defer></script><script src="/homeads/ha.js?v=2" defer></script></body></html>'''
+</script><script src="/futurechat/chatmoji.js?v=2" defer></script><script src="/futurechat/calllens.js?v=8" defer></script><script src="/futurechat/fc.js?v=17" defer></script><script src="/futurechat/fcstatus.js?v=7" defer></script><script src="/homeads/ha.js?v=2" defer></script></body></html>'''
 SV_DIAG_TABS=[]
 SESSIONS={}
 def issue_session(user):
@@ -4836,6 +4837,8 @@ class Handler(BaseHTTPRequestHandler):
             with open(page_path,"rb") as f: page=f.read()
             self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(page))); self.end_headers(); self.wfile.write(page); return
 
+        if path.startswith("/fc/i/"): return FG.landing(self, path)   # FCG-01 invite link
+        if path == "/giveaway-rules": return FG.rules_page(self)
         if path.startswith("/futurechat/"):
             return FC.serve_static(self,path)
         if path.startswith("/homeads/"):
@@ -5106,7 +5109,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 # FCAPP-01: the stand-alone Future Chat app (Google Play) opens this. Same page, accounts, chats and calls as
                 # Future Chat inside Skillvaya; fcapp.js only changes the frame (full-screen Future Chat, own sign-in, Account menu).
                 fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
-                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=16" defer></script>', '<script src="/futurechat/fc.js?v=16" defer></script><script src="/futurechat/fcapp.js?v=12" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=2" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=17" defer></script>', '<script src="/futurechat/fc.js?v=17" defer></script><script src="/futurechat/fcapp.js?v=12" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=2" defer></script><script src="/futurechat/fcgive.js?v=1" defer></script>', 1)
                 # FCAPP-02: the full original Future Chat look, and no Skillvaya branding while the app loads.
                 fc_page = fc_page.replace('<link rel="stylesheet" href="/futurechat/fc.css?v=3">', '<link rel="stylesheet" href="/futurechat/fc.css?v=3"><link rel="stylesheet" href="/futurechat/fcapp.css?v=10"><style>#svSplash{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)!important;color:#fff!important}#svSplash .sv-splash-brand{color:#1ed6c8!important}#svSplash .sv-splash-caption{color:#cfe3f2!important}</style>', 1)
                 fc_page = fc_page.replace('<div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div>', '<div class="sv-splash-brand">Future Chat</div><div class="sv-splash-caption">Stay close. Wherever life takes you.</div>', 1)
@@ -5226,6 +5229,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return FF.handle_get(self,path)
             if path.startswith("/api/fcp/"):
                 return FP.handle_get(self,path)
+            if path.startswith("/api/fcg/"):
+                return FG.handle_get(self,path)
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
                 return FC.handle_get(self,path)
             if path.startswith("/api/kai/"):
@@ -5672,6 +5677,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return FF.handle_post(self,path,d)
             if path.startswith("/api/fcp/"):
                 return FP.handle_post(self,path,d)
+            if path.startswith("/api/fcg/"):
+                return FG.handle_post(self,path,d)
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
                 return FC.handle_post(self,path,d)
             if path.startswith("/api/kai/"):
@@ -6960,6 +6967,8 @@ def fc_setup():
     with conn() as c: FF.init(c)
     FP.bind(globals())
     with conn() as c: FP.init(c)
+    FG.bind(globals())
+    with conn() as c: FG.init(c)
     KAI.bind(globals())
     OWN.bind(KAI.A, KAI._verify)
     with conn() as c: KAI.init(c)
