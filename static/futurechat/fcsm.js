@@ -54,7 +54,9 @@
     '.fcs-prev{max-width:100%;max-height:42vh;border-radius:12px;display:block;margin:8px auto}',
     // FCS-LIKE-01 + FCS-SHARE-01
     '#fcsView .foot{flex-wrap:wrap}#fcsView .fcs-act{border:0;background:rgba(255,255,255,.16);color:#fff;border-radius:999px;padding:10px 16px;font-size:15px;font-weight:700}',
-    '#fcsView .fcs-act.on{background:rgba(244,63,94,.32)}#fcsView .seenlist .lk{margin-left:auto;font-size:16px}'
+    '#fcsView .fcs-act.on{background:rgba(244,63,94,.32)}#fcsView .seenlist .lk{margin-left:auto;font-size:16px}',
+    '#fcsView a.fcs-link{position:relative;z-index:3;color:#7fe3f0;text-decoration:underline;word-break:break-all;pointer-events:auto}',
+    '#fcsView .stage{-webkit-touch-callout:none}'
   ].join('');
   document.head.appendChild(css);
 
@@ -126,9 +128,9 @@
     V.el.innerHTML = '<div class="bars">' + p.items.map((x, i) => '<div class="bar"><i style="width:' + (i < V.ii ? 100 : 0) + '%"></i></div>').join('') + '</div>' +
       '<div class="top"><div><b>' + esc(p.name) + '</b><small>' + esc(ago(it.at)) + '</small></div><div class="sp">' + (p.mine ? '<button data-a="add">+ Add</button><button data-a="del">Delete</button>' : '') + '<button data-a="x" aria-label="Close">✕</button></div></div>' +
       '<div class="stage"><div class="tapL"></div><div class="tapR"></div>' +
-      (it.kind === 'text' ? '<div class="txt" style="background:' + esc(it.bg) + '">' + esc(it.body) + '</div>'
-        : it.kind === 'video' ? '<video playsinline autoplay></video>' + (it.body ? '<div class="cap">' + esc(it.body) + '</div>' : '')
-        : '<img alt="">' + (it.body ? '<div class="cap">' + esc(it.body) + '</div>' : '')) + '</div>' +
+      (it.kind === 'text' ? '<div class="txt" style="background:' + esc(it.bg) + '">' + linkify(it.body) + '</div>'
+        : it.kind === 'video' ? '<video playsinline autoplay></video>' + (it.body ? '<div class="cap">' + linkify(it.body) + '</div>' : '')
+        : '<img alt="">' + (it.body ? '<div class="cap">' + linkify(it.body) + '</div>' : '')) + '</div>' +
       '<div class="foot">' + (p.mine ? '<button data-a="seen" class="seenbtn">👁 ' + Number(it.views || 0) + (Number(it.views) === 1 ? ' view' : ' views') + (Number(it.likes) ? ' · ❤️ ' + Number(it.likes) : '') + ' ›</button>' : likeHtml(it) + shareHtml) + '</div>';
     V.el.querySelector('[data-a="x"]').onclick = closeViewer;
     const add = V.el.querySelector('[data-a="add"]'); if (add) add.onclick = () => { closeViewer(); compose(); };
@@ -136,8 +138,9 @@
     const seen = V.el.querySelector('[data-a="seen"]'); if (seen) seen.onclick = () => viewers(it);
     const lk = V.el.querySelector('[data-a="like"]'); if (lk) lk.onclick = e => { e.stopPropagation(); doLike('status', it, lk); };
     const shb = V.el.querySelector('[data-a="share"]'); if (shb) shb.onclick = e => { e.stopPropagation(); shareThing(() => statusPayload(p.name, it)); };
-    V.el.querySelector('.tapL').onclick = () => step(-1);
-    V.el.querySelector('.tapR').onclick = () => step(1);
+    V.el.querySelector('.tapL').onclick = () => { if (V.held) { V.held = false; return; } step(-1); };
+    V.el.querySelector('.tapR').onclick = () => { if (V.held) { V.held = false; return; } step(1); };
+    bindHold(V.el.querySelector('.stage'));
     if (!p.mine && !it.viewed) { it.viewed = true; api('/api/fc/status/view', { id: it.id }).catch(() => {}); }
     const bar = V.el.querySelectorAll('.bar i')[V.ii];
     const vid = V.el.querySelector('video');
@@ -146,7 +149,7 @@
       // Status media needs the signed-in account, so it is fetched with the account token and shown from memory.
       mediaUrl(it.media).then(u => { if (V && V.el.contains(vid || pic)) (vid || pic).src = u; }).catch(() => { if (vid) vid.onerror && vid.onerror(); });
     }
-    const run = ms => { const t0 = performance.now(); const tick = () => { if (!V) return; const f = Math.min(1, (performance.now() - t0) / ms); bar.style.width = (f * 100) + '%'; if (f < 1) V.raf = requestAnimationFrame(tick); }; tick(); V.t = setTimeout(() => step(1), ms); };
+    const run = ms => startRun(bar, ms, () => step(1));
     if (vid) { vid.onloadedmetadata = () => run(Math.min(60000, Math.max(3000, (vid.duration || 10) * 1000))); vid.onerror = () => run(4000); }
     else run(it.kind === 'text' ? Math.min(12000, 4000 + it.body.length * 45) : 6000);
   }
@@ -173,6 +176,45 @@
     show();
   }
 
+  // ---------- FCS-LINKS-01 (owner 2026-11-20): web links in statuses, captions and adverts can be tapped
+  const linkify = s => esc(s).replace(/\b((?:https?:\/\/|www\.)[^\s<]+[^\s<.,;:!?)\]])/gi, m => {
+    const href = /^www\./i.test(m) ? 'https://' + m : m;
+    return '<a class="fcs-link" href="' + href + '" target="_blank" rel="noopener">' + m + '</a>';
+  });
+  document.addEventListener('click', e => {
+    const a = e.target && e.target.closest && e.target.closest('#fcsView a.fcs-link'); if (!a) return;
+    e.preventDefault(); e.stopPropagation();
+    if (V && V.ads) { const ad = V.ads[V.ii]; if (ad && !ad.house) api('/api/home-ads/event', { id: ad.id, ev: 'click' }).catch(() => {}); }
+    try { window.open(a.href, '_blank', 'noopener'); } catch (_) { location.href = a.href; }
+  }, true);
+
+  // ---------- FCS-HOLD-01 (owner 2026-11-20): press and hold a status or advert to pause it; let go to carry on
+  function startRun(bar, ms, next) { if (!V) return; V.run = { bar, total: ms, left: ms, next, t0: 0, paused: false }; tickRun(); }
+  function tickRun() {
+    const R = V && V.run; if (!R) return;
+    const t0 = performance.now(), base = R.total - R.left; R.t0 = t0;
+    const tick = () => { if (!V || V.run !== R || R.paused) return; const f = Math.min(1, (base + performance.now() - t0) / R.total); R.bar.style.width = (f * 100) + '%'; if (f < 1) V.raf = requestAnimationFrame(tick); };
+    tick(); V.t = setTimeout(() => { if (V && V.run === R && !R.paused) R.next(); }, R.left);
+  }
+  function holdPause() {
+    const R = V && V.run; if (!R || R.paused) return;
+    clearTimeout(V.t); cancelAnimationFrame(V.raf); R.left = Math.max(0, R.left - (performance.now() - R.t0)); R.paused = true;
+    const v = V.el.querySelector('.stage video'); if (v) { try { v.pause(); } catch (_) {} }
+  }
+  function holdResume() {
+    const R = V && V.run; if (!R || !R.paused) return;
+    R.paused = false; const v = V.el.querySelector('.stage video'); if (v) { try { const pr = v.play(); if (pr && pr.catch) pr.catch(() => {}); } catch (_) {} }
+    tickRun();
+  }
+  function bindHold(stage) {
+    if (!stage) return; let timer = 0;
+    const down = () => { if (!V) return; V.held = false; clearTimeout(timer); timer = setTimeout(() => { if (V) { V.held = true; holdPause(); } }, 220); };
+    const up = () => { clearTimeout(timer); if (V && V.held) holdResume(); };
+    stage.addEventListener('pointerdown', down);
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => stage.addEventListener(ev, up));
+    stage.addEventListener('contextmenu', e => e.preventDefault());   // no "save image" pop-up while holding
+  }
+
   // ---------- FCS-LIKE-01 + FCS-SHARE-01 (owner 2026-11-20): like and share statuses and Sponsored adverts (Future Chat app)
   const likeHtml = o => '<button class="fcs-act' + (o.liked ? ' on' : '') + '" data-a="like" aria-pressed="' + (o.liked ? 'true' : 'false') + '">' + (o.liked ? '❤️ Liked' : '🤍 Like') + '</button>';
   const shareHtml = '<button class="fcs-act" data-a="share">↗ Share</button>';
@@ -183,7 +225,7 @@
     try { const d = await api('/api/fc/status/like', { kind, id: o.id, on }); o.likes = Number(d.likes) || 0; }
     catch (e) { o.liked = !on; paintLike(btn, !on); toast(e.message); }
   }
-  function pauseV() { if (!V) return; clearTimeout(V.t); cancelAnimationFrame(V.raf); const v = V.el.querySelector('video'); if (v) { try { v.pause(); } catch (_) {} } }
+  function pauseV() { if (!V) return; V.run = null; clearTimeout(V.t); cancelAnimationFrame(V.raf); const v = V.el.querySelector('video'); if (v) { try { v.pause(); } catch (_) {} } }
   function resumeV() { if (!V) return; if (V.ads) showAd(); else show(); }
   async function blobB64(url) {
     const b = await (await fetch(url, { credentials: 'same-origin' })).blob();
@@ -262,15 +304,16 @@
     V.el.innerHTML = '<div class="bars">' + V.ads.map((x, i) => '<div class="bar"><i style="width:' + (i < V.ii ? 100 : 0) + '%"></i></div>').join('') + '</div>' +
       '<div class="top"><div><b><span class="adtag">' + esc(sh ? sh.label : 'Sponsored') + '</span>' + esc(sh ? sh.from : (ad.advertiser || 'Business')) + '</b><small>' + (sh ? 'Paid shout-out' : 'Paid business advert') + '</small></div><div class="sp"><button data-a="x" aria-label="Close">✕</button></div></div>' +
       '<div class="stage"><div class="tapL"></div><div class="tapR"></div>' +
-      (sh ? sh.html : isVid ? '<video src="' + esc(ad.media) + '" playsinline autoplay></video>' + ((ad.headline || ad.body) ? '<div class="cap"><b>' + esc(ad.headline) + '</b>' + (ad.body ? '\n' + esc(ad.body) : '') + '</div>' : '')
-        : isImg ? '<img src="' + esc(ad.media) + '" alt="' + esc(ad.headline) + '">' + ((ad.headline || ad.body) ? '<div class="cap"><b>' + esc(ad.headline) + '</b>' + (ad.body ? '\n' + esc(ad.body) : '') + '</div>' : '')
-        : '<div class="adbox"><h3>' + esc(ad.headline) + '</h3><p>' + esc(ad.body) + '</p></div>') + '</div>' +
+      (sh ? sh.html : isVid ? '<video src="' + esc(ad.media) + '" playsinline autoplay></video>' + ((ad.headline || ad.body) ? '<div class="cap"><b>' + linkify(ad.headline) + '</b>' + (ad.body ? '\n' + linkify(ad.body) : '') + '</div>' : '')
+        : isImg ? '<img src="' + esc(ad.media) + '" alt="' + esc(ad.headline) + '">' + ((ad.headline || ad.body) ? '<div class="cap"><b>' + linkify(ad.headline) + '</b>' + (ad.body ? '\n' + linkify(ad.body) : '') + '</div>' : '')
+        : '<div class="adbox"><h3>' + linkify(ad.headline) + '</h3><p>' + linkify(ad.body) + '</p></div>') + '</div>' +
       '<div class="foot">' + (ad.target ? '<button class="cta" data-a="cta">' + esc(ad.cta || 'Find out more') + '</button>' : '') + (ad.house ? '' : likeHtml(ad) + shareHtml) + '</div>';
     V.el.querySelector('[data-a="x"]').onclick = closeViewer;
     const alk = V.el.querySelector('[data-a="like"]'); if (alk) alk.onclick = e => { e.stopPropagation(); doLike('ad', ad, alk); };
     const ash = V.el.querySelector('[data-a="share"]'); if (ash) ash.onclick = e => { e.stopPropagation(); shareThing(() => adPayload(ad, sh)); };
-    V.el.querySelector('.tapL').onclick = () => adStep(-1);
-    V.el.querySelector('.tapR').onclick = () => adStep(1);
+    V.el.querySelector('.tapL').onclick = () => { if (V.held) { V.held = false; return; } adStep(-1); };
+    V.el.querySelector('.tapR').onclick = () => { if (V.held) { V.held = false; return; } adStep(1); };
+    bindHold(V.el.querySelector('.stage'));
     const cta = V.el.querySelector('[data-a="cta"]');
     if (cta) cta.onclick = () => {
       if (!ad.house) api('/api/home-ads/event', { id: ad.id, ev: 'click' }).catch(() => {});
@@ -284,7 +327,7 @@
     if (!ad.house) api('/api/fc/status/adseen', { id: ad.id }).catch(() => {});   // FC-ADS-02: counts a showing for this person
     const bar = V.el.querySelectorAll('.bar i')[V.ii];
     const vid = V.el.querySelector('video');
-    const run = ms => { const t0 = performance.now(); const tick = () => { if (!V) return; const f = Math.min(1, (performance.now() - t0) / ms); bar.style.width = (f * 100) + '%'; if (f < 1) V.raf = requestAnimationFrame(tick); }; tick(); V.t = setTimeout(() => adStep(1), ms); };
+    const run = ms => startRun(bar, ms, () => adStep(1));
     // Each advert shows for about 30 seconds, or for the full length of a video advert.
     if (vid) { vid.onloadedmetadata = () => run(Math.min(120000, Math.max(5000, (vid.duration || 30) * 1000))); vid.onerror = () => run(30000); }
     else run(30000);
