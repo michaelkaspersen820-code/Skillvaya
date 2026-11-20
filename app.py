@@ -5122,6 +5122,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
                 fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fcm.js?v=1" defer></script><script src="/futurechat/fcapp.js?v=18" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=3" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/fcadmin.js?v=6" defer></script><script src="/futurechat/testers.js?v=1" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
                 # FCAPP-02: the full original Future Chat look, and no Skillvaya branding while the app loads.
+                fc_page = fc_page.replace('<script src="/futurechat/calllens.js?v=8" defer></script>', '<script src="/futurechat/fclens.js?v=1" defer></script>', 1)   # FC-LENSFIT-01
+                # FC-CALLUI-01: loaded before fcm.js so the phone's back button reaches the call screen first
+                fc_page = fc_page.replace('<script src="/futurechat/fcm.js?v=1" defer></script>', '<script src="/futurechat/fccall.js?v=1" defer></script><script src="/futurechat/fcm.js?v=1" defer></script>', 1)
                 fc_page = fc_page.replace('<link rel="stylesheet" href="/futurechat/fc.css?v=4">', '<link rel="stylesheet" href="/futurechat/fcm.css?v=1"><link rel="stylesheet" href="/futurechat/fcapp.css?v=11"><style>#svSplash{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)!important;color:#fff!important}#svSplash .sv-splash-brand{color:#1ed6c8!important}#svSplash .sv-splash-caption{color:#cfe3f2!important}</style>', 1)
                 fc_page = fc_page.replace('<div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div>', '<div class="sv-splash-brand">Future Chat</div><div class="sv-splash-caption">Stay close. Wherever life takes you.</div>', 1)
                 fc_html = fc_page.encode("utf-8")
@@ -6200,6 +6203,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         candidate=d.get("candidate")
                         if not isinstance(candidate,dict) or len(json.dumps(candidate))>8000: return self.sendj({"error":"Invalid network candidate."},400)
                         row=db_atomic(c,"INSERT INTO video_call_signals(call_id,sender_id,kind,payload,created_at) VALUES(?,?,'candidate',?,?) RETURNING id",(call_id,u["id"],json.dumps(candidate),now())).fetchone()
+                        return self.sendj({"ok":True,"signal_id":row["id"]},201)
+                    if action=="restart":
+                        # FC-RECONNECT-01: Future Chat app only — a new offer/answer to reconnect a dropped call (ICE restart).
+                        if call["status"]!="accepted": return self.sendj({"error":"This call is no longer active."},409)
+                        desc=d.get("sdp")
+                        if not isinstance(desc,dict) or desc.get("type") not in ("offer","answer") or not desc.get("sdp") or len(json.dumps(desc))>100000: return self.sendj({"error":"Invalid reconnect data."},400)
+                        row=db_atomic(c,"INSERT INTO video_call_signals(call_id,sender_id,kind,payload,created_at) VALUES(?,?,?,?,?) RETURNING id",(call_id,u["id"],"restart_"+desc["type"],json.dumps(desc),now())).fetchone()
                         return self.sendj({"ok":True,"signal_id":row["id"]},201)
                     if action in ("reject","end"):
                         if action=="reject" and int(u["id"])!=int(call["callee_id"]) and u["role"]!="admin": return self.sendj({"error":"Only the person receiving the call can decline it."},403)
