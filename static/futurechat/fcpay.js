@@ -424,7 +424,8 @@
   // ---------------------------------------------------------------- styles
   const css = document.createElement('style');
   css.textContent = [
-    'html.fc-app.fct .fc-msgs{background:var(--fct-bg)!important;background-attachment:local!important}',
+    // FCT-STAY-01: the theme stays put behind the messages (painting it down the whole chat history made most themes vanish once messages loaded)
+    'html.fc-app.fct .fc-msgs{background:var(--fct-bg)!important;background-attachment:scroll!important}',
     'html.fc-app.fct .fc-m.mine .fc-b{background:var(--fct-mine)!important;color:var(--fct-mine-ink)!important}html.fc-app.fct .fc-m.mine .fc-meta{color:var(--fct-mine-ink)!important;opacity:.75}',
     'html.fc-app.fct .fc-m.theirs .fc-b{background:var(--fct-theirs)!important;color:var(--fct-theirs-ink)!important}html.fc-app.fct .fc-m.theirs .fc-meta{color:var(--fct-theirs-ink)!important;opacity:.65}',
     '.fcp-packhd{display:flex;align-items:center;justify-content:space-between;margin:14px 2px 8px}.fcp-packhd b{color:#fff;font-size:15px}.fcp-packhd .ok,.fca-row .ok{color:#1ed6c8;font-weight:800}',
