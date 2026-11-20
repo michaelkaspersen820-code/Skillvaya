@@ -361,9 +361,10 @@
     if (m.reply) inner += '<span class="fc-quote"><b>' + (m.reply.sender_id === (S.me && S.me.id) ? 'You' : esc(((S.conv.members || []).find(x => x.id === m.reply.sender_id) || {}).name || 'Reply')) + '</b>' + rich(m.reply.text) + '</span>';
     if (m.deleted) inner += '<i style="opacity:.75">🚫 This message was deleted</i>';
     else {
-      for (const a of m.attachments || []) {
-        if (/^image\//.test(a.mime_type)) inner += '<img class="fc-img fc-ld" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-att="' + a.id + '" alt="">';   // FC-IMG-01: neat grey box while loading, never the broken-picture icon
-        else if (/^video\//.test(a.mime_type)) inner += '<video class="fc-img" data-att="' + a.id + '" controls playsinline preload="metadata"></video>';
+      for (const a0 of m.attachments || []) {
+        const a = Object.assign({}, a0, { mime_type: mimeOf(a0.mime_type, a0.filename) });   // FC-PHOTO-01: a photo is always shown as a photo
+        if (/^image\//.test(a.mime_type)) inner += (m.pending ? '<span class="fc-upw">' : '') + '<img class="fc-img fc-ld" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-att="' + a.id + '" alt="">' + (m.pending ? '<span class="fc-spin" aria-label="Sending"></span></span>' : '');   // FC-IMG-01: neat grey box while loading, never the broken-picture icon
+        else if (/^video\//.test(a.mime_type)) inner += (m.pending ? '<span class="fc-upw">' : '') + '<video class="fc-img" data-att="' + a.id + '" controls playsinline preload="metadata"></video>' + (m.pending ? '<span class="fc-spin" aria-label="Sending"></span></span>' : '');
         else if (/^audio\//.test(a.mime_type)) inner += '<div class="fc-voice">🎤<audio data-att="' + a.id + '" controls preload="none"></audio></div>';
         else inner += '<a class="fc-file" href="#" data-dl="' + a.id + '" data-name="' + esc(a.filename) + '"><i>' + esc((a.filename.split('.').pop() || 'FILE').slice(0, 4).toUpperCase()) + '</i><span>' + esc(a.filename) + '<br><small>' + Math.max(1, Math.round(a.size / 1024)) + ' KB</small></span></a>';
       }
@@ -473,6 +474,25 @@
     $('#fcRX', el).onclick = () => { S.reply = null; drawReply(); };
   }
   const toB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(blob); });
+  // FC-PHOTO-01 (owner 2026-11-20): photos always look like photos - never a "JPG" file box - and show at once with a loading circle
+  var EXT_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', jfif: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp',
+    mp4: 'video/mp4', m4v: 'video/mp4', '3gp': 'video/3gpp', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska',
+    m4a: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', ogg: 'audio/ogg', opus: 'audio/ogg', wav: 'audio/wav', amr: 'audio/amr' };
+  function mimeOf(type, name) {
+    const t = String(type || '').toLowerCase();
+    if (t && t !== 'application/octet-stream' && t !== 'binary/octet-stream') return t;
+    const ext = String(name || '').split('.').pop().toLowerCase();
+    return (EXT_MIME || {})[ext] || t || 'application/octet-stream';
+  }
+  function withType(f) {
+    try { const t = mimeOf(f.type, f.name); return t !== (f.type || '') && t !== 'application/octet-stream' ? new File([f], f.name, { type: t }) : f; } catch (_) { return f; }
+  }
+  (function () {
+    if (document.getElementById('fcPhotoCss')) return;
+    const st = document.createElement('style'); st.id = 'fcPhotoCss';
+    st.textContent = '.fc-upw{position:relative;display:block}.fc-upw>.fc-spin{position:absolute;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;border:4px solid rgba(255,255,255,.35);border-top-color:#fff;background:rgba(0,0,0,.28);box-sizing:border-box;animation:fcSpin .8s linear infinite;pointer-events:none}@keyframes fcSpin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(st);
+  })();
   async function shrink(file) {
     const ds = !!(window.FCX && window.FCX.dataSaver && window.FCX.dataSaver());
     if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < (ds ? 150 : 250) * 1024) return file;
@@ -486,8 +506,21 @@
   }
   async function sendFiles(files, caption) {
     for (let f of files) {
-      f = await shrink(f);
+      f = withType(f);   // FC-PHOTO-01: some phones give a photo no type - it was then sent and shown as a "JPG" file
+      // FC-PHOTO-01: the photo shows in the chat at once with a loading circle; shrinking and uploading happen behind it
       const kind = /^image\//.test(f.type) ? 'photo' : /^video\//.test(f.type) ? 'video' : /^audio\//.test(f.type) ? 'voice' : 'file';
+      let early = null;
+      if (kind === 'photo' && f.size <= 15 * 1024 * 1024) {
+        const aid = -(++pseq), local = Promise.resolve(URL.createObjectURL(f)); S.media.set(aid, local);
+        early = { aid, local, reply: S.reply ? S.reply.id : 0 };
+        early.pm = addPending(caption || '', kind, [{ id: aid, mime_type: f.type, filename: f.name, size: f.size }]);
+      }
+      f = await shrink(f);
+      if (early) {
+        const { pm, local, reply } = early;
+        try { const d = await sendRaw({ c: S.conv.id, kind, body: caption || '', reply_to: reply, files: [{ filename: f.name, mime_type: f.type || 'application/octet-stream', data_base64: await toB64(f) }] }, pm); caption = ''; if (d && d.attachments && d.attachments[0]) { localPut(d.attachments[0], f); S.media.set(d.attachments[0], local); } } catch (_) {}
+        continue;
+      }
       if (f.size > 15 * 1024 * 1024) {   // FCP-01: big files go in pieces (up to 48 MB with Future Chat Plus)
         if (window.FCX && window.FCX.bigSend) { const d = await window.FCX.bigSend(f, kind, caption, S.conv.id); if (d) { caption = ''; if (d.attachments && d.attachments[0]) { localPut(d.attachments[0], f); S.media.delete(d.attachments[0]); } await loadMsgs(false); } continue; }
         toast(f.name + ' is bigger than 16 MB'); continue;

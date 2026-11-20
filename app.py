@@ -5121,12 +5121,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 # FCAPP-01: the stand-alone Future Chat app (Google Play) opens this. Same page, accounts, chats and calls as
                 # Future Chat inside Skillvaya; fcapp.js only changes the frame (full-screen Future Chat, own sign-in, Account menu).
                 fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
-                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fcm.js?v=5" defer></script><script src="/futurechat/fcapp.js?v=18" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=3" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/adsdata.js?v=1" defer></script><script src="/futurechat/fcadmin.js?v=8" defer></script><script src="/futurechat/testers.js?v=1" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fcm.js?v=6" defer></script><script src="/futurechat/fcapp.js?v=18" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=3" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/adsdata.js?v=1" defer></script><script src="/futurechat/fcadmin.js?v=8" defer></script><script src="/futurechat/testers.js?v=1" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
                 # FCAPP-02: the full original Future Chat look, and no Skillvaya branding while the app loads.
                 fc_page = fc_page.replace('<script src="/futurechat/calllens.js?v=8" defer></script>', '<script src="/futurechat/fclens.js?v=1" defer></script>', 1)   # FC-LENSFIT-01
                 fc_page = fc_page.replace('<script src="/futurechat/fcstatus.js?v=9" defer></script>', '<script src="/futurechat/fcsm.js?v=3" defer></script>', 1)   # FCS-LIKE-01 / FCS-SHARE-01
                 # FC-CALLUI-01: loaded before fcm.js so the phone's back button reaches the call screen first
-                fc_page = fc_page.replace('<script src="/futurechat/fcm.js?v=5" defer></script>', '<script src="/futurechat/fccall.js?v=4" defer></script><script src="/futurechat/fcm.js?v=5" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fcm.js?v=6" defer></script>', '<script src="/futurechat/fccall.js?v=5" defer></script><script src="/futurechat/fcm.js?v=6" defer></script>', 1)
                 fc_page = fc_page.replace('<link rel="stylesheet" href="/futurechat/fc.css?v=4">', '<link rel="stylesheet" href="/futurechat/fcm.css?v=2"><link rel="stylesheet" href="/futurechat/fcapp.css?v=11"><style>#svSplash{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)!important;color:#fff!important}#svSplash .sv-splash-brand{color:#1ed6c8!important}#svSplash .sv-splash-caption{color:#cfe3f2!important}</style>', 1)
                 fc_page = fc_page.replace('<div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div>', '<div class="sv-splash-brand">Future Chat</div><div class="sv-splash-caption">Stay close. Wherever life takes you.</div>', 1)
                 fc_html = fc_page.encode("utf-8")
@@ -6198,6 +6198,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 try: call_id=str(d.get("call_id","")).strip()
                 except Exception: call_id=""
                 if not call_id or len(call_id)>100: return self.sendj({"error":"Choose a valid call."},400)
+                if action in ("accept","reject","end"):   # CALL-LOG-01: who answered / declined / hung up (ids only), to fix call problems
+                    try: print("CALL-LOG", action, call_id[:40], "by user", int(u["id"]), "app", next((p for p in self.headers.get("User-Agent","").split() if p.startswith("FutureChatApp/")),"web"), flush=True)
+                    except Exception: pass
                 with conn() as c:
                     call=c.execute("SELECT vc.*,COALESCE(b.user_id,0) AS provider_owner_id FROM video_calls vc LEFT JOIN businesses b ON b.id=vc.business_id WHERE vc.id=?",(call_id,)).fetchone()
                     if not call: return self.sendj({"error":"Video call not found."},404)
@@ -6539,6 +6542,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 if not row or not verify_password(row["password_hash"],current): return self.sendj({"error":"Your current password is incorrect."},401)
                 with conn() as c: c.execute("UPDATE users SET password_hash=? WHERE id=?",(hashpw(new_password),u["id"]))
                 return self.sendj({"ok":True,"message":"Password changed. You remain signed in on this device."})
+            if path=="/api/diag/call":
+                # CALL-LOG-01: the reason a phone could not start / answer a call (the error text only, no personal data).
+                try: print("CALL-LOG problem:", str(d.get("what",""))[:300].replace("\n"," "), "| call", str(d.get("call",""))[:40], "|", next((p for p in self.headers.get("User-Agent","").split() if p.startswith("FutureChatApp/")),"web"), flush=True)
+                except Exception: pass
+                return self.sendj({"ok":True})
             if path=="/api/diag/tabs":
                 # SV85-DIAG: hidden-tab reports from real phones (layout data only, no personal data).
                 try:

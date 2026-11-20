@@ -213,3 +213,56 @@
   // FC-WAKE-01: the other phone just did something on this call (answered, reconnecting...) - check now, not later
   window.addEventListener('fc-wake', () => { const call = active(); if (call && call.callId) poll(call, true); });
 })();
+
+// FC-INSTANT-CALL-01 (owner 2026-11-20): calls feel like WhatsApp / a normal phone call.
+//  - Plain words on the call screen: "Calling…" / "Connecting…" (no "requesting microphone permission" steps).
+//  - Answer: music and videos on the phone pause from the moment Answer is pressed (app 1.8.4+), and are let go
+//    again if the call could not be answered. Nothing else about answering changes.
+(function () {
+  if (window.__fcInstantCall) return; window.__fcInstantCall = 1;
+  const WORDS = [
+    [/^Requesting microphone permission\.?$/i, 'Calling…'],
+    [/^Preparing microphone and connection…?$/i, 'Connecting…'],
+    [/^Calling[.…]*\s*waiting for the other participant to answer\.?$/i, 'Calling…'],
+    [/^(Voice|Video) call accepted; connecting…$/i, 'Connecting…'],
+  ];
+  const plain = t => { const s = String(t == null ? '' : t); for (const [re, to] of WORDS) if (re.test(s)) return to; return s; };
+  // CALL-LOG-01: if a call can't be started or answered, tell the server why (the error text only) so it can be fixed
+  try {
+    const al = window.alert;
+    window.alert = function (msg) {
+      try { if (/^Could not (accept|start) the call/i.test(String(msg))) fetch('/api/diag/call', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ what: String(msg).slice(0, 300) }) }).catch(() => {}); } catch (_) {}
+      return al.apply(window, arguments);
+    };
+  } catch (_) {}
+  try {
+    if (typeof svShowCallModal === 'function' && !svShowCallModal.__fcw) {
+      const o = svShowCallModal;
+      svShowCallModal = function (title, detail) { const a = [].slice.call(arguments); a[1] = plain(detail); return o.apply(this, a); };
+      svShowCallModal.__fcw = 1;
+    }
+    if (typeof svSetCallState === 'function' && !svSetCallState.__fcw) {
+      const o = svSetCallState;
+      svSetCallState = function (t) { const a = [].slice.call(arguments); a[0] = plain(t); return o.apply(this, a); };
+      svSetCallState.__fcw = 1;
+    }
+    if (typeof acceptSkillvayaVideoCall === 'function' && !acceptSkillvayaVideoCall.__fcw) {
+      const o = acceptSkillvayaVideoCall;
+      acceptSkillvayaVideoCall = async function () {
+        const na = window.FutureChatAudio || null;
+        let inc = null; try { inc = typeof svIncomingVideoCall !== 'undefined' ? svIncomingVideoCall : null; } catch (_) {}
+        if (na && inc) { try { na.start(inc.media_type === 'video' ? 'video' : 'voice'); } catch (_) {} }
+        try { return await o.apply(this, arguments); }
+        finally {
+          if (na && inc) {
+            let live = null, busy = null;
+            try { live = typeof svActiveVideoCall !== 'undefined' ? svActiveVideoCall : null; } catch (_) {}
+            try { busy = typeof svIncomingAcceptingCallId !== 'undefined' ? svIncomingAcceptingCallId : null; } catch (_) {}
+            if (!live && !busy) { try { na.stop(); } catch (_) {} }
+          }
+        }
+      };
+      acceptSkillvayaVideoCall.__fcw = 1;
+    }
+  } catch (_) {}
+})();
