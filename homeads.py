@@ -95,7 +95,30 @@ def init(c):
             created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_home_ads_status ON home_ads(status, ends_at);
         CREATE INDEX IF NOT EXISTS idx_home_ads_user ON home_ads(user_id);
+        CREATE TABLE IF NOT EXISTS ha_daily(ad_id BIGINT NOT NULL, day TEXT NOT NULL, ev TEXT NOT NULL, n BIGINT NOT NULL DEFAULT 0, PRIMARY KEY(ad_id, day, ev));
+        CREATE TABLE IF NOT EXISTS ha_reach(ad_id BIGINT NOT NULL, user_id BIGINT NOT NULL, day TEXT NOT NULL, PRIMARY KEY(ad_id, user_id, day));
+        CREATE TABLE IF NOT EXISTS ha_acts(ad_id BIGINT NOT NULL, user_id BIGINT NOT NULL, ev TEXT NOT NULL, first_at TEXT NOT NULL, PRIMARY KEY(ad_id, user_id, ev));
     """ % {"pk": pk})
+
+
+def _sa_day():
+    return (_now_dt() + datetime.timedelta(hours=2)).strftime("%Y-%m-%d")
+
+
+def record(c, ad_id, ev, uid=0):
+    """HA-STATS-01 (owner 2026-11-20): advert results kept for good - per day: views (Future Chat Status / Skillvaya home),
+    clicks, shares, likes, and which different people saw it (reach). Never breaks the request that called it."""
+    try:
+        ad_id = int(ad_id or 0)
+        if ad_id <= 0 or ev not in ("view_fc", "view_home", "click", "share", "like"): return
+        day = _sa_day()
+        c.execute("INSERT INTO ha_daily(ad_id,day,ev,n) VALUES(?,?,?,1) ON CONFLICT(ad_id,day,ev) DO UPDATE SET n=ha_daily.n+1", (ad_id, day, ev))
+        if uid and ev.startswith("view"):
+            c.execute("INSERT INTO ha_reach(ad_id,user_id,day) VALUES(?,?,?) ON CONFLICT DO NOTHING", (ad_id, int(uid), day))
+        elif uid:   # different people who clicked / shared / liked
+            c.execute("INSERT INTO ha_acts(ad_id,user_id,ev,first_at) VALUES(?,?,?,?) ON CONFLICT DO NOTHING", (ad_id, int(uid), ev, A.now()))
+    except Exception as exc:
+        print("Advert stats skipped:", type(exc).__name__)
 
 
 def _now_dt():
@@ -168,7 +191,7 @@ def serve_static(h, path):
 
 
 def _optional_user(h):
-    try: return h.require()
+    try: return h.user()   # just who it is - no extra checks, never slows the advert down
     except Exception: return None
 
 
@@ -225,6 +248,52 @@ def handle_get(h, path):
         for r in rows:
             d = _public(r, True); d["owner_name"] = r["owner_name"] or ""; d["owner_email"] = r["owner_email"] or ""; out.append(d)
         return h.sendj({"items": out, "pending": sum(1 for x in out if x["status"] == "pending_review")})
+    if path == "/api/admin/ad-stats":   # HA-STATS-01: results for every advert, shout-out and proposal, from several angles
+        u = h.require()
+        if u.get("role") != "admin": return h.sendj({"error": "Owner only."}, 403)
+        try: days = max(7, min(90, int((q.get("days") or ["30"])[0] or 30)))
+        except ValueError: days = 30
+        start = (_now_dt() + datetime.timedelta(hours=2) - datetime.timedelta(days=days - 1)).strftime("%Y-%m-%d")
+        labels = [((_now_dt() + datetime.timedelta(hours=2)) - datetime.timedelta(days=days - 1 - i)).strftime("%Y-%m-%d") for i in range(days)]
+        with A.conn() as c:
+            _expire(c)
+            rows = c.execute("SELECT a." + COLS.replace(",", ",a.") + ",u.name owner_name,u.email owner_email FROM home_ads a LEFT JOIN users u ON u.id=a.user_id"
+                             " WHERE a.status NOT IN ('draft','deleted','pending_payment') ORDER BY a.id DESC LIMIT 300").fetchall()
+            ids = [int(r["id"]) for r in rows]
+            daily, reach, reach_day, likes, apps, acts = {}, {}, {}, {}, {}, {}
+            if ids:
+                marks = ",".join("?" * len(ids))
+                for r in c.execute("SELECT ad_id,day,ev,n FROM ha_daily WHERE ad_id IN (" + marks + ")", ids).fetchall():
+                    daily.setdefault(int(r["ad_id"]), {}).setdefault(r["day"], {})[r["ev"]] = int(r["n"])
+                for r in c.execute("SELECT ad_id,user_id,day FROM ha_reach WHERE ad_id IN (" + marks + ")", ids).fetchall():
+                    reach.setdefault(int(r["ad_id"]), set()).add(int(r["user_id"]))
+                    reach_day.setdefault(int(r["ad_id"]), {}).setdefault(r["day"], 0); reach_day[int(r["ad_id"])][r["day"]] += 1
+                try:
+                    for r in c.execute("SELECT ref_id,COUNT(*) AS n FROM fc_status_likes WHERE kind='ad' AND ref_id IN (" + marks + ") GROUP BY ref_id", ids).fetchall(): likes[int(r["ref_id"])] = int(r["n"])
+                except Exception: pass
+                for r in c.execute("SELECT ad_id,ev,COUNT(*) AS n FROM ha_acts WHERE ad_id IN (" + marks + ") GROUP BY ad_id,ev", ids).fetchall():
+                    acts.setdefault(int(r["ad_id"]), {})[r["ev"]] = int(r["n"])
+                everyone = set().union(*reach.values()) if reach else set()
+                if everyone:
+                    ev_ids = list(everyone)
+                    for i in range(0, len(ev_ids), 400):
+                        part = ev_ids[i:i + 400]
+                        try:
+                            for r in c.execute("SELECT user_id,app FROM tst_seen WHERE user_id IN (" + ",".join("?" * len(part)) + ")", part).fetchall(): apps.setdefault(int(r["user_id"]), set()).add(r["app"])
+                        except Exception: pass
+        out = []
+        for r in rows:
+            aid = int(r["id"]); d = _public(r, True); d["owner_name"] = r["owner_name"] or ""; d["owner_email"] = r["owner_email"] or ""
+            dd = daily.get(aid, {}); ppl = reach.get(aid, set())
+            tot = lambda ev: sum(v.get(ev, 0) for v in dd.values())
+            d["stats"] = {"views": max(int(r["views"] or 0), tot("view_fc") + tot("view_home")), "views_fc": tot("view_fc"), "views_home": tot("view_home"),
+                          "clicks": max(int(r["clicks"] or 0), tot("click")), "shares": tot("share"), "likes": likes.get(aid, 0), "reach": len(ppl),
+                          "people_clicked": acts.get(aid, {}).get("click", 0), "people_shared": acts.get(aid, {}).get("share", 0), "people_liked": likes.get(aid, 0),
+                          "reach_apps": {"futurechat": sum(1 for p in ppl if "futurechat" in apps.get(p, ())), "skillvaya": sum(1 for p in ppl if "skillvaya" in apps.get(p, ()))},
+                          "series": {l: {"views": dd.get(l, {}).get("view_fc", 0) + dd.get(l, {}).get("view_home", 0), "clicks": dd.get(l, {}).get("click", 0),
+                                         "shares": dd.get(l, {}).get("share", 0), "likes": dd.get(l, {}).get("like", 0), "reach": reach_day.get(aid, {}).get(l, 0)} for l in labels}}
+            out.append(d)
+        return h.sendj({"items": out, "labels": labels, "since": start, "counting_since": "2026-11-20"})
     return h.sendj({"error": "Not found"}, 404)
 
 
@@ -296,9 +365,16 @@ def handle_post(h, path, d):
     if path == "/api/home-ads/event":
         try: ad_id = int(d.get("id") or 0)
         except (TypeError, ValueError): ad_id = 0
-        col = "clicks" if d.get("ev") == "click" else "views"
+        ev = d.get("ev")
+        who = _optional_user(h)
+        uid = int(who["id"]) if who else 0
         with A.conn() as c:
-            c.execute("UPDATE home_ads SET " + col + "=" + col + "+1 WHERE id=? AND status='active'", (ad_id,))
+            if ev == "share":   # HA-STATS-01: shares don't change the old view / click totals
+                if c.execute("SELECT 1 FROM home_ads WHERE id=?", (ad_id,)).fetchone(): record(c, ad_id, "share", uid)
+                return h.sendj({"ok": True})
+            col = "clicks" if ev == "click" else "views"
+            cur = c.execute("UPDATE home_ads SET " + col + "=" + col + "+1 WHERE id=? AND status='active'", (ad_id,))
+            if getattr(cur, "rowcount", 1): record(c, ad_id, "click" if ev == "click" else ("view_fc" if _from_fc_app(h) else "view_home"), uid)
         return h.sendj({"ok": True})
     u = h.require()
     uid = int(u["id"])

@@ -11,13 +11,14 @@
   const until = b => !b ? '' : (b.until ? 'banned until ' + new Date(b.until).toLocaleString('en-ZA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'banned for good');
 
   // ---------------------------------------------------------------- simple bar chart (SVG, no libraries)
-  function chart(title, labels, values, color) {
+  function chart(title, labels, values, color, kind) {
     const W = 320, H = 120, n = values.length, max = Math.max(1, ...values), bw = W / n;
-    const bars = values.map((v, i) => { const h = Math.round((v / max) * (H - 18)); return '<rect x="' + (i * bw + 1).toFixed(1) + '" y="' + (H - h) + '" width="' + Math.max(1, bw - 2).toFixed(1) + '" height="' + h + '" rx="2" fill="' + color + '"><title>' + labels[i] + ': ' + v + '</title></rect>'; }).join('');
+    // FCA-LIST-01: every bar is tappable (a full-height invisible strip makes small bars easy to hit) and opens who it was
+    const bars = values.map((v, i) => { const h = Math.round((v / max) * (H - 18)); return (kind ? '<rect x="' + (i * bw).toFixed(1) + '" y="0" width="' + bw.toFixed(1) + '" height="' + H + '" fill="transparent" data-k="' + kind + '" data-day="' + labels[i] + '" style="cursor:pointer"></rect>' : '') + '<rect x="' + (i * bw + 1).toFixed(1) + '" y="' + (H - h) + '" width="' + Math.max(1, bw - 2).toFixed(1) + '" height="' + h + '" rx="2" fill="' + color + '" pointer-events="none"><title>' + labels[i] + ': ' + v + '</title></rect>'; }).join('');
     const total = values.reduce((a, b) => a + b, 0), last = values[values.length - 1] || 0;
     return '<div class="fca-card" style="padding:12px 14px"><div style="display:flex;justify-content:space-between;align-items:baseline"><b style="font-size:14px">' + esc(title) + '</b><span style="font-size:12px;color:#9cb7cc">today ' + last + ' · ' + n + ' days ' + total + '</span></div>' +
       '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;margin-top:8px" role="img" aria-label="' + esc(title) + '"><line x1="0" y1="' + H + '" x2="' + W + '" y2="' + H + '" stroke="#2a4458"/>' + bars +
-      '<text x="0" y="10" fill="#9cb7cc" font-size="10">' + max + '</text></svg><div style="display:flex;justify-content:space-between;font-size:10.5px;color:#7f9bb0"><span>' + esc(labels[0].slice(5)) + '</span><span>' + esc(labels[labels.length - 1].slice(5)) + '</span></div></div>';
+      '<text x="0" y="10" fill="#9cb7cc" font-size="10" pointer-events="none">' + max + '</text></svg><div style="display:flex;justify-content:space-between;font-size:10.5px;color:#7f9bb0"><span>' + esc(labels[0].slice(5)) + '</span>' + (kind ? '<span>Tap a day to see who</span>' : '') + '<span>' + esc(labels[labels.length - 1].slice(5)) + '</span></div></div>';
   }
   const tile = (n, label, a) => '<button class="fca-card" ' + (a ? 'data-a="' + a + '"' : '') + ' style="flex:1;min-width:92px;padding:12px;text-align:left;border:0;color:inherit;font:inherit;cursor:' + (a ? 'pointer' : 'default') + '"><b style="font-size:22px;display:block">' + n + '</b><span style="font-size:12px;color:#9cb7cc">' + esc(label) + '</span></button>';
 
@@ -28,9 +29,9 @@
     bd.innerHTML = '<div class="fca-empty">Loading…</div>';
     let s; try { s = await api('/api/fca/admin/stats?days=30'); } catch (e) { bd.innerHTML = '<div class="fca-empty">' + esc(e.message) + '</div>'; return; }
     if (top() !== self) return;
-    bd.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:8px">' + tile(s.online_now, 'online now', 'online') + tile(s.today_active, 'used it today') + tile(s.mau, 'used it this month') + '</div>' +
+    bd.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:8px">' + tile(s.online_now, 'online now', 'online') + tile(s.today_active, 'used it today', 'today') + tile(s.wau, 'used it this week', 'week') + tile(s.mau, 'used it this month', 'month') + '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">' + tile(s.fc_total, 'joined Future Chat', 'joined') + tile(s.open_reports, 'open complaints', 'reports') + tile(s.active_bans, 'banned now', 'bans') + '</div>' +
-      chart('People joining per day', s.labels, s.joined, '#1ed6c8') + chart('People using the app per day', s.labels, s.active, '#5aa9ff') + chart('Messages sent per day', s.labels, s.messages, '#b38cff') +
+      chart('People joining per day', s.labels, s.joined, '#1ed6c8', 'joined') + chart('People using the app per day', s.labels, s.active, '#5aa9ff', 'active') + chart('Messages sent per day', s.labels, s.messages, '#b38cff', 'msgs') +
       '<div class="fca-card">' + row('🟢', 'Who\'s online now', s.online_now + (s.online_now === 1 ? ' person' : ' people'), { data: 'data-a="online"' }) + row('⚑', 'Complaints', s.open_reports + ' open', { data: 'data-a="reports"' }) +
       row('⛔', 'Bans', s.active_bans + ' banned now · spam is banned for 24 h automatically', { data: 'data-a="bans"' }) + row('🔎', 'Find a person', 'See their details, ban them or delete their account', { data: 'data-a="find"' }) + '</div>' +
       '<p class="fca-note">"Used it" counts people who opened Future Chat that day. Total accounts (Skillvaya + Future Chat): ' + s.total + '.</p>';
@@ -38,7 +39,26 @@
     const tstCard = document.createElement('div'); tstCard.className = 'fca-card';
     tstCard.innerHTML = row('\uD83E\uDDEA', 'Testers', 'Who is really testing Skillvaya and Future Chat', { data: 'data-a="testers"' });
     bd.appendChild(tstCard);
-    bind(bd, { joined: () => push(scrJoined), online: () => push(() => scrOnline(s)), reports: () => push(scrReports), bans: () => push(scrBans), find: () => push(scrFind), testers: () => push(scrTesters) });
+    bind(bd, { joined: () => push(scrJoined), online: () => push(() => scrOnline(s)), reports: () => push(scrReports), bans: () => push(scrBans), find: () => push(scrFind), testers: () => push(scrTesters),
+      today: () => push(() => scrList('active', '', 0)), week: () => push(() => scrList('active', '', 7)), month: () => push(() => scrList('active', '', 30)) });
+    bd.querySelectorAll('rect[data-k]').forEach(r => r.addEventListener('click', () => push(() => scrList(r.dataset.k, r.dataset.day, 0))));
+  }
+  // FCA-LIST-01 (owner 2026-11-20): who is behind a number or a chart bar. Tap a person for their details and actions.
+  async function scrList(kind, day, days) {
+    const self = top();
+    const nice = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' }); } catch (_) { return d; } };
+    const when = days > 1 ? 'last ' + days + ' days' : (day ? nice(day) : 'today');
+    const title = { active: 'Used Future Chat', joined: 'Joined', msgs: 'Sent messages' }[kind] || 'People';
+    const bd = frame(title, when);
+    bd.innerHTML = '<div class="fca-empty">Loading…</div>';
+    let d; try { d = await api('/api/fca/admin/list?kind=' + encodeURIComponent(kind) + (day ? '&day=' + encodeURIComponent(day) : '') + (days ? '&days=' + days : '')); }
+    catch (e) { bd.innerHTML = '<div class="fca-empty">' + esc(e.message) + '</div>'; return; }
+    if (top() !== self) return;
+    const appTxt = p => { const a = p.apps || {}; const l = []; if (a.futurechat) l.push('Future Chat app'); if (a.skillvaya) l.push('Skillvaya app'); return l.length ? l.join(' + ') : 'no phone app yet'; };
+    const extra = p => kind === 'msgs' ? p.n + (p.n === 1 ? ' message' : ' messages') : (days > 1 ? 'on ' + p.n + (p.n === 1 ? ' day' : ' days') : '');
+    bd.innerHTML = '<p class="fca-note" style="margin-top:0">' + d.items.length + (d.items.length === 1 ? ' person' : ' people') + ' · tap someone to see their details</p><div class="fca-card">' +
+      (d.items.length ? d.items.map(p => personRow(p, [extra(p), appTxt(p), 'last seen ' + ago(p.last_seen)].filter(Boolean).join(' · '))).join('') : row('👥', 'Nobody', '', {}, '')) + '</div>';
+    wirePeople(bd, d.items);
   }
   function scrTesters() {   // TST-01
     const bd = frame('Testers', 'Who is really testing your apps');

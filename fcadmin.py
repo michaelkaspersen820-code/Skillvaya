@@ -324,6 +324,48 @@ def handle_get(h, path):
                         "online_now": len(online), "open_reports": int(open_reports), "active_bans": int(bans),
                         "labels": labels, "joined": [joined[l] for l in labels], "active": [active[l] for l in labels], "messages": [msgs[l] for l in labels],
                         "online": [_person(r, r["last_seen"]) for r in online]})
+    if path == "/api/fca/admin/list":   # FCA-LIST-01 (owner 2026-11-20): the people behind every number and chart bar in Control
+        kind = (q.get("kind") or ["active"])[0]
+        day = (q.get("day") or [""])[0]
+        try: days = max(0, min(90, int((q.get("days") or ["0"])[0] or 0)))
+        except ValueError: days = 0
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day or ""): day = _sa_day()
+        d0 = datetime.datetime.fromisoformat(day + "T00:00:00+02:00").astimezone(datetime.timezone.utc)
+        lo, hi = _iso(d0), _iso(d0 + datetime.timedelta(days=1))
+        with A.conn() as c:
+            counts = {}
+            if kind == "active":
+                if days > 1:
+                    for r in c.execute("SELECT user_id,COUNT(*) AS n FROM fca_days WHERE day>=? GROUP BY user_id", (_sa_day(_utc() - datetime.timedelta(days=days - 1)),)).fetchall(): counts[int(r["user_id"])] = int(r["n"])
+                else:
+                    for r in c.execute("SELECT user_id FROM fca_days WHERE day=?", (day,)).fetchall(): counts[int(r["user_id"])] = 1
+            elif kind == "joined":
+                for r in c.execute("SELECT id FROM users WHERE created_at>=? AND created_at<?", (lo, hi)).fetchall(): counts[int(r["id"])] = 1
+            elif kind == "msgs":
+                for r in c.execute("SELECT sender_id,COUNT(*) AS n FROM fc_messages WHERE created_at>=? AND created_at<? AND kind<>'system' GROUP BY sender_id", (lo, hi)).fetchall(): counts[int(r["sender_id"])] = int(r["n"])
+            else:
+                return h.sendj({"error": "Unknown list."}, 400)
+            ids = list(counts)
+            rows = []
+            for i in range(0, len(ids), 400):
+                part = ids[i:i + 400]
+                rows += c.execute("SELECT id,name,phone_e164 AS phone,email,role,created_at FROM users WHERE id IN (" + ",".join("?" * len(part)) + ")", tuple(part)).fetchall()
+            seen = _last_seen(c, ids)
+            apps = {}
+            try:
+                for i in range(0, len(ids), 400):
+                    part = ids[i:i + 400]
+                    for r in c.execute("SELECT user_id,app,last_seen FROM tst_seen WHERE user_id IN (" + ",".join("?" * len(part)) + ")", tuple(part)).fetchall():
+                        apps.setdefault(int(r["user_id"]), {})[r["app"]] = r["last_seen"]
+            except Exception: pass
+            out = []
+            for r in rows:
+                p = _person(r, seen.get(int(r["id"]), ""), ban_of(c, int(r["id"])))
+                p["n"] = counts.get(int(r["id"]), 0); p["apps"] = apps.get(int(r["id"]), {})
+                out.append(p)
+        out.sort(key=lambda p: (-p["n"], p["last_seen"] or ""), reverse=False)
+        if kind != "msgs" and days <= 1: out.sort(key=lambda p: p["last_seen"] or "", reverse=True)
+        return h.sendj({"items": out, "kind": kind, "day": day, "days": days})
     if path == "/api/fca/admin/users":
         term = (q.get("q") or [""])[0].strip()[:80]
         with A.conn() as c:

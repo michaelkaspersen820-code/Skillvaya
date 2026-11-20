@@ -201,6 +201,10 @@ def handle_post(h, path, d):
             else:
                 c.execute("INSERT INTO fc_ad_seen(user_id,ad_id,day,n) VALUES(?,?,?,1)", (uid, ad_id, day))
             c.execute("UPDATE home_ads SET views=views+1 WHERE id=?", (ad_id,))
+            try:
+                import homeads as HA
+                HA.record(c, ad_id, "view_fc", uid)   # HA-STATS-01: advert results for the owner
+            except Exception: pass
             c.execute("DELETE FROM fc_ad_seen WHERE day<?", ((_now() - datetime.timedelta(days=3)).date().isoformat(),))
         return h.sendj({"ok": True})
     if path == "/api/fc/status":
@@ -245,7 +249,13 @@ def handle_post(h, path, d):
                 if not r or (int(r["user_id"]) != uid and int(r["user_id"]) not in _contacts(c, uid)): return h.sendj({"error": "This status has ended."}, 404)
             else:
                 if not c.execute("SELECT 1 FROM home_ads WHERE id=? AND status='active'", (rid,)).fetchone(): return h.sendj({"error": "This advert has ended."}, 404)
+            had = c.execute("SELECT 1 FROM fc_status_likes WHERE kind=? AND ref_id=? AND user_id=?", (kind, rid, uid)).fetchone()
             c.execute("DELETE FROM fc_status_likes WHERE kind=? AND ref_id=? AND user_id=?", (kind, rid, uid))
+            if on and kind == "ad" and not had:
+                try:
+                    import homeads as HA
+                    HA.record(c, rid, "like", uid)   # HA-STATS-01
+                except Exception: pass
             if on: c.execute("INSERT INTO fc_status_likes(kind,ref_id,user_id,created_at) VALUES(?,?,?,?)", (kind, rid, uid, _now().isoformat()))
             n = c.execute("SELECT COUNT(*) AS n FROM fc_status_likes WHERE kind=? AND ref_id=?", (kind, rid)).fetchone()["n"]
         return h.sendj({"ok": True, "liked": on, "likes": int(n or 0)})

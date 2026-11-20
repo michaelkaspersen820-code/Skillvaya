@@ -29,6 +29,8 @@ def init(c):
         CREATE TABLE IF NOT EXISTS tst_seen(user_id BIGINT NOT NULL, app TEXT NOT NULL, version TEXT NOT NULL DEFAULT '',
             installer TEXT NOT NULL DEFAULT '', first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, PRIMARY KEY(user_id, app));
         CREATE TABLE IF NOT EXISTS tst_meta(k TEXT PRIMARY KEY, v TEXT NOT NULL DEFAULT '');
+        CREATE TABLE IF NOT EXISTS tst_days(user_id BIGINT NOT NULL, app TEXT NOT NULL, day TEXT NOT NULL, minutes INTEGER NOT NULL DEFAULT 0,
+            actions INTEGER NOT NULL DEFAULT 0, first_at TEXT NOT NULL DEFAULT '', last_at TEXT NOT NULL DEFAULT '', PRIMARY KEY(user_id, app, day));
     """)
     if not c.execute("SELECT 1 FROM tst_meta WHERE k='seeded'").fetchone():
         stamp = A.now()
@@ -56,6 +58,36 @@ def app_of(ua):
     return None
 
 
+_minute = {}   # (user, app) -> (minute number, actions not yet written)
+
+
+def _sa_day(ts=None):
+    return (datetime.datetime.fromtimestamp(ts or time.time(), datetime.timezone.utc) + datetime.timedelta(hours=2)).strftime("%Y-%m-%d")
+
+
+def _time_on(h, uid, app, now):
+    """OWN-TIME-01 (owner 2026-11-20): time on each app per day = minutes in which the app talked to the server while open
+    (the apps check for new messages every few seconds while on screen), plus actions = things people did (send, like, post ...)."""
+    try:
+        minute = int(now // 60)
+        action = getattr(h, "command", "GET") == "POST"
+        write = None
+        with _lock:
+            m, acts = _minute.get((uid, app), (0, 0))
+            if action: acts += 1
+            if minute != m: write = acts; _minute[(uid, app)] = (minute, 0)
+            else: _minute[(uid, app)] = (m, acts)
+            if len(_minute) > 20000: _minute.clear()
+        if write is None: return
+        stamp = A.now()
+        with A.conn() as c:
+            c.execute("INSERT INTO tst_days(user_id,app,day,minutes,actions,first_at,last_at) VALUES(?,?,?,1,?,?,?) ON CONFLICT(user_id,app,day) DO UPDATE SET"
+                      " minutes=tst_days.minutes+1, actions=tst_days.actions+excluded.actions, last_at=excluded.last_at",
+                      (uid, app, _sa_day(now), int(write), stamp, stamp))
+    except Exception:
+        pass   # tracking must never break a request
+
+
 def touch(h, u):
     """Called for every signed-in request; records which phone app the person is using (web visits are ignored)."""
     try:
@@ -65,6 +97,7 @@ def touch(h, u):
         if not a: return
         app, ver, inst = a
         now = time.time()
+        _time_on(h, uid, app, now)
         with _lock:
             if now - _recent.get((uid, app), 0) < TOUCH_EVERY: return
             _recent[(uid, app)] = now
@@ -126,6 +159,35 @@ def handle_get(h, path):
                            "last": max(r["last_seen"] for r in s.values())})
         others.sort(key=lambda x: x["last"], reverse=True)
         return h.sendj({"items": items, "others": others[:200], "now": A.now()})
+    if path == "/api/tst/people":   # OWN-PEOPLE-01 (owner 2026-11-20): every account, with which phone app(s) it uses
+        with A.conn() as c:
+            users = c.execute("SELECT u.id,u.name,u.email,u.phone_e164,u.phone,u.role,u.created_at,u.phone_verified_at,"
+                              " (SELECT count(*) FROM businesses b WHERE b.user_id=u.id) AS businesses,"
+                              " (SELECT count(*) FROM payments p WHERE p.user_id=u.id AND p.status='verified') AS paid"
+                              " FROM users u ORDER BY u.created_at DESC").fetchall()
+            seen = {}
+            for r in c.execute("SELECT user_id,app,version,installer,first_seen,last_seen FROM tst_seen").fetchall():
+                seen.setdefault(int(r["user_id"]), {})[r["app"]] = r
+            try: fcl = {int(r["user_id"]): (r["last_seen"] or "") for r in c.execute("SELECT user_id,last_seen FROM fcx_prefs").fetchall()}
+            except Exception: fcl = {}
+            since = _sa_day(time.time() - 40 * 86400)
+            days = {}   # OWN-TIME-01: {user: {app: {day: [minutes, actions]}}}
+            for r in c.execute("SELECT user_id,app,day,minutes,actions FROM tst_days WHERE day>=?", (since,)).fetchall():
+                days.setdefault(int(r["user_id"]), {}).setdefault(r["app"], {})[r["day"]] = [int(r["minutes"] or 0), int(r["actions"] or 0)]
+            try:   # Future Chat already kept a list of the days each person used it
+                for r in c.execute("SELECT user_id,day FROM fca_days WHERE day>=?", (since,)).fetchall():
+                    days.setdefault(int(r["user_id"]), {}).setdefault("futurechat", {}).setdefault(r["day"], [0, 0])
+            except Exception: pass
+            testers = [r["email"] for r in c.execute("SELECT email FROM tst_testers ORDER BY added_at, email").fetchall()]
+        by_email = {norm(u["email"]): int(u["id"]) for u in users if u["email"] and u["role"] != "suspended"}
+        out = []
+        for u in users:
+            uid = int(u["id"]); s = seen.get(uid, {})
+            out.append({"id": uid, "name": u["name"] or "", "email": u["email"] or "", "phone": u["phone_e164"] or u["phone"] or "",
+                        "role": u["role"], "joined": u["created_at"] or "", "fc_joined": u["phone_verified_at"] or "", "fc_last": fcl.get(uid, ""),
+                        "businesses": int(u["businesses"] or 0), "paid": int(u["paid"] or 0), "days": days.get(uid, {}),
+                        "apps": {"skillvaya": _seen_out(s.get("skillvaya")), "futurechat": _seen_out(s.get("futurechat"))}})
+        return h.sendj({"items": out, "now": A.now(), "today": _sa_day(), "testers": [{"email": e, "user_id": by_email.get(norm(e))} for e in testers]})
     return h.sendj({"error": "Not found"}, 404)
 
 

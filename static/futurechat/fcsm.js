@@ -246,8 +246,9 @@
     if (/^image\//.test(ad.mime || '') && ad.media) { try { const { b, data } = await blobB64(ad.media); return { kind: 'photo', body, files: [{ filename: 'advert.jpg', mime_type: b.type || ad.mime, data_base64: data }] }; } catch (_) {} }
     return { kind: 'text', body };
   }
-  function shareThing(build) {
+  function shareThing(build, shared) {
     pauseV();
+    const tell = () => { try { if (shared) shared(); } catch (_) {} };   // HA-STATS-01: advert shares counted for the owner
     let chats = []; try { chats = ((window.FutureChat && window.FutureChat.state && window.FutureChat.state().list) || []).filter(c => !c.archived); } catch (_) {}
     const max = 5, sel = new Set(); let q = '';
     sheet('<div class="fcf-hd"><h3>Share to…</h3><span id="fcsN"></span></div>' +
@@ -279,11 +280,12 @@
         try {
           const p = await build(); let ok = 0, err = '';
           for (const c of ids) { try { await api('/api/fc/send', { c, kind: p.kind, body: p.body, meta: { fwd: 1 }, files: p.files || [] }); ok++; } catch (e) { err = e.message; } }
+          if (ok) tell();
           toast(ok ? 'Shared to ' + ok + (ok === 1 ? ' chat' : ' chats') + (err ? ' · ' + err : '') : (err || 'Could not share'));
         } catch (e) { toast(e.message || 'Could not share'); }
       };
       const out = dim.querySelector('[data-a="out"]');
-      if (out) out.onclick = async () => { end(); try { const p = await build(); await navigator.share({ title: 'Future Chat', text: p.body }); } catch (_) {} };
+      if (out) out.onclick = async () => { end(); try { const p = await build(); await navigator.share({ title: 'Future Chat', text: p.body }); tell(); } catch (_) {} };
       paint();
     });
   }
@@ -310,7 +312,7 @@
       '<div class="foot">' + (ad.target ? '<button class="cta" data-a="cta">' + esc(ad.cta || 'Find out more') + '</button>' : '') + (ad.house ? '' : likeHtml(ad) + shareHtml) + '</div>';
     V.el.querySelector('[data-a="x"]').onclick = closeViewer;
     const alk = V.el.querySelector('[data-a="like"]'); if (alk) alk.onclick = e => { e.stopPropagation(); doLike('ad', ad, alk); };
-    const ash = V.el.querySelector('[data-a="share"]'); if (ash) ash.onclick = e => { e.stopPropagation(); shareThing(() => adPayload(ad, sh)); };
+    const ash = V.el.querySelector('[data-a="share"]'); if (ash) ash.onclick = e => { e.stopPropagation(); shareThing(() => adPayload(ad, sh), () => { if (!ad.house) api('/api/home-ads/event', { id: ad.id, ev: 'share' }).catch(() => {}); }); };
     V.el.querySelector('.tapL').onclick = () => { if (V.held) { V.held = false; return; } adStep(-1); };
     V.el.querySelector('.tapR').onclick = () => { if (V.held) { V.held = false; return; } adStep(1); };
     bindHold(V.el.querySelector('.stage'));

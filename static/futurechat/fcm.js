@@ -495,13 +495,34 @@
       try { const d = await sendRaw({ c: S.conv.id, kind, body: caption || '', reply_to: reply, files: [{ filename: f.name, mime_type: f.type || 'application/octet-stream', data_base64: await toB64(f) }] }, pm); caption = ''; if (d && d.attachments && d.attachments[0]) { localPut(d.attachments[0], f); S.media.set(d.attachments[0], local); } } catch (_) {}
     }
   }
+  // FC-CAPTION-01 (owner 2026-11-20): photos, videos and files are shown first with a caption box; nothing is sent until you tap Send
+  function previewSend(files) {
+    files = (files || []).filter(Boolean); if (!files.length) return;
+    const urls = [];
+    const thumb = f => {
+      if (/^image\//.test(f.type)) { const u = URL.createObjectURL(f); urls.push(u); return '<img src="' + u + '" alt="" style="width:100%;height:100%;object-fit:cover;display:block">'; }
+      if (/^video\//.test(f.type)) { const u = URL.createObjectURL(f); urls.push(u); return '<video src="' + u + '" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;display:block"></video><span style="position:absolute;left:6px;bottom:4px;font-size:18px">🎬</span>'; }
+      return '<div style="display:grid;place-items:center;height:100%;padding:6px;text-align:center;font-size:12px;word-break:break-all">📄<br>' + esc(f.name) + '</div>';
+    };
+    const one = files.length === 1;
+    sheet('<h3>' + (one ? (/^video\//.test(files[0].type) ? 'Send video' : /^image\//.test(files[0].type) ? 'Send photo' : 'Send file') : 'Send ' + files.length + ' items') + (S.conv && S.conv.title ? ' to ' + esc(S.conv.title) : '') + '</h3>' +
+      '<div style="display:grid;grid-template-columns:repeat(' + (one ? 1 : 3) + ',1fr);gap:6px;margin:8px 0">' + files.slice(0, 12).map(f => '<div style="position:relative;border-radius:12px;overflow:hidden;background:rgba(127,127,127,.15);' + (one ? 'max-height:52vh;aspect-ratio:auto' : 'aspect-ratio:1') + '">' + thumb(f) + '</div>').join('') + '</div>' +
+      (files.length > 12 ? '<p>+ ' + (files.length - 12) + ' more</p>' : '') +
+      '<textarea id="fcCap" rows="2" placeholder="Add a caption…" style="width:100%;box-sizing:border-box"></textarea>' +
+      '<div style="display:flex;gap:8px"><button class="fc-btn sec" id="fcCapX" style="flex:1">Cancel</button><button class="fc-btn" id="fcCapGo" style="flex:2">Send ➤</button></div>', (el, done) => {
+      const clean = () => { urls.forEach(u => { try { URL.revokeObjectURL(u); } catch (_) {} }); };
+      const dim = el.parentNode; if (dim) dim.addEventListener('click', e => { if (e.target === dim) clean(); });
+      el.querySelector('#fcCapX').onclick = () => { done(); clean(); };
+      el.querySelector('#fcCapGo').onclick = () => { const cap = el.querySelector('#fcCap').value.trim(); done(); sendFiles(files, cap).finally(clean); };
+    });
+  }
   function pickFiles(accept, capture, multiple) {
     const i = document.createElement('input'); i.type = 'file'; i.accept = accept; if (capture) i.setAttribute('capture', capture); if (multiple) i.multiple = true;
-    i.onchange = () => { if (i.files && i.files.length) sendFiles(Array.from(i.files)); }; i.click();
+    i.onchange = () => { if (i.files && i.files.length) previewSend(Array.from(i.files)); }; i.click();
   }
   function camera() {
     const n = native();
-    if (n && n.openLens) { window.fcLensResult = async (b64, mime) => { if (!b64) return; const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0)); sendFiles([new File([bin], 'FutureChat_Lens.jpg', { type: mime || 'image/jpeg' })]); }; n.openLens(); return; }
+    if (n && n.openLens) { window.fcLensResult = async (b64, mime) => { if (!b64) return; const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0)); previewSend([new File([bin], 'FutureChat_Lens.jpg', { type: mime || 'image/jpeg' })]); }; n.openLens(); return; }
     pickFiles('image/*', 'environment');
   }
   async function voiceNote(sync) {
