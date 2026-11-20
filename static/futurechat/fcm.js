@@ -969,19 +969,8 @@
       else if (S.open) loadList();
       else if (token()) api('/api/fc/pulse').then(d => { const b = document.querySelector('#nav-messages .fc-navbadge'); if (b) { b.textContent = d.unread > 99 ? '99+' : String(d.unread); b.style.display = d.unread ? 'grid' : 'none'; } }).catch(() => {});
     } catch (_) {}
-    try { if (typeof pollSkillvayaIncomingCalls === 'function') pollSkillvayaIncomingCalls(); } catch (_) {}
-    try { if (typeof svActiveVideoCall !== 'undefined' && svActiveVideoCall && typeof svSyncVideoCall === 'function') svSyncVideoCall(svActiveVideoCall).catch(() => {}); } catch (_) {}
-    try { window.dispatchEvent(new Event('fc-wake')); } catch (_) {}
-  }
-  function slowCallPoll() {
-    // The incoming-call check ran every 0.9 s. With the wake-up line (and the phone's call notification) it only needs
-    // to run every 3.6 s as a backup; it goes back to 0.9 s by itself whenever the wake-up line is down.
-    try {
-      if (W.slowed || typeof svIncomingCallPoll === 'undefined' || !svIncomingCallPoll || typeof pollSkillvayaIncomingCalls !== 'function') return;
-      clearInterval(svIncomingCallPoll); let n = 0;
-      svIncomingCallPoll = setInterval(() => { n++; if (!wakeOk() || n % 4 === 0) pollSkillvayaIncomingCalls(); }, 900);
-      W.slowed = true;
-    } catch (_) {}
+    // Calls are NOT touched by the wake-up line (owner 2026-11-20): ringing, answering and connecting keep their own
+    // proven checks exactly as before.
   }
   async function wakeLoop() {
     if (W.on) return; W.on = true;
@@ -990,7 +979,6 @@
         try {
           const r = await api('/api/fc/wait?v=' + W.v + '&t=25');
           const first = W.v < 0; W.v = Number(r.v) || 0; W.fails = 0;
-          slowCallPoll();
           if (r.changed && !first) onWake();
         } catch (e) {
           W.fails++;

@@ -65,8 +65,8 @@ def after_post(h, path, d):
     """Called after every POST (the response has already been sent). Never raises."""
     try:
         if not isinstance(d, dict): return
-        if not (path.startswith("/api/fc/") or path == "/api/video-calls"): return
-        if path not in ("/api/fc/send", "/api/fc/react", "/api/fc/edit", "/api/fc/delete", "/api/fc/add-members", "/api/fc/settings", "/api/video-calls"): return
+        # Messages only (owner 2026-11-20): calls keep their own proven checks and are never woken from here.
+        if path not in ("/api/fc/send", "/api/fc/react", "/api/fc/edit", "/api/fc/delete", "/api/fc/add-members", "/api/fc/settings"): return
         try: actor = int((h.user() or {}).get("id") or 0)
         except Exception: actor = 0
         uids = set()

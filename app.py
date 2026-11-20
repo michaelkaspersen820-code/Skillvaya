@@ -5121,12 +5121,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 # FCAPP-01: the stand-alone Future Chat app (Google Play) opens this. Same page, accounts, chats and calls as
                 # Future Chat inside Skillvaya; fcapp.js only changes the frame (full-screen Future Chat, own sign-in, Account menu).
                 fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
-                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fcm.js?v=4" defer></script><script src="/futurechat/fcapp.js?v=18" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=3" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/adsdata.js?v=1" defer></script><script src="/futurechat/fcadmin.js?v=8" defer></script><script src="/futurechat/testers.js?v=1" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fcm.js?v=5" defer></script><script src="/futurechat/fcapp.js?v=18" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=3" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/adsdata.js?v=1" defer></script><script src="/futurechat/fcadmin.js?v=8" defer></script><script src="/futurechat/testers.js?v=1" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
                 # FCAPP-02: the full original Future Chat look, and no Skillvaya branding while the app loads.
                 fc_page = fc_page.replace('<script src="/futurechat/calllens.js?v=8" defer></script>', '<script src="/futurechat/fclens.js?v=1" defer></script>', 1)   # FC-LENSFIT-01
                 fc_page = fc_page.replace('<script src="/futurechat/fcstatus.js?v=9" defer></script>', '<script src="/futurechat/fcsm.js?v=3" defer></script>', 1)   # FCS-LIKE-01 / FCS-SHARE-01
                 # FC-CALLUI-01: loaded before fcm.js so the phone's back button reaches the call screen first
-                fc_page = fc_page.replace('<script src="/futurechat/fcm.js?v=4" defer></script>', '<script src="/futurechat/fccall.js?v=4" defer></script><script src="/futurechat/fcm.js?v=4" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fcm.js?v=5" defer></script>', '<script src="/futurechat/fccall.js?v=4" defer></script><script src="/futurechat/fcm.js?v=5" defer></script>', 1)
                 fc_page = fc_page.replace('<link rel="stylesheet" href="/futurechat/fc.css?v=4">', '<link rel="stylesheet" href="/futurechat/fcm.css?v=2"><link rel="stylesheet" href="/futurechat/fcapp.css?v=11"><style>#svSplash{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)!important;color:#fff!important}#svSplash .sv-splash-brand{color:#1ed6c8!important}#svSplash .sv-splash-caption{color:#cfe3f2!important}</style>', 1)
                 fc_page = fc_page.replace('<div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div>', '<div class="sv-splash-brand">Future Chat</div><div class="sv-splash-caption">Stay close. Wherever life takes you.</div>', 1)
                 fc_html = fc_page.encode("utf-8")
@@ -5702,7 +5702,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 self.rfile.read(int(self.headers.get("Content-Length","0")))
                 return self.sendj({"error":"PayFast is paused. PayPal is the only supported checkout provider."},410)
             d=self.body()
-            if path.startswith("/api/fc/") or path=="/api/video-calls": self._fcw=(path,d)
+            if path.startswith("/api/fc/"): self._fcw=(path,d)
             if path.startswith("/mcp/"):
                 return OWN.handle_mcp(self,path,d)
             if path.startswith("/api/own/"):
@@ -6119,8 +6119,16 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         except PermissionError as exc: return self.sendj({"error":str(exc)},403)
                         except LookupError as exc: return self.sendj({"error":str(exc)},404)
                         call_id=secrets.token_urlsafe(18);stamp=now()
+                        # FC-ONECALL-01 (owner 2026-11-20): only ONE call from you to this person rings at a time. A second
+                        # press (or the app retrying) ends the older ringing call first and silences its ringing, so the
+                        # other phone never rings for two calls at once and Answer always picks up the call that is live.
+                        older=[r["id"] for r in c.execute("SELECT id FROM video_calls WHERE caller_id=? AND callee_id=? AND status='ringing'",(u["id"],callee_id)).fetchall()]
+                        for oid in older: c.execute("UPDATE video_calls SET status='ended',updated_at=?,ended_at=? WHERE id=? AND status='ringing'",(stamp,stamp,oid))
                         c.execute("INSERT INTO video_calls(id,business_id,customer_id,caller_id,callee_id,status,offer_sdp,answer_sdp,created_at,updated_at,ended_at,conversation_id) VALUES(?,?,?,?,?,'ringing',?,'',?,?,'',?)",(call_id,bid,customer_id,u["id"],callee_id,json.dumps(offer_obj),stamp,stamp,conv_id))
                         FC.call_event(c,conv_id,int(u["id"]),("Video call" if "m=video" in offer_obj.get("sdp","") else "Voice call"))
+                    for oid in older:   # FC-ONECALL-01: stop the older call ringing on the other phone
+                        try: threading.Thread(target=fcm_send_to_user,args=(callee_id,"Call ended","",{"type":"call_ended","call_id":oid}),daemon=True).start()
+                        except Exception: pass
                     try:
                         FX.allow_push(callee_id,"call")[0] and threading.Thread(target=fcm_send_to_user,args=(callee_id,"Incoming call",(u.get("name") or "Your contact")+" is calling you",
                             {"type":"incoming_call","call_id":call_id,"business_id":bid,"customer_id":customer_id,"conversation_id":str(conv_id),"url":"/customer-app?fc=%d"%conv_id}),
