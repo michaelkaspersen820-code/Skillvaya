@@ -29,7 +29,9 @@
     bd.innerHTML = '<div class="fca-empty">Loading…</div>';
     let s; try { s = await api('/api/fca/admin/stats?days=30'); } catch (e) { bd.innerHTML = '<div class="fca-empty">' + esc(e.message) + '</div>'; return; }
     if (top() !== self) return;
-    bd.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:8px">' + tile(s.online_now, 'online now', 'online') + tile(s.today_active, 'used it today', 'today') + tile(s.wau, 'used it this week', 'week') + tile(s.mau, 'used it this month', 'month') + '</div>' +
+    // ADS-DATA-01: Ads data button right at the top (money made, who posted adverts, reach, clicks, likes, shares and who did them)
+    bd.innerHTML = '<div class="fca-card">' + row('📣', 'Ads data', 'Money made from adverts, who posted them, reach, clicks, likes, shares - and who did them', { data: 'data-a="ads"' }) + '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px">' + tile(s.online_now, 'online now', 'online') + tile(s.today_active, 'used it today', 'today') + tile(s.wau, 'used it this week', 'week') + tile(s.mau, 'used it this month', 'month') + '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">' + tile(s.fc_total, 'joined Future Chat', 'joined') + tile(s.open_reports, 'open complaints', 'reports') + tile(s.active_bans, 'banned now', 'bans') + '</div>' +
       chart('People joining per day', s.labels, s.joined, '#1ed6c8', 'joined') + chart('People using the app per day', s.labels, s.active, '#5aa9ff', 'active') + chart('Messages sent per day', s.labels, s.messages, '#b38cff', 'msgs') +
       '<div class="fca-card">' + row('🟢', 'Who\'s online now', s.online_now + (s.online_now === 1 ? ' person' : ' people'), { data: 'data-a="online"' }) + row('⚑', 'Complaints', s.open_reports + ' open', { data: 'data-a="reports"' }) +
@@ -39,9 +41,14 @@
     const tstCard = document.createElement('div'); tstCard.className = 'fca-card';
     tstCard.innerHTML = row('\uD83E\uDDEA', 'Testers', 'Who is really testing Skillvaya and Future Chat', { data: 'data-a="testers"' });
     bd.appendChild(tstCard);
-    bind(bd, { joined: () => push(scrJoined), online: () => push(() => scrOnline(s)), reports: () => push(scrReports), bans: () => push(scrBans), find: () => push(scrFind), testers: () => push(scrTesters),
+    bind(bd, { ads: () => push(scrAds), joined: () => push(scrJoined), online: () => push(() => scrOnline(s)), reports: () => push(scrReports), bans: () => push(scrBans), find: () => push(scrFind), testers: () => push(scrTesters),
       today: () => push(() => scrList('active', '', 0)), week: () => push(() => scrList('active', '', 7)), month: () => push(() => scrList('active', '', 30)) });
     bd.querySelectorAll('rect[data-k]').forEach(r => r.addEventListener('click', () => push(() => scrList(r.dataset.k, r.dataset.day, 0))));
+  }
+  function scrAds() {   // ADS-DATA-01: the same Ads data screen as Skillvaya Owner Control
+    const bd = frame('Ads data', 'Every advert, shout-out and proposal');
+    if (window.AdsData) window.AdsData.open(bd, api);
+    else bd.innerHTML = '<div class="fca-empty">Ads data is still loading - go back and try again in a moment.</div>';
   }
   // FCA-LIST-01 (owner 2026-11-20): who is behind a number or a chart bar. Tap a person for their details and actions.
   async function scrList(kind, day, days) {

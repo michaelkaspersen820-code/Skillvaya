@@ -94,7 +94,7 @@
     b.onclick = () => { if (history.state && history.state.oc) history.back(); else window.showArea('dashboard'); };
     topBar.insertBefore(b, topBar.firstChild);
   }
-  try { titles.people = 'People'; titles.dashboard = 'Owner Control'; titles.trends = 'Trends'; titles['tester-board'] = 'Testers board'; titles['ad-results'] = 'Advertising results'; } catch (_) {}
+  try { titles.people = 'People'; titles.dashboard = 'Owner Control'; titles.trends = 'Trends'; titles['tester-board'] = 'Testers board'; titles['ad-results'] = 'Ads data'; } catch (_) {}
   const OWN_AREAS = { trends: () => renderTrends(), 'tester-board': () => renderTesterBoard(), 'ad-results': () => renderAds() };
   const origShow = window.showArea;
   window.showArea = async function (area) {
@@ -375,6 +375,7 @@
   }
   async function renderAds(keep) {
     const panel = $('panel');
+    if (window.AdsData) { panel.innerHTML = ''; return window.AdsData.open(panel, api); }   // ADS-DATA-01: shared Ads data screen (same in Future Chat Control)
     if (!keep || !AD.d) {
       panel.innerHTML = '<div class="panel">Loading advert results…</div>';
       try { AD.d = await api('/api/admin/ad-stats?days=' + AD.days); } catch (e) { return fail(panel, 'advert results', e); }
@@ -474,7 +475,7 @@
   const SECTIONS = [
     ['👥', 'People', 'Everyone, which app they use, time on and when they were last on', 'people:all'],
     ['📈', 'Trends', 'People on each day per app, new accounts and time on · tap any day', 'trends'],
-    ['📣', 'Advertising results', 'Reach, views, clicks, likes and shares per advert · reports for companies', 'ad-results'],
+    ['📣', 'Ads data', 'Money made, who posted adverts, reach, clicks, likes, shares and who did them · reports for companies', 'ad-results'],
     ['🧪', 'Testers board', 'The Play Store test list: who was on each day and who has not been on', 'tester-board'],
     ['♙', 'Customers & Providers', 'Search accounts · ban / suspend or restore', 'clients'],
     ['✔', 'Listings & Verification', 'Approve verified badges, suspend or restore listings', 'listings'],
@@ -514,7 +515,9 @@
       tile(cnt('off_today'), 'Not on today', 'people:off_today', 'warn') + tile(cnt('off_week'), 'Not on this week', 'people:off_week', 'warn') + tile(cnt('off_month'), 'Not on this month', 'people:off_month', 'warn') + '</div>' +
       '<div class="oc-gl">Play Store testers</div><div class="oc-tiles">' +
       tile(P.testers.length, 'Testers on the list', 'tester-board') + tile(tOn, 'Testers on today', 'tester-board', 'fc') + tile(P.testers.length - tOn, 'Testers not on today (incl. no account)', 'tester-board', (P.testers.length - tOn) ? 'warn' : '') + '</div>' +
-      '<div class="oc-gl">Advertising results</div><div class="oc-tiles">' +
+      '<div class="oc-gl">Ads data · tap any number</div><div class="oc-tiles">' +
+      tile('R' + num((ads && ads.money || {}).total), 'Money made from adverts', 'ad-results', 'warn') + tile('R' + num((ads && ads.money || {}).month), 'Ad money this month', 'ad-results', 'warn') +
+      tile(num(((ads && ads.advertisers) || []).length), 'People who posted adverts', 'ad-results') + tile(num((ads && ads.posted || {}).total), 'Adverts posted', 'ad-results') +
       tile(ai.filter(i => i.status === 'active').length, 'Adverts running', 'ad-results') + tile(num(aS('reach')), 'People reached', 'ad-results', 'fc') + tile(num(aS('views')), 'Advert views', 'ad-results') +
       tile(num(aS('clicks')), 'Advert clicks · ' + pct(aS('clicks'), aS('views')), 'ad-results', 'sv') + tile(num(aS('likes')), 'Advert likes', 'ad-results') + tile(num(aS('shares')), 'Advert shares', 'ad-results') + '</div>' +
       '<div class="oc-card" style="margin-top:10px">' + row('📈', 'Trends', 'Tap any day to see who was on', 'trends') + '</div>' +

@@ -293,8 +293,54 @@ def handle_get(h, path):
                           "series": {l: {"views": dd.get(l, {}).get("view_fc", 0) + dd.get(l, {}).get("view_home", 0), "clicks": dd.get(l, {}).get("click", 0),
                                          "shares": dd.get(l, {}).get("share", 0), "likes": dd.get(l, {}).get("like", 0), "reach": reach_day.get(aid, {}).get(l, 0)} for l in labels}}
             out.append(d)
-        return h.sendj({"items": out, "labels": labels, "since": start, "counting_since": "2026-11-20"})
+        # HA-MONEY-01 (owner 2026-11-20): money made from adverts and who posts them. Price = the plan price people paid
+        # through Google Play (Google keeps its 15% fee from that). Owner's own free adverts (no payment) count as R0.
+        sa = lambda ts: (_sa_ts(ts) or "")[:10]
+        today = labels[-1]; month = today[:7]
+        paid = [r for r in rows if r["paid_at"] and PLANS.get(r["product_id"] or "")]
+        cents = lambda r: PLANS[r["product_id"]][2]
+        money = {"total": sum(cents(r) for r in paid) / 100, "month": sum(cents(r) for r in paid if sa(r["paid_at"])[:7] == month) / 100,
+                 "today": sum(cents(r) for r in paid if sa(r["paid_at"]) == today) / 100, "paid_adverts": len(paid),
+                 "series": {l: sum(cents(r) for r in paid if sa(r["paid_at"]) == l) / 100 for l in labels},
+                 "by_type": {}}
+        for r in paid:
+            t = "shout" if PLANS[r["product_id"]][0] in ("shout", "propose") else ("fc" if is_fc(r["product_id"]) else "home")
+            money["by_type"][t] = money["by_type"].get(t, 0) + cents(r) / 100
+        posters = {}
+        for r in rows:
+            p = posters.setdefault(int(r["user_id"]), {"id": int(r["user_id"]), "name": r["owner_name"] or "", "email": r["owner_email"] or "", "adverts": 0, "spent": 0.0, "last": ""})
+            p["adverts"] += 1
+            if r["paid_at"] and PLANS.get(r["product_id"] or ""): p["spent"] += cents(r) / 100
+            p["last"] = max(p["last"], r["created_at"] or "")
+        return h.sendj({"items": out, "labels": labels, "since": start, "counting_since": "2026-11-20", "money": money,
+                        "advertisers": sorted(posters.values(), key=lambda p: (-p["spent"], -p["adverts"])),
+                        "posted": {"total": len(rows), "month": sum(1 for r in rows if sa(r["created_at"])[:7] == month), "today": sum(1 for r in rows if sa(r["created_at"]) == today)}})
+    if path == "/api/admin/ad-people":   # HA-PEOPLE-01: the names behind an advert's numbers (reached / clicked / liked / shared)
+        u = h.require()
+        if u.get("role") != "admin": return h.sendj({"error": "Owner only."}, 403)
+        try: ad_id = int((q.get("id") or ["0"])[0] or 0)
+        except ValueError: ad_id = 0
+        out = {"reached": [], "clicked": [], "liked": [], "shared": []}
+        with A.conn() as c:
+            who = lambda sql, args: [{"id": int(r["id"]), "name": r["name"] or "", "phone": r["phone"] or "", "email": r["email"] or "", "at": r["at"] or ""}
+                                     for r in c.execute(sql, args).fetchall()]
+            out["reached"] = who("SELECT u.id,u.name,u.phone,u.email,MAX(x.day) AS at FROM ha_reach x JOIN users u ON u.id=x.user_id WHERE x.ad_id=? GROUP BY u.id,u.name,u.phone,u.email ORDER BY MAX(x.day) DESC LIMIT 1000", (ad_id,))
+            for ev, key in (("click", "clicked"), ("share", "shared")):
+                out[key] = who("SELECT u.id,u.name,u.phone,u.email,x.first_at AS at FROM ha_acts x JOIN users u ON u.id=x.user_id WHERE x.ad_id=? AND x.ev=? ORDER BY x.first_at DESC LIMIT 1000", (ad_id, ev))
+            try: out["liked"] = who("SELECT u.id,u.name,u.phone,u.email,x.created_at AS at FROM fc_status_likes x JOIN users u ON u.id=x.user_id WHERE x.kind='ad' AND x.ref_id=? ORDER BY x.created_at DESC LIMIT 1000", (ad_id,))
+            except Exception: pass
+        return h.sendj(out)
     return h.sendj({"error": "Not found"}, 404)
+
+
+def _sa_ts(ts):
+    """ISO time -> South African 'YYYY-MM-DD HH:MM' text ('' when unreadable)."""
+    try:
+        t = datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        if t.tzinfo is None: t = t.replace(tzinfo=datetime.timezone.utc)
+        return (t + datetime.timedelta(hours=2)).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return ""
 
 
 def _plans(fc=False):
