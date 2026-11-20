@@ -220,14 +220,38 @@ def db_batch(c, statements):
     if f: return f(statements)
     return [c.execute(s, p).fetchall() for s, p in statements]
 
+_FC_SEEN = {}          # SV-ONEAPP-03: user id -> last time we stored "uses the Future Chat app" (epoch seconds)
+_FC_SEEN_TABLE = [False]
+
+def sv_fc_app_seen(user_id):
+    """SV-ONEAPP-03: remember that this account uses the Future Chat phone app (stored at most every 10 minutes)."""
+    try:
+        uid = int(user_id); t = time.time()
+        if t - _FC_SEEN.get(uid, 0) < 600: return
+        _FC_SEEN[uid] = t
+        with conn() as c:
+            if not _FC_SEEN_TABLE[0]:
+                c.execute("CREATE TABLE IF NOT EXISTS fc_app_seen (user_id BIGINT PRIMARY KEY, seen_at TEXT NOT NULL)"); _FC_SEEN_TABLE[0] = True
+            c.execute("INSERT INTO fc_app_seen(user_id,seen_at) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET seen_at=excluded.seen_at", (uid, now()))
+    except Exception as exc:
+        print("FC app seen skipped:", type(exc).__name__)
+
 def sv_has_fc_app(user_id):
-    """SV-ONEAPP-02: True when this account has the Future Chat phone app (registered in the last 30 days)."""
+    """SV-ONEAPP-02/03: True when this account has the Future Chat phone app (registered or used in the last 30 days)."""
     try:
         cut = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
         with conn() as c:
-            return bool(c.execute("SELECT 1 FROM push_device_tokens WHERE user_id=? AND enabled=1 AND platform='futurechat' AND updated_at>=? LIMIT 1", (int(user_id), cut)).fetchone())
+            if c.execute("SELECT 1 FROM push_device_tokens WHERE user_id=? AND enabled=1 AND platform='futurechat' AND updated_at>=? LIMIT 1", (int(user_id), cut)).fetchone():
+                return True
+        with conn() as c:
+            return bool(c.execute("SELECT 1 FROM fc_app_seen WHERE user_id=? AND seen_at>=?", (int(user_id), cut)).fetchone())
     except Exception:
         return False
+
+def sv_call_dk(call_id, offer_stored):
+    """FC-DECLINE-01: a per-call decline key sent only to the person being called, so Decline on the ringing screen
+    always reaches the server - even when the app is closed and has no session at hand."""
+    return hashlib.sha256((str(call_id) + "|" + str(offer_stored or "")).encode("utf-8")).hexdigest()[:32]
 
 
 def fcm_send_to_user(user_id, title, body, data=None):
@@ -4849,10 +4873,10 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/pclink","/downloads/KaspersenPCLink.exe","/downloads/KaspersenPCLink.json"):
             return KAI.serve_pclink(self,path)
         if path == "/forgot-password":
-            page = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Forgot Skillvaya password</title><style>body{font:16px system-ui;background:#f2f6fb;color:#142b4a;min-height:100vh;display:grid;place-items:center;margin:0;padding:18px}.card{background:white;width:min(100%,440px);padding:28px;border-radius:16px;box-shadow:0 10px 32px #10294b18}h1{font-size:24px}label{display:block;margin:16px 0 6px}input,button{box-sizing:border-box;width:100%;padding:13px;border-radius:9px;font:inherit}input{border:1px solid #c8d5e5}button{margin-top:16px;background:#102f5a;color:white;border:0;font-weight:700}a{color:#1b5d99}#status{min-height:24px}</style></head><body><main class="card"><h1>Reset your Skillvaya password</h1><p>Enter your registered email. If an account matches, a secure reset link will be sent.</p><form id="f"><label>Email address</label><input id="email" type="email" autocomplete="email" maxlength="254" required><button>Send reset link</button><p id="status" role="status"></p></form><a href="/">Back to sign in</a></main><script>document.getElementById('f').onsubmit=async e=>{e.preventDefault();let s=document.getElementById('status');try{let r=await fetch('/api/password-reset/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value.trim()})});let d=await r.json();s.textContent=d.message||'If an account matches, a reset link will be sent shortly.'}catch(_){s.textContent='Could not connect. Please try again.'}};</script></body></html>"""
+            page = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Forgot Skillvaya password</title><style>body{font:16px system-ui;background:#f2f6fb;color:#142b4a;min-height:100vh;display:grid;place-items:center;margin:0;padding:18px}.card{background:white;width:min(100%,440px);padding:28px;border-radius:16px;box-shadow:0 10px 32px #10294b18}h1{font-size:24px}label{display:block;margin:16px 0 6px}input,button{box-sizing:border-box;width:100%;padding:13px;border-radius:9px;font:inherit}input{border:1px solid #c8d5e5}button{margin-top:16px;background:#102f5a;color:white;border:0;font-weight:700}a{color:#1b5d99}#status{min-height:24px}#status.ok{background:#e6f7ee;border:2px solid #1f9d5c;color:#0c4a2b;border-radius:12px;padding:14px;font-weight:600;font-size:17px;line-height:1.45}</style></head><body><main class="card"><h1>Reset your Skillvaya password</h1><p>Enter your registered email. If an account matches, a secure reset link will be sent.</p><form id="f"><label>Email address</label><input id="email" type="email" autocomplete="email" maxlength="254" required><button>Send reset link</button><p id="status" role="status"></p></form><a href="/">Back to sign in</a></main><script>document.getElementById('f').onsubmit=async e=>{e.preventDefault();let s=document.getElementById('status');try{let r=await fetch('/api/password-reset/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value.trim()})});let d=await r.json();s.className='ok';s.textContent=(d.message||'Check your email inbox and Spam folder for the reset link.');document.getElementById('email').disabled=true;e.target.querySelector('button').textContent='Email sent - check your inbox'}catch(_){s.textContent='Could not connect. Please try again.'}};</script></body></html>"""
             data=page.encode(); self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(data))); self.end_headers(); self.wfile.write(data); return
         if path == "/reset-password":
-            page = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Choose a new password</title><style>body{font:16px system-ui;background:#f2f6fb;color:#142b4a;min-height:100vh;display:grid;place-items:center;margin:0;padding:18px}.card{background:white;width:min(100%,440px);padding:28px;border-radius:16px}label{display:block;margin:16px 0 6px}input,button{box-sizing:border-box;width:100%;padding:13px;border-radius:9px;font:inherit}input{border:1px solid #c8d5e5}button{margin-top:16px;background:#102f5a;color:white;border:0;font-weight:700}a{color:#1b5d99}#status{min-height:24px}</style></head><body><main class="card"><h1>Choose a new password</h1><p>Use at least 12 characters. The link expires after 30 minutes and works once.</p><form id="f"><label>New password</label><input id="pw" type="password" minlength="12" maxlength="256" autocomplete="new-password" required><label>Confirm password</label><input id="confirm" type="password" minlength="12" maxlength="256" autocomplete="new-password" required><button>Update password</button><p id="status" role="status"></p></form><a href="/">Back to sign in</a></main><script>document.getElementById('f').onsubmit=async e=>{e.preventDefault();let s=document.getElementById('status'),p=document.getElementById('pw').value,c=document.getElementById('confirm').value;if(p!==c){s.textContent='Passwords do not match.';return}let token=new URLSearchParams(location.search).get('token');if(!token){s.textContent='Invalid link. Request another.';return}try{let r=await fetch('/api/password-reset/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:p})}),d=await r.json();if(!r.ok)throw Error(d.error||'Could not reset password');s.textContent='Password updated. You can now sign in.';e.target.reset()}catch(x){s.textContent=x.message}};</script></body></html>"""
+            page = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Choose a new password</title><style>body{font:16px system-ui;background:#f2f6fb;color:#142b4a;min-height:100vh;display:grid;place-items:center;margin:0;padding:18px}.card{background:white;width:min(100%,440px);padding:28px;border-radius:16px}label{display:block;margin:16px 0 6px}input,button{box-sizing:border-box;width:100%;padding:13px;border-radius:9px;font:inherit}input{border:1px solid #c8d5e5}button{margin-top:16px;background:#102f5a;color:white;border:0;font-weight:700}a{color:#1b5d99}#status{min-height:24px}#status.ok{background:#e6f7ee;border:2px solid #1f9d5c;color:#0c4a2b;border-radius:12px;padding:14px;font-weight:600;font-size:17px;line-height:1.45}</style></head><body><main class="card"><h1>Choose a new password</h1><p>Use at least 12 characters. The link expires after 30 minutes and works once.</p><form id="f"><label>New password</label><input id="pw" type="password" minlength="12" maxlength="256" autocomplete="new-password" required><label>Confirm password</label><input id="confirm" type="password" minlength="12" maxlength="256" autocomplete="new-password" required><button>Update password</button><p id="status" role="status"></p></form><a href="/">Back to sign in</a></main><script>document.getElementById('f').onsubmit=async e=>{e.preventDefault();let s=document.getElementById('status'),p=document.getElementById('pw').value,c=document.getElementById('confirm').value;if(p!==c){s.textContent='Passwords do not match.';return}let token=new URLSearchParams(location.search).get('token');if(!token){s.textContent='Invalid link. Request another.';return}try{let r=await fetch('/api/password-reset/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:p})}),d=await r.json();if(!r.ok)throw Error(d.error||'Could not reset password');s.textContent='Password updated. You can now sign in.';e.target.reset()}catch(x){s.textContent=x.message}};</script></body></html>"""
             if "app=fc" in (urlparse(self.path).query or ""): page=page.replace("</style>","body{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)}.card{color:#142b4a}button{background:#12a89c}a{color:#0c7f76}</style>",1).replace("</body>","<script>/* FC-EYE-01 */document.querySelectorAll('input[type=password]').forEach(function(i){var w=document.createElement('div');w.style.position='relative';i.parentNode.insertBefore(w,i);w.appendChild(i);i.style.paddingRight='48px';var b=document.createElement('button');b.type='button';b.style.cssText='position:absolute;right:6px;top:50%;transform:translateY(-50%);width:auto;margin:0;padding:8px;background:none;border:0;font-size:20px;line-height:1;cursor:pointer;color:#142b4a';function set(v){i.type=v?'text':'password';b.textContent=v?'\\ud83d\\ude48':'\\ud83d\\udc41';b.setAttribute('aria-label',v?'Hide password':'Show password')}b.onclick=function(){set(i.type==='password')};set(false);w.appendChild(b)});</script></body>",1).replace('minlength="12"','minlength="4"').replace("Use at least 12 characters.","Use at least 4 characters.").replace("JSON.stringify({token,password:p})","JSON.stringify({token,password:p,app:'fc'})",1).replace("<main class=\"card\">","<main class=\"card\"><div style=\"font-weight:800;color:#0c7f76;letter-spacing:.04em;margin-bottom:6px\">FUTURE CHAT</div>",1).replace("<a href=\"/\">Back to sign in</a>","<p style=\"margin:14px 0 0\">After saving, go back to the Future Chat app on your phone and sign in with your new password.</p>",1)   # FC-RESET-01
             data=page.encode(); self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(data))); self.end_headers(); self.wfile.write(data); return
         if path == "/account-deletion":
@@ -5133,7 +5157,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 # FCAPP-01: the stand-alone Future Chat app (Google Play) opens this. Same page, accounts, chats and calls as
                 # Future Chat inside Skillvaya; fcapp.js only changes the frame (full-screen Future Chat, own sign-in, Account menu).
                 fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
-                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fcm.js?v=6" defer></script><script src="/futurechat/fcapp.js?v=18" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=3" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/adsdata.js?v=1" defer></script><script src="/futurechat/fcadmin.js?v=8" defer></script><script src="/futurechat/testers.js?v=1" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fcm.js?v=6" defer></script><script src="/futurechat/fcapp.js?v=19" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=3" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/adsdata.js?v=1" defer></script><script src="/futurechat/fcadmin.js?v=8" defer></script><script src="/futurechat/testers.js?v=1" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
                 # FCAPP-02: the full original Future Chat look, and no Skillvaya branding while the app loads.
                 fc_page = fc_page.replace('<script src="/futurechat/calllens.js?v=8" defer></script>', '<script src="/futurechat/fclens.js?v=1" defer></script>', 1)   # FC-LENSFIT-01
                 fc_page = fc_page.replace('<script src="/futurechat/fcstatus.js?v=9" defer></script>', '<script src="/futurechat/fcsm.js?v=3" defer></script>', 1)   # FCS-LIKE-01 / FCS-SHARE-01
@@ -5357,6 +5381,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     else:
                         rows=c.execute(base_query+"WHERE vc.status IN ('ringing','accepted') ORDER BY vc.created_at DESC LIMIT 30").fetchall()
                 items=[dict(x) for x in rows]
+                if "FutureChatApp/" in self.headers.get("User-Agent",""): sv_fc_app_seen(u["id"])   # SV-ONEAPP-03
                 # SV-ONEAPP-02 (owner 2026-11-20): one account = one phone app for Future Chat calls. A person who has the
                 # Future Chat app is rung by the Future Chat app only - Skillvaya (same account, same phone) stays quiet.
                 _mine=lambda x: x.get("conversation_id") and x.get("status")=="ringing" and int(x.get("callee_id") or 0)==int(u["id"])
@@ -5892,7 +5917,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         ph=FC.normalize_phone(ident,sv_country(d.get("country")) or "ZA")
                         user=c.execute("SELECT id,email,name FROM users WHERE (phone_e164=? OR phone=?) AND role<>'suspended' AND email LIKE '%@%' ORDER BY (COALESCE(phone_verified_at,'')<>'') DESC, id DESC LIMIT 1",(ph,ph)).fetchone() if ph else None
                     if not user:
-                        if not fcb: return self.sendj({"ok":True,"message":"If an account matches that email, a secure password-reset link will be sent shortly."},202)   # Skillvaya unchanged
+                        if not fcb: return self.sendj({"ok":True,"message":"Done - if an account matches that email, a password-reset link has been sent to it. Please check your email inbox and your Spam / Junk folder now. It can take a few minutes to arrive; you only need to ask once."},202)   # Skillvaya unchanged
                         return self.sendj({"error":"We couldn't find a "+brand+" account with that "+("email address" if "@" in ident else "phone number")+". Check it for typos, try the "+("phone number" if "@" in ident else "email address")+" you signed up with, or create a new account.","not_found":True},404)
                     email=str(user["email"]).strip()
                     masked=(email[:2]+"\u2022\u2022\u2022@"+email.split("@",1)[1]) if "@" in email else email
@@ -5901,7 +5926,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         try:
                             last=datetime.datetime.fromisoformat(recent["created_at"])
                             if (datetime.datetime.now(datetime.timezone.utc)-last).total_seconds()<60:
-                                if not fcb: return self.sendj({"ok":True,"message":"If an account matches that email, a secure password-reset link will be sent shortly."},202)
+                                if not fcb: return self.sendj({"ok":True,"message":"Done - if an account matches that email, a password-reset link has been sent to it. Please check your email inbox and your Spam / Junk folder now. It can take a few minutes to arrive; you only need to ask once."},202)
                                 return self.sendj({"ok":True,"message":"We already sent a reset link to "+masked+" less than a minute ago. It can take a few minutes to arrive, so please wait for it and check your spam folder too."},202)
                         except (ValueError,TypeError): pass
                     # FC-RESET-02: earlier links stay valid for their 30 minutes, because Gmail can deliver the emails late and out of
@@ -5915,9 +5940,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 if not send_owner_email("Reset your password",body,recipient=email,brand=brand):
                     with conn() as c: c.execute("UPDATE password_reset_tokens SET used_at=? WHERE token_hash=? AND used_at=''",(now(),th))
                     print("password reset email could not be sent for user %s"%user["id"],flush=True)
-                    if not fcb: return self.sendj({"ok":True,"message":"If an account matches that email, a secure password-reset link will be sent shortly."},202)
+                    if not fcb: return self.sendj({"ok":True,"message":"Done - if an account matches that email, a password-reset link has been sent to it. Please check your email inbox and your Spam / Junk folder now. It can take a few minutes to arrive; you only need to ask once."},202)
                     return self.sendj({"error":"We couldn't send the reset email just now. Please try again in a few minutes."},503)
-                if not fcb: return self.sendj({"ok":True,"message":"If an account matches that email, a secure password-reset link will be sent shortly."},202)
+                if not fcb: return self.sendj({"ok":True,"message":"Done - if an account matches that email, a password-reset link has been sent to it. Please check your email inbox and your Spam / Junk folder now. It can take a few minutes to arrive; you only need to ask once."},202)
                 return self.sendj({"ok":True,"message":"We sent a reset link to "+masked+". Emails can take a few minutes to arrive \u2014 check your inbox and spam folder. Every link we send works for 30 minutes, so you don't need to ask again."},202)
             if path == "/api/password-reset/confirm":
                 raw=str(d.get("token","")).strip(); password=d.get("password","")
@@ -6118,6 +6143,20 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                     cur=c.execute("INSERT INTO message_attachments(message_id,business_id,customer_id,sender_id,filename,mime_type,size_bytes,data_base64,created_at) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id",(message_id,bid,customer_id,u["id"],filename,mime,len(payload),base64.b64encode(payload).decode("ascii"),now()))
                     attachment_id=cur.fetchone()["id"]
                 return self.sendj({"ok":True,"message_id":message_id,"attachment_id":attachment_id,"filename":filename,"mime_type":mime,"size_bytes":len(payload)},201)
+            if path=="/api/video-calls" and str(d.get("action","")).strip().lower()=="reject" and d.get("dk"):
+                # FC-DECLINE-01: Decline on the phone's ringing screen, proven by the call's decline key (works with no session).
+                cid=str(d.get("call_id","")).strip()[:100]
+                with conn() as c:
+                    row=c.execute("SELECT id,callee_id,status,offer_sdp FROM video_calls WHERE id=?",(cid,)).fetchone()
+                    if row and hmac.compare_digest(sv_call_dk(row["id"],row["offer_sdp"]),str(d.get("dk"))[:64]):
+                        st=row["status"]
+                        if st=="ringing":
+                            stamp=now(); db_atomic(c,"UPDATE video_calls SET status='rejected',updated_at=?,ended_at=? WHERE id=? AND status='ringing'",(stamp,stamp,cid)); st="rejected"
+                            try: threading.Thread(target=fcm_send_to_user,args=(int(row["callee_id"]),"Call ended","",{"type":"call_ended","call_id":cid}),daemon=True).start()
+                            except Exception: pass
+                        print("CALL-LOG reject", cid[:40], "by user", int(row["callee_id"]), "app ringing-screen", flush=True)
+                        return self.sendj({"ok":True,"status":st})
+                if not self.user(): return self.sendj({"error":"This call could not be declined."},403)
             if path=="/api/video-calls":
                 u=self.require()
                 action=str(d.get("action","")).strip().lower()
@@ -6149,7 +6188,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         except Exception: pass
                     try:
                         FX.allow_push(callee_id,"call")[0] and threading.Thread(target=fcm_send_to_user,args=(callee_id,"Incoming call",(u.get("name") or "Your contact")+" is calling you",
-                            {"type":"incoming_call","call_id":call_id,"business_id":bid,"customer_id":customer_id,"conversation_id":str(conv_id),"url":"/customer-app?fc=%d"%conv_id}),
+                            {"type":"incoming_call","call_id":call_id,"business_id":bid,"customer_id":customer_id,"conversation_id":str(conv_id),"url":"/customer-app?fc=%d"%conv_id,"dk":sv_call_dk(call_id,json.dumps(offer_obj))}),
                             name="SkillvayaIncomingCallPush",daemon=True).start()
                     except Exception as exc:
                         print("FCM call-push scheduling failed:", type(exc).__name__)

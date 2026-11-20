@@ -1195,6 +1195,26 @@
     addEye(el.querySelector('#fcaPw'));   // FC-EYE-01
     const form = el.querySelector('#fcaForm'), msg = el.querySelector('#fcaMsg'), btn = el.querySelector('.fca-go');
     const fg = el.querySelector('#fcaForgot');
+    // FC-RESET-03 (owner 2026-11-20): after "Forgot password" a big, clear box says to go and check the email - people
+    // missed the small line of text and kept asking again.
+    const checkEmailBox = text => {
+      try {
+        const o = document.createElement('div');
+        o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true');
+        o.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(3,12,24,.72);display:grid;place-items:center;padding:18px';
+        const b = document.createElement('div');
+        b.style.cssText = 'background:#fff;color:#10233f;max-width:380px;width:100%;border-radius:18px;padding:22px 20px;text-align:center;font:16px system-ui;box-shadow:0 18px 50px rgba(0,0,0,.35)';
+        const h = document.createElement('div'); h.style.cssText = 'font-size:46px;line-height:1'; h.textContent = '✉️';
+        const t = document.createElement('h3'); t.style.cssText = 'margin:10px 0 6px;font-size:21px'; t.textContent = 'Check your email';
+        const p = document.createElement('p'); p.style.cssText = 'margin:0 0 10px;line-height:1.45'; p.textContent = text || 'We sent you a link to choose a new password.';
+        const s = document.createElement('p'); s.style.cssText = 'margin:0 0 16px;line-height:1.45;color:#3d5370;font-size:14.5px';
+        s.textContent = 'Open the email from Future Chat and tap the link to choose a new password. It can take a few minutes — look in your Spam / Junk folder too. You only need to ask once.';
+        const ok = document.createElement('button'); ok.type = 'button'; ok.textContent = 'OK, I’ll check my email';
+        ok.style.cssText = 'width:100%;padding:13px;border:0;border-radius:12px;background:#0b766e;color:#fff;font:700 16px system-ui';
+        ok.onclick = () => o.remove();
+        b.append(h, t, p, s, ok); o.appendChild(b); document.body.appendChild(o); ok.focus();
+      } catch (_) {}
+    };
     if (fg) fg.onclick = async () => {
       // FC-RESET-01: email or phone number; the server says plainly if no account matches or where the link went.
       let email = ((el.querySelector('#fcaEmail') || {}).value || '').trim();
@@ -1206,7 +1226,7 @@
       }
       fg.disabled = true; msg.style.color = '#cfe3f2'; msg.textContent = 'Sending your reset link…';
       let sent = false;
-      try { const d = await post('/api/password-reset/request', { email, app: 'futurechat' }); msg.style.color = '#bff3d6'; msg.textContent = d.message || 'Reset link sent. Check your inbox and spam folder.'; sent = true; }
+      try { const d = await post('/api/password-reset/request', { email, app: 'futurechat' }); msg.style.color = '#bff3d6'; msg.textContent = d.message || 'Reset link sent. Check your inbox and spam folder.'; sent = true; checkEmailBox(d.message); }
       catch (err) { msg.style.color = '#ffd0d0'; msg.textContent = err.message; }
       if (!sent) { fg.disabled = false; return; }
       // FC-RESET-02: one tap is enough; lock the button for 60 s so people don't fire off repeat emails while Gmail delivers.
