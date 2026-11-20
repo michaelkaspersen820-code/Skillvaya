@@ -220,10 +220,22 @@ def db_batch(c, statements):
     if f: return f(statements)
     return [c.execute(s, p).fetchall() for s, p in statements]
 
+def sv_has_fc_app(user_id):
+    """SV-ONEAPP-02: True when this account has the Future Chat phone app (registered in the last 30 days)."""
+    try:
+        cut = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
+        with conn() as c:
+            return bool(c.execute("SELECT 1 FROM push_device_tokens WHERE user_id=? AND enabled=1 AND platform='futurechat' AND updated_at>=? LIMIT 1", (int(user_id), cut)).fetchone())
+    except Exception:
+        return False
+
+
 def fcm_send_to_user(user_id, title, body, data=None):
     """Send a visible high-priority Android call notification; never block call signalling."""
     # SV78-WEBPUSH-01: browsers (iPhone home-screen app, computers, other phones) get the same alert.
-    if (data or {}).get("type") != "call_ended":
+    # SV-ONEAPP-02: a Future Chat call rings only the Future Chat app when the person has it (no extra browser ring).
+    _dd = data or {}
+    if _dd.get("type") != "call_ended" and not (_dd.get("type") == "incoming_call" and _dd.get("conversation_id") and sv_has_fc_app(user_id)):
         try: webpush_send_async(user_id, title, body, data)
         except Exception as exc: print("Web push scheduling failed:", type(exc).__name__)
     raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
@@ -5344,7 +5356,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                         rows=c.execute(base_query+"WHERE (vc.callee_id=? OR vc.customer_id=?) AND vc.status IN ('ringing','accepted') ORDER BY vc.created_at DESC LIMIT 30",(u["id"],u["id"])).fetchall()
                     else:
                         rows=c.execute(base_query+"WHERE vc.status IN ('ringing','accepted') ORDER BY vc.created_at DESC LIMIT 30").fetchall()
-                return self.sendj({"items":[dict(x) for x in rows]})
+                items=[dict(x) for x in rows]
+                # SV-ONEAPP-02 (owner 2026-11-20): one account = one phone app for Future Chat calls. A person who has the
+                # Future Chat app is rung by the Future Chat app only - Skillvaya (same account, same phone) stays quiet.
+                _mine=lambda x: x.get("conversation_id") and x.get("status")=="ringing" and int(x.get("callee_id") or 0)==int(u["id"])
+                if "FutureChatApp/" not in self.headers.get("User-Agent","") and any(_mine(x) for x in items) and sv_has_fc_app(u["id"]):
+                    items=[x for x in items if not _mine(x)]
+                return self.sendj({"items":items})
             if path.startswith("/api/video-calls/"):
                 u=self.require()
                 call_id=path.rsplit("/",1)[1]

@@ -585,13 +585,18 @@ def handle_get(h, path):
 
 
 MEDIA_DAYS = 30
+# FC-ONEACCOUNT-01 (owner 2026-11-20): one account, one Future Chat - in the Future Chat app AND inside Skillvaya, on
+# any phone. A photo stays on the server for KEEP_DAYS even after everyone has it, so every app signed in to the same
+# account (including the sender's) can still open it, instead of "saved on the phones it was sent to".
+KEEP_DAYS = 7
 
 
 def _maybe_purge(att_id):
-    """Delete a photo/video/file from the server once every recipient's phone has it."""
+    """Delete a photo/video/file from the server once every recipient's phone has it (and it is KEEP_DAYS old)."""
     try:
+        keep = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=KEEP_DAYS)).isoformat()
         with A.conn() as c:
-            a = c.execute("SELECT a.id,a.conversation_id,m.sender_id FROM fc_attachments a JOIN fc_messages m ON m.id=a.message_id WHERE a.id=? AND a.purged_at=''", (att_id,)).fetchone()
+            a = c.execute("SELECT a.id,a.conversation_id,m.sender_id FROM fc_attachments a JOIN fc_messages m ON m.id=a.message_id WHERE a.id=? AND a.purged_at='' AND a.created_at<?", (att_id, keep)).fetchone()
             if not a: return
             need = c.execute("SELECT COUNT(*) AS n FROM fc_members WHERE conversation_id=? AND user_id<>?", (a["conversation_id"], a["sender_id"])).fetchone()["n"]
             got = c.execute("SELECT COUNT(*) AS n FROM fc_fetches f JOIN fc_members mb ON mb.user_id=f.user_id AND mb.conversation_id=? WHERE f.attachment_id=?", (a["conversation_id"], att_id)).fetchone()["n"]
@@ -607,6 +612,10 @@ def purge_old_media():
     try:
         with A.conn() as c:
             n = c.execute("UPDATE fc_attachments SET data_base64='',purged_at=? WHERE purged_at='' AND created_at<? RETURNING id", (A.now(), cutoff)).fetchall()
+            # FC-ONEACCOUNT-01: files everyone already has are removed once they are KEEP_DAYS old
+            keep = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=KEEP_DAYS)).isoformat()
+            done = [int(r["id"]) for r in c.execute("SELECT id FROM fc_attachments WHERE purged_at='' AND created_at<? LIMIT 500", (keep,)).fetchall()]
+        for att in done: _maybe_purge(att)
         if n: print("Future Chat removed %d expired media files" % len(n))
     except Exception as exc:
         print("Future Chat media sweep skipped:", type(exc).__name__)
