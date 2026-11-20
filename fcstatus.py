@@ -32,7 +32,22 @@ def init(c):
         CREATE INDEX IF NOT EXISTS idx_fc_status_exp ON fc_statuses(expires_at);
         CREATE TABLE IF NOT EXISTS fc_status_views(status_id BIGINT NOT NULL, user_id BIGINT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(status_id, user_id));
         CREATE TABLE IF NOT EXISTS fc_ad_seen(user_id BIGINT NOT NULL, ad_id BIGINT NOT NULL, day TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, ad_id, day));
+        CREATE TABLE IF NOT EXISTS fc_status_likes(kind TEXT NOT NULL, ref_id BIGINT NOT NULL, user_id BIGINT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(kind, ref_id, user_id));
     """ % {"pk": pk})
+
+
+def _like_counts(c, kind, ids, uid):
+    """FCS-LIKE-01: {id: (likes, liked_by_me)} for statuses or Sponsored adverts."""
+    ids = [int(i) for i in ids if i]
+    if not ids: return {}
+    marks = ",".join("?" * len(ids))
+    out = {i: [0, False] for i in ids}
+    for r in c.execute("SELECT ref_id, user_id FROM fc_status_likes WHERE kind=? AND ref_id IN (" + marks + ")", [kind] + ids).fetchall():
+        o = out.get(int(r["ref_id"]))
+        if o is None: continue
+        o[0] += 1
+        if int(r["user_id"]) == uid: o[1] = True
+    return out
 
 
 def _now():
@@ -133,6 +148,17 @@ def handle_get(h, path):
         others = sorted(people.values(), key=lambda p: p["latest"], reverse=True)   # newest first
         others.sort(key=lambda p: p["unseen"] == 0)                                  # then unseen before seen (stable)
         sp = _sponsored(uid)
+        try:   # FCS-LIKE-01: like counts, and whether I liked it
+            all_items = mine + [it for p in others for it in p["items"]]
+            with A.conn() as c:
+                lk = _like_counts(c, "status", [it["id"] for it in all_items], uid)
+                ak = _like_counts(c, "ad", [a.get("id") for a in sp if not a.get("house")], uid)
+            for it in all_items:
+                n, me_ = lk.get(it["id"], (0, False)); it["likes"] = n; it["liked"] = me_
+            for a in sp:
+                n, me_ = ak.get(int(a.get("id") or 0), (0, False)); a["likes"] = n; a["liked"] = me_
+        except Exception as exc:
+            print("Future Chat status likes skipped:", type(exc).__name__)
         return h.sendj({"me": {"id": uid, "name": u["name"]}, "mine": mine, "others": others, "sponsored": [a for a in sp if a.get("tier") not in ("shout", "propose")],
                         "sponsored_rings": _rings([a for a in sp if a.get("tier") not in ("shout", "propose")]),
                         "shoutouts": [a for a in sp if a.get("tier") in ("shout", "propose")]})
@@ -145,7 +171,9 @@ def handle_get(h, path):
             if not s or int(s["user_id"]) != uid: return h.sendj({"error": "Only you can see who viewed your status."}, 403)
             rows = c.execute("SELECT v.user_id,v.created_at,u.name FROM fc_status_views v JOIN users u ON u.id=v.user_id "
                              "WHERE v.status_id=? ORDER BY v.created_at DESC LIMIT 500", (sid,)).fetchall()
-        return h.sendj({"viewers": [{"user_id": int(r["user_id"]), "name": r["name"] or "Future Chat friend", "at": r["created_at"]} for r in rows]})
+            try: likers = {int(r["user_id"]) for r in c.execute("SELECT user_id FROM fc_status_likes WHERE kind='status' AND ref_id=?", (sid,)).fetchall()}
+            except Exception: likers = set()
+        return h.sendj({"viewers": [{"user_id": int(r["user_id"]), "name": r["name"] or "Future Chat friend", "at": r["created_at"], "liked": int(r["user_id"]) in likers} for r in rows]})
     m = re.fullmatch(r"/api/fc/status/media/(\d+)", path)
     if m:
         sid = int(m.group(1))
@@ -206,6 +234,21 @@ def handle_post(h, path, d):
                 if not c.execute("SELECT 1 FROM fc_status_views WHERE status_id=? AND user_id=?", (sid, uid)).fetchone():
                     c.execute("INSERT INTO fc_status_views(status_id,user_id,created_at) VALUES(?,?,?)", (sid, uid, _now().isoformat()))
         return h.sendj({"ok": True})
+    if path == "/api/fc/status/like":   # FCS-LIKE-01: like / unlike a status or a Sponsored advert
+        kind = "ad" if d.get("kind") == "ad" else "status"
+        try: rid = int(d.get("id") or 0)
+        except (TypeError, ValueError): rid = 0
+        on = bool(d.get("on"))
+        with A.conn() as c:
+            if kind == "status":
+                r = c.execute("SELECT user_id FROM fc_statuses WHERE id=? AND deleted_at='' AND expires_at>?", (rid, _now().isoformat())).fetchone()
+                if not r or (int(r["user_id"]) != uid and int(r["user_id"]) not in _contacts(c, uid)): return h.sendj({"error": "This status has ended."}, 404)
+            else:
+                if not c.execute("SELECT 1 FROM home_ads WHERE id=? AND status='active'", (rid,)).fetchone(): return h.sendj({"error": "This advert has ended."}, 404)
+            c.execute("DELETE FROM fc_status_likes WHERE kind=? AND ref_id=? AND user_id=?", (kind, rid, uid))
+            if on: c.execute("INSERT INTO fc_status_likes(kind,ref_id,user_id,created_at) VALUES(?,?,?,?)", (kind, rid, uid, _now().isoformat()))
+            n = c.execute("SELECT COUNT(*) AS n FROM fc_status_likes WHERE kind=? AND ref_id=?", (kind, rid)).fetchone()["n"]
+        return h.sendj({"ok": True, "liked": on, "likes": int(n or 0)})
     if path == "/api/fc/status/delete":
         try: sid = int(d.get("id") or 0)
         except (TypeError, ValueError): sid = 0
