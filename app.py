@@ -46,6 +46,7 @@ import fcgive as FG
 import fcadmin as FCA
 import fcrooms as FCR   # FCR-01 Game Rooms
 import fcverify as FV
+import fcwake as FW   # FC-WAKE-01 instant Future Chat updates
 import testers as TST   # TST-01 who is really testing
 import loginguard as LG   # LG-01 wrong-password limit
 
@@ -5120,16 +5121,19 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 # FCAPP-01: the stand-alone Future Chat app (Google Play) opens this. Same page, accounts, chats and calls as
                 # Future Chat inside Skillvaya; fcapp.js only changes the frame (full-screen Future Chat, own sign-in, Account menu).
                 fc_page = HTML.replace("<title>Skillvaya</title>", '<title>Future Chat</title><meta name="theme-color" content="#071426"><script>window.SV_FC_APP=1;</script>', 1)
-                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fcm.js?v=3" defer></script><script src="/futurechat/fcapp.js?v=18" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=3" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/adsdata.js?v=1" defer></script><script src="/futurechat/fcadmin.js?v=8" defer></script><script src="/futurechat/testers.js?v=1" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fc.js?v=22" defer></script>', '<script src="/futurechat/fcm.js?v=4" defer></script><script src="/futurechat/fcapp.js?v=18" defer></script><script src="/futurechat/fcfamily.js?v=3" defer></script><script src="/futurechat/fcpay.js?v=3" defer></script><script src="/futurechat/fcgive.js?v=3" defer></script><script src="/futurechat/adsdata.js?v=1" defer></script><script src="/futurechat/fcadmin.js?v=8" defer></script><script src="/futurechat/testers.js?v=1" defer></script><script src="/futurechat/fcrooms.js?v=2" defer></script>', 1)
                 # FCAPP-02: the full original Future Chat look, and no Skillvaya branding while the app loads.
                 fc_page = fc_page.replace('<script src="/futurechat/calllens.js?v=8" defer></script>', '<script src="/futurechat/fclens.js?v=1" defer></script>', 1)   # FC-LENSFIT-01
                 fc_page = fc_page.replace('<script src="/futurechat/fcstatus.js?v=9" defer></script>', '<script src="/futurechat/fcsm.js?v=3" defer></script>', 1)   # FCS-LIKE-01 / FCS-SHARE-01
                 # FC-CALLUI-01: loaded before fcm.js so the phone's back button reaches the call screen first
-                fc_page = fc_page.replace('<script src="/futurechat/fcm.js?v=3" defer></script>', '<script src="/futurechat/fccall.js?v=2" defer></script><script src="/futurechat/fcm.js?v=3" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fcm.js?v=4" defer></script>', '<script src="/futurechat/fccall.js?v=4" defer></script><script src="/futurechat/fcm.js?v=4" defer></script>', 1)
                 fc_page = fc_page.replace('<link rel="stylesheet" href="/futurechat/fc.css?v=4">', '<link rel="stylesheet" href="/futurechat/fcm.css?v=2"><link rel="stylesheet" href="/futurechat/fcapp.css?v=11"><style>#svSplash{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)!important;color:#fff!important}#svSplash .sv-splash-brand{color:#1ed6c8!important}#svSplash .sv-splash-caption{color:#cfe3f2!important}</style>', 1)
                 fc_page = fc_page.replace('<div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div>', '<div class="sv-splash-brand">Future Chat</div><div class="sv-splash-caption">Stay close. Wherever life takes you.</div>', 1)
                 fc_html = fc_page.encode("utf-8")
-                self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache"); self.send_header("Content-Length",str(len(fc_html))); self.end_headers(); self.wfile.write(fc_html); return
+                fc_html, fc_enc = FC.gzip_for(self, fc_html)   # FC-GZIP-01: about 100 KB instead of 500 KB
+                self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.send_header("Cache-Control","no-cache")
+                if fc_enc: self.send_header("Content-Encoding",fc_enc)
+                self.send_header("Vary","Accept-Encoding"); self.send_header("Content-Length",str(len(fc_html))); self.end_headers(); self.wfile.write(fc_html); return
             if path=="/customer-app" and "FutureChatNative" in self.headers.get("User-Agent",""):
                 # Notifications carry /customer-app?fc=... links; inside the Future Chat app keep people in Future Chat.
                 qs=urlparse(self.path).query
@@ -5254,6 +5258,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 return FCR.handle_get(self,path)
             if path.startswith("/api/fcv/"):
                 return FV.handle_get(self,path)
+            if path=="/api/fc/wait":
+                return FW.handle_get(self,path)
             if path.startswith("/api/fc/") or path.startswith("/api/phone/"):
                 return FC.handle_get(self,path)
             if path.startswith("/api/kai/"):
@@ -5682,12 +5688,21 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         except PermissionError as e: return self.sendj({"error":str(e)},401)
         except Exception as e: return self.sendj({"error":str(e)},400)
     def do_POST(self):
+        # FC-WAKE-01: after the request is answered, wake the other people in that chat / call so their app updates at once.
+        self._fcw=None
+        try: return self._do_post_inner()
+        finally:
+            if self._fcw:
+                try: FW.after_post(self,*self._fcw)
+                except Exception: pass
+    def _do_post_inner(self):
         path=urlparse(self.path).path
         try:
             if path=="/api/payfast/itn":
                 self.rfile.read(int(self.headers.get("Content-Length","0")))
                 return self.sendj({"error":"PayFast is paused. PayPal is the only supported checkout provider."},410)
             d=self.body()
+            if path.startswith("/api/fc/") or path=="/api/video-calls": self._fcw=(path,d)
             if path.startswith("/mcp/"):
                 return OWN.handle_mcp(self,path,d)
             if path.startswith("/api/own/"):
@@ -7041,6 +7056,7 @@ def fc_setup():
     with conn() as c: FCA.init(c)
     TST.bind(globals())
     with conn() as c: TST.init(c)
+    FW.bind(globals())
     LG.bind(globals())
     with conn() as c: LG.init(c)
     FCR.bind(globals())

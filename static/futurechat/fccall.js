@@ -172,5 +172,44 @@
     if (isOpen(m) && call) { if (!m.classList.contains('fc-min')) pushState(); }
     else { if (m.classList.contains('fc-min')) { m.classList.remove('fc-min'); if (tapBtn) tapBtn.remove(); } leaveState(); }
     if (call) watchCall(call);
+    audioTick(m, call);
   }, 400);
+
+  // ---------------------------------------------------------------- FC-EARPIECE-01: sound like a normal phone call
+  // Voice call -> earpiece (screen off at your ear); video call -> loudspeaker; earphones / Bluetooth used automatically.
+  // Needs Future Chat 1.8.4 or newer (window.FutureChatAudio); older apps simply keep the old sound.
+  const A = { call: null, btn: null };
+  const NA = () => window.FutureChatAudio || null;
+  const ROUTE = { speaker: '🔊 Speaker on', earpiece: '🔈 Speaker', headset: '🎧 Earphones', bluetooth: '🎧 Bluetooth' };
+  function paintSpeaker() {
+    const na = NA(); if (!A.btn || !na) return;
+    let r = ''; try { r = String(na.route() || ''); } catch (_) {}
+    A.btn.textContent = ROUTE[r] || '🔈 Speaker';
+    A.btn.classList.toggle('fc-spk-on', r === 'speaker');
+    A.btn.setAttribute('aria-pressed', r === 'speaker' ? 'true' : 'false');
+  }
+  function audioTick(m, call) {
+    const na = NA(); if (!na) return;
+    if (call && A.call !== call) {
+      A.call = call;
+      try { na.start(call.mediaMode === 'video' ? 'video' : 'voice'); } catch (_) {}
+      const bar = m.querySelector('.sv-call-actions');
+      if (bar && !bar.querySelector('#fcSpeaker')) {
+        A.btn = document.createElement('button'); A.btn.type = 'button'; A.btn.id = 'fcSpeaker';
+        A.btn.onclick = e => { e.preventDefault(); try { na.toggleSpeaker(); } catch (_) {} paintSpeaker(); };
+        const end = bar.querySelector('.sv-call-end');
+        bar.insertBefore(A.btn, end ? end.nextSibling : null);
+      }
+      paintSpeaker();
+    } else if (!call && A.call) {
+      A.call = null;
+      try { na.stop(); } catch (_) {}
+      if (A.btn) { A.btn.remove(); A.btn = null; }
+    } else if (call && A.btn && Math.random() < 0.15) paintSpeaker();   // earphones plugged in / out during the call
+  }
+  const spk = document.createElement('style');
+  spk.textContent = 'html .sv-call-actions #fcSpeaker{background:#e8f2ff;color:#10233f}html .sv-call-actions #fcSpeaker.fc-spk-on{background:#1ed6c8!important;color:#03222c!important}';
+  document.head.appendChild(spk);
+  // FC-WAKE-01: the other phone just did something on this call (answered, reconnecting...) - check now, not later
+  window.addEventListener('fc-wake', () => { const call = active(); if (call && call.callId) poll(call, true); });
 })();

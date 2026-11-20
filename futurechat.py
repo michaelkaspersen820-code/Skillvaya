@@ -400,11 +400,36 @@ def serve_static(h, path):
     fp = os.path.join(STATIC, name)
     if not os.path.isfile(fp): return h.sendj({"error": "Not found"}, 404)
     with open(fp, "rb") as f: data = f.read()
+    # FC-GZIP-01 (owner 2026-11-20): send scripts compressed (about a fifth of the size) when the phone/browser accepts it.
+    # A numbered file (?v=) never changes, so browsers may keep it for good; plain names keep the old 5-minute rule.
+    versioned = "v=" in (urllib.parse.urlparse(h.path).query or "")
     h.send_response(200)
     h.send_header("Content-Type", STATIC_TYPES[os.path.splitext(name)[1]])
-    h.send_header("Cache-Control", "public, max-age=300")
+    h.send_header("Cache-Control", "public, max-age=31536000, immutable" if versioned else "public, max-age=300")
+    data, enc = gzip_for(h, data, fp)
+    if enc: h.send_header("Content-Encoding", enc)
+    h.send_header("Vary", "Accept-Encoding")
     h.send_header("Content-Length", str(len(data)))
     h.end_headers(); h.wfile.write(data)
+
+
+_GZ = {}   # (key, size, mtime) -> compressed bytes
+
+
+def gzip_for(h, data, key=None):
+    """FC-GZIP-01: (body, 'gzip') when the client accepts gzip, else (body, ''). Small bodies are sent as they are."""
+    try:
+        if len(data) < 1400 or "gzip" not in (h.headers.get("Accept-Encoding") or "").lower(): return data, ""
+        import gzip as _gz, hashlib as _hl
+        k = (key, len(data), os.path.getmtime(key)) if key and os.path.isfile(key) else ("h", _hl.sha1(data).hexdigest())
+        z = _GZ.get(k)
+        if z is None:
+            z = _gz.compress(data, 6)
+            if len(_GZ) > 200: _GZ.clear()
+            _GZ[k] = z
+        return z, "gzip"
+    except Exception:
+        return data, ""
 
 
 # ---------------------------------------------------------------- GET

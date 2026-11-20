@@ -117,7 +117,8 @@
     root.querySelectorAll('.fc-chip').forEach(b => b.onclick = () => { S.filter = b.dataset.f; root.querySelectorAll('.fc-chip').forEach(x => x.classList.toggle('on', x === b)); drawList(); });
     if (load) await loadList(); else drawList();
     autoSyncContacts();
-    S.timer = setInterval(async () => { if (!S.open || S.conv || document.visibilityState === 'hidden') return; try { const p = await api('/api/fc/pulse'); if (p.latest !== S.latestSeen) { S.latestSeen = p.latest; await loadList(); } } catch (_) {} }, 4000);
+    let ltick = 0;   // FC-WAKE-01: backup check, every 4 s without the wake-up line, every 12 s with it
+    S.timer = setInterval(async () => { ltick++; if (!S.open || S.conv || document.visibilityState === 'hidden' || (wakeOk() && ltick % 3)) return; try { const p = await api('/api/fc/pulse'); if (p.latest !== S.latestSeen) { S.latestSeen = p.latest; await loadList(); } } catch (_) {} }, 4000);
   }
   async function loadList() {
     try { const d = await api('/api/fc/conversations'); S.list = d.items || []; S.me = d.me; S.verified = !!(d.me && d.me.phone_verified); drawList(); updateBadge(); }
@@ -319,7 +320,10 @@
     $('#fcVoice', root).onclick = () => call('voice');
     $('#fcVideo', root).onclick = () => call('video');
     await loadMsgs(true);
-    S.timer = setInterval(() => { if (document.visibilityState !== 'hidden') loadMsgs(false); }, 2500);
+    // FC-WAKE-01: new messages arrive instantly through the wake-up line; this timed check is only a backup now
+    // (every 2.5 s when the wake-up line is down, every 10 s while it works).
+    let tick = 0;
+    S.timer = setInterval(() => { tick++; if (document.visibilityState !== 'hidden' && (!wakeOk() || tick % 4 === 0)) loadMsgs(false); }, 2500);
     S.fullTimer = setInterval(() => { if (document.visibilityState !== 'hidden') loadMsgs(true, true); }, 15000);
   }
   function insertAt(ta, text) { const s = ta.selectionStart ?? ta.value.length, e = ta.selectionEnd ?? s; ta.value = ta.value.slice(0, s) + text + ta.value.slice(e); ta.selectionStart = ta.selectionEnd = s + text.length; ta.focus(); }
@@ -953,6 +957,51 @@
     document.addEventListener('click', e => { const t = e.target && e.target.closest && e.target.closest('#nav-settings'); if (t) setTimeout(async () => { try { phoneCard(await api('/api/phone/status')); } catch (_) {} }, 600); }, true);
     setInterval(async () => { if (!token() || document.visibilityState === 'hidden' || S.open) return; try { const d = await api('/api/fc/pulse'); const btn = document.getElementById('nav-messages'); if (btn) { S.list = S.list || []; let b = btn.querySelector('.fc-navbadge'); if (!b) { updateBadge(); b = btn.querySelector('.fc-navbadge'); } if (b) { b.textContent = d.unread > 99 ? '99+' : String(d.unread); b.style.display = d.unread ? 'grid' : 'none'; } } } catch (_) {} }, 15000);
   }
+  // ---------------------------------------------------------------- FC-WAKE-01: instant updates
+  // One request waits at the server (/api/fc/wait). The moment someone sends you a message, reacts, edits, or a call
+  // starts / is answered / connects, the server answers it and the app fetches the new things straight away -
+  // exactly the same fetches as before, just without waiting for the next timed check.
+  const W = { v: -1, on: false, fails: 0, slowed: false };
+  function wakeOk() { return W.on && W.fails === 0 && W.v >= 0; }
+  function onWake() {
+    try {
+      if (S.conv) loadMsgs(false);
+      else if (S.open) loadList();
+      else if (token()) api('/api/fc/pulse').then(d => { const b = document.querySelector('#nav-messages .fc-navbadge'); if (b) { b.textContent = d.unread > 99 ? '99+' : String(d.unread); b.style.display = d.unread ? 'grid' : 'none'; } }).catch(() => {});
+    } catch (_) {}
+    try { if (typeof pollSkillvayaIncomingCalls === 'function') pollSkillvayaIncomingCalls(); } catch (_) {}
+    try { if (typeof svActiveVideoCall !== 'undefined' && svActiveVideoCall && typeof svSyncVideoCall === 'function') svSyncVideoCall(svActiveVideoCall).catch(() => {}); } catch (_) {}
+    try { window.dispatchEvent(new Event('fc-wake')); } catch (_) {}
+  }
+  function slowCallPoll() {
+    // The incoming-call check ran every 0.9 s. With the wake-up line (and the phone's call notification) it only needs
+    // to run every 3.6 s as a backup; it goes back to 0.9 s by itself whenever the wake-up line is down.
+    try {
+      if (W.slowed || typeof svIncomingCallPoll === 'undefined' || !svIncomingCallPoll || typeof pollSkillvayaIncomingCalls !== 'function') return;
+      clearInterval(svIncomingCallPoll); let n = 0;
+      svIncomingCallPoll = setInterval(() => { n++; if (!wakeOk() || n % 4 === 0) pollSkillvayaIncomingCalls(); }, 900);
+      W.slowed = true;
+    } catch (_) {}
+  }
+  async function wakeLoop() {
+    if (W.on) return; W.on = true;
+    try {
+      while (document.visibilityState !== 'hidden' && token()) {
+        try {
+          const r = await api('/api/fc/wait?v=' + W.v + '&t=25');
+          const first = W.v < 0; W.v = Number(r.v) || 0; W.fails = 0;
+          slowCallPoll();
+          if (r.changed && !first) onWake();
+        } catch (e) {
+          W.fails++;
+          if (e && (e.status === 401 || e.status === 404)) break;   // signed out, or an older server: the timed checks carry on as before
+          await new Promise(res => setTimeout(res, Math.min(15000, 1000 * W.fails)));
+        }
+      }
+    } finally { W.on = false; }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { wakeLoop(); onWake(); } });
+  setTimeout(wakeLoop, 1200); setInterval(() => { if (!W.on && document.visibilityState !== 'hidden' && token()) wakeLoop(); }, 20000);
   function share(text) { S.pendingShare = String(text || ''); open(); setTimeout(() => toast('Pick a chat to share with'), 300); }
   function inviteFriends() { invite(''); }
   window.FutureChat = { open, close, verifyPhone, newChat, share, stokvel, inviteFriends, findFriends: () => { open(); setTimeout(askContacts, 300); },
