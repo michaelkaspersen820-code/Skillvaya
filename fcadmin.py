@@ -16,6 +16,8 @@ app.py: bind(globals()); init(c); routes /api/fca/*.  futurechat.py calls check_
 import datetime, hashlib, json, re, threading, time, urllib.parse
 
 A = None
+_OWNER_MSG_LOCK = threading.Lock()
+_OWNER_MSG_RECENT = {}   # FCA-04b: recent owner "message everyone" sends, so extra taps on Send don't repeat it
 FWD_MAX, FWD_MANY = 5, 5
 SAME_MSG_CHATS, SAME_MSG_WINDOW = 15, 600
 COLD_PEOPLE, COLD_WINDOW = 20, 3600
@@ -512,14 +514,41 @@ def handle_post(h, path, d):
                     except Exception: pass
             ids = [i for i in dict.fromkeys(ids) if i != uid]
             if not ids: return h.sendj({"error": "Choose who to message."}, 400)
+            # FCA-04b (owner 2026-11-20): only send to accounts that still exist (one query, not one per person).
+            live = set()
+            for i in range(0, len(ids), 400):
+                part = ids[i:i + 400]
+                for r in c.execute("SELECT id FROM users WHERE id IN (" + ",".join("?" * len(part)) + ")", tuple(part)).fetchall():
+                    live.add(int(r["id"]))
+            ids = [i for i in ids if i in live]
+            if not ids: return h.sendj({"error": "Choose who to message."}, 400)
+        # FCA-04b: the same message to the same people again within a minute (extra taps on Send) is not sent twice.
+        key = hashlib.sha256(("%d|%s|%s" % (uid, body, ",".join(map(str, ids)))).encode("utf-8")).hexdigest()
+        now = time.time()
+        with _OWNER_MSG_LOCK:
+            for k in [k for k, t in _OWNER_MSG_RECENT.items() if now - t > 60]: _OWNER_MSG_RECENT.pop(k, None)
+            if key in _OWNER_MSG_RECENT: return h.sendj({"ok": True, "sent": len(ids), "repeat": True})
+            _OWNER_MSG_RECENT[key] = now
+        # FCA-04b: save and notify in the background so the owner's Send closes at once instead of waiting minutes.
+        sender = {"id": int(u["id"]), "name": u["name"]}
+        def run(ids=ids, body=body, sender=sender, uid=uid):
             sent = []
-            for to in ids:
-                if not c.execute("SELECT 1 FROM users WHERE id=?", (to,)).fetchone(): continue
-                conv = _direct(c, uid, to, stamp)
-                _post(c, conv, uid, body, {"owner_update": 1})
-                sent.append(conv)
-        for conv in sent: _push_conv(conv, u, body[:120])
-        return h.sendj({"ok": True, "sent": len(sent)})
+            for i in range(0, len(ids), 50):
+                try:
+                    batch = []
+                    with A.conn() as c2:
+                        for to in ids[i:i + 50]:
+                            st = A.now()
+                            conv = _direct(c2, uid, to, st)
+                            _post(c2, conv, uid, body, {"owner_update": 1})
+                            batch.append(conv)
+                    sent.extend(batch)
+                except Exception as exc:
+                    print("Future Chat owner message batch failed:", type(exc).__name__)
+            for conv in sent: _push_conv(conv, sender, body[:120])
+            print("Future Chat owner message sent to %d people" % len(sent))
+        threading.Thread(target=run, name="FutureChatOwnerMessage", daemon=True).start()
+        return h.sendj({"ok": True, "sent": len(ids)})
     target = int(d.get("user_id") or 0)
     with A.conn() as c:
         t = c.execute("SELECT id,name,email,role FROM users WHERE id=?", (target,)).fetchone()
