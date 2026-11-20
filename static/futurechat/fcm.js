@@ -234,7 +234,7 @@
   // ---------- new chat
   function newChat() {
     sheet('<h3>New chat</h3><p>' + (window.SV_FC_APP ? 'Message anyone on Future Chat by their phone number.' : 'Message anyone on Skillvaya by phone number, or find a service provider.') + '</p>' +
-      '<input id="fcNQ" type="text" inputmode="text" placeholder="' + (window.SV_FC_APP ? 'Phone number' : 'Phone number or business name') + '" autocomplete="off"><div id="fcNRes"></div>' +
+      '<input id="fcNQ" type="text" inputmode="text" placeholder="' + (window.SV_FC_APP ? 'Name or phone number' : 'Phone number or business name') + '" autocomplete="on" autocapitalize="words"><div id="fcNRes"></div>' +
       '<div class="fc-acts" style="margin-top:6px"><button class="fc-act" id="fcNGroup"><i>👥</i>New group</button><button class="fc-act" id="fcNInvite"><i>✉️</i>Invite friends to Future Chat</button></div>', (el, done) => {
       const inp = $('#fcNQ', el), res = $('#fcNRes', el); let t;
       const showContacts = () => { const st = contactsState(); if (!st.synced) { res.innerHTML = '<button class="fc-act" id="fcNCt"><i>📇</i>Find friends from your contacts</button>'; $('#fcNCt', el).onclick = () => { done(); askContacts(); }; return; }
@@ -243,14 +243,21 @@
       showContacts();
       inp.focus();
       inp.oninput = () => { clearTimeout(t); t = setTimeout(async () => {
-        const q = inp.value.trim(); if (q.length < 2) { showContacts(); return; }
+        const q = inp.value.trim(); if (!q) { showContacts(); return; }
+        // FC-NAMESEARCH-01: the start of a name finds your contacts on Future Chat and the people you already chat with
+        const ql = q.toLowerCase(), digits = q.replace(/\D/g, ''), seen = new Set(); let local = '';
+        const hit = (...xs) => xs.some(x => { x = String(x || '').toLowerCase(); return x && (x.startsWith(ql) || x.split(/\s+/).some(w => w.startsWith(ql))); }) || (digits.length >= 3 && xs.some(x => String(x || '').replace(/\D/g, '').includes(digits)));
+        for (const p of (contactsState().on || [])) if (!seen.has(p.id) && hit(p.contact_name, p.name, p.phone)) { seen.add(p.id); local += '<button class="fc-act" data-u="' + p.id + '"><i>💬</i>' + esc(p.contact_name || p.name) + '<small style="color:#55667d;margin-left:auto">' + esc(p.phone || '') + '</small></button>'; }
+        for (const c of (S.list || [])) if (c.kind !== 'group' && hit(c.title) && !local.includes('>' + esc(c.title) + '<')) local += '<button class="fc-act" data-c="' + c.id + '"><i>💬</i>' + esc(c.title) + '</button>';
+        const bindLocal = () => { res.querySelectorAll('[data-u]').forEach(b => b.onclick = () => start({ user_id: Number(b.dataset.u) }, done)); res.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { done(); openConv(Number(b.dataset.c)); }); };
+        if (digits.length < 6) { res.innerHTML = local || '<p>No one called “' + esc(q) + '” yet. Type their phone number to find them.</p>'; bindLocal(); if (window.SV_FC_APP || q.length < 2) return; }
         try {
-          const d = await api('/api/fc/search-people?q=' + encodeURIComponent(q)); let h = '';
-          for (const p of d.people || []) h += '<button class="fc-act" data-u="' + p.id + '"><i>💬</i>' + esc(p.name) + '<small style="color:#55667d;margin-left:auto">' + esc(d.phone) + '</small></button>';
-          for (const b of d.businesses || []) h += '<button class="fc-act" data-b="' + b.business_id + '"><i>✦</i><span>' + esc(b.name) + '<br><small style="color:#55667d">' + esc(b.category) + ' · ' + esc(b.area) + '</small></span></button>';
+          const d = await api('/api/fc/search-people?q=' + encodeURIComponent(q)); let h = local;
+          for (const p of d.people || []) if (!seen.has(p.id)) h += '<button class="fc-act" data-u="' + p.id + '"><i>💬</i>' + esc(p.name) + '<small style="color:#55667d;margin-left:auto">' + esc(d.phone) + '</small></button>';
+          if (!window.SV_FC_APP) for (const b of d.businesses || []) h += '<button class="fc-act" data-b="' + b.business_id + '"><i>✦</i><span>' + esc(b.name) + '<br><small style="color:#55667d">' + esc(b.category) + ' · ' + esc(b.area) + '</small></span></button>';
           if (d.phone && !(d.people || []).length) h += '<p>' + esc(d.phone) + ' isn\'t on Future Chat yet.</p><button class="fc-btn" data-inv="' + esc(d.phone) + '">Invite them</button>';
           if (!h) h = '<p>No matches yet.</p>';
-          res.innerHTML = h;
+          res.innerHTML = h; bindLocal();
           res.querySelectorAll('[data-u]').forEach(b => b.onclick = () => start({ user_id: Number(b.dataset.u) }, done));
           res.querySelectorAll('[data-b]').forEach(b => b.onclick = () => start({ business_id: Number(b.dataset.b) }, done));
           res.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => invite(b.dataset.inv));
@@ -300,7 +307,7 @@
     const toEnd = () => { if (S.stick) mb.scrollTop = mb.scrollHeight; };
     mb.addEventListener('load', toEnd, true); mb.addEventListener('loadedmetadata', toEnd, true);
     const ta = $('#fcText', root), sendBtn = $('#fcSend', root);
-    const sync = () => { ta.style.height = 'auto'; ta.style.height = Math.min(120, ta.scrollHeight) + 'px'; const has = !!ta.value.trim(); sendBtn.innerHTML = has ? ICON.send : (S.rec ? ICON.stop : ICON.mic); sendBtn.setAttribute('aria-label', has ? 'Send' : (S.rec ? 'Stop and send voice note' : 'Record voice note')); };
+    const sync = () => { ta.style.height = 'auto'; ta.style.height = Math.min(120, ta.scrollHeight) + 'px'; const has = !!ta.value.trim(); sendBtn.innerHTML = (has || S.rec) ? ICON.send : ICON.mic; sendBtn.setAttribute('aria-label', has ? 'Send' : (S.rec ? 'Send voice note' : 'Record voice note')); };   // FC-VNSEND-01: while recording the button is a send arrow
     ta.oninput = sync;
     if (S.pendingShare) { ta.value = S.pendingShare; S.pendingShare = ''; setTimeout(() => { try { sync(); ta.focus(); } catch (_) {} }, 0); toast('Choose Send to share it'); }
     ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(pointer:fine)').matches) { e.preventDefault(); sendText(); } };
@@ -519,7 +526,7 @@
   function recBar(stream, startT, onCancel) {
     const pill = $('.fc-pill', root); const out = { cancelled: false, close() {} }; if (!pill) return out;
     const bar = document.createElement('div'); bar.className = 'fc-recbar'; bar.setAttribute('role', 'status');
-    bar.innerHTML = '<button type="button" class="fc-recx" aria-label="Delete voice note">🗑️</button><span class="fc-recdot"></span><b class="fc-rect">0:00</b><canvas class="fc-recw" aria-hidden="true"></canvas><small class="fc-rech">Tap ■ to send</small>';
+    bar.innerHTML = '<button type="button" class="fc-recx" aria-label="Delete voice note">🗑️</button><span class="fc-recdot"></span><b class="fc-rect">0:00</b><canvas class="fc-recw" aria-hidden="true"></canvas><small class="fc-rech">Tap ➤ to send</small>';
     pill.appendChild(bar);
     bar.querySelector('.fc-recx').onclick = e => { e.preventDefault(); onCancel(); };
     const cv = bar.querySelector('canvas'), tm = bar.querySelector('.fc-rect');
