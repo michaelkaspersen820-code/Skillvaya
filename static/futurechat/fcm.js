@@ -618,18 +618,60 @@
       $('#fcEGo', el).onclick = () => { const v = t.value.trim(); if (!v) return; done(); api('/api/fc/edit', { m: m.id, body: v }).then(() => loadMsgs(true, true)).catch(e => toast(e.message)); };
     });
   }
+  // FC-FWD-02: pick several chats or contacts (tap again to untick), search, select all, counter; anti-spam limit kept (FCA-01)
   function forward(m) {
-    const targets = S.list.filter(c => c.id !== S.conv.id && !c.archived).slice(0, 40);
-    sheet('<h3>Forward to…</h3><div class="fc-acts">' + (targets.length ? targets.map(c => '<button class="fc-act" data-c="' + c.id + '"><i>💬</i>' + esc(c.title) + '</button>').join('') : '<p>Open your chat list first to load your chats.</p>') + '</div>', (el, done) => {
-      el.querySelectorAll('[data-c]').forEach(b => b.onclick = async () => {
-        done();
+    const max = (Number((m.meta || {}).fwd) || 0) >= 5 ? 1 : 5;
+    const rows = [], names = new Set();
+    for (const c of S.list || []) if (c.id !== S.conv.id && !c.archived) { rows.push({ k: 'c' + c.id, c: c.id, name: c.title || 'Chat', sub: c.kind === 'group' ? 'Group' : '' }); names.add(String(c.title || '').toLowerCase()); }
+    for (const p of (contactsState().on || [])) { const n = p.contact_name || p.name || p.phone; if (!n || names.has(String(n).toLowerCase())) continue; names.add(String(n).toLowerCase()); rows.push({ k: 'u' + p.id, u: p.id, name: n, sub: p.phone || '' }); }
+    const sel = new Set(); let q = '';
+    const ini = n => esc((String(n).trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2) || '?').toUpperCase());
+    sheet('<div class="fcf-hd"><h3>Forward to…</h3><span id="fcfN"></span></div>' +
+      '<input id="fcfQ" type="text" placeholder="Search chats and contacts" autocomplete="off">' +
+      '<div class="fcf-bar"><button type="button" id="fcfAll">Select all</button><small>' + (max === 1 ? 'Forwarded many times: 1 chat at a time' : 'Up to ' + max + ' chats at a time') + '</small></div>' +
+      '<div class="fcf-list" id="fcfL"></div><button class="fc-btn" id="fcfGo" disabled>Forward</button>', (el, done) => {
+      const L = $('#fcfL', el), N = $('#fcfN', el), go = $('#fcfGo', el), all = $('#fcfAll', el);
+      const shown = () => { const f = q.toLowerCase(); return rows.filter(r => !f || r.name.toLowerCase().includes(f) || String(r.sub).replace(/\s/g, '').includes(f.replace(/\s/g, ''))); };
+      const paint = () => {
+        const list = shown();
+        L.innerHTML = list.length ? list.slice(0, 300).map(r => '<button type="button" class="fcf-row' + (sel.has(r.k) ? ' on' : '') + '" data-k="' + r.k + '"><span class="fcf-av">' + ini(r.name) + '</span><span class="fcf-t"><b>' + esc(r.name) + '</b>' + (r.sub ? '<small>' + esc(r.sub) + '</small>' : '') + '</span><span class="fcf-ck">✓</span></button>').join('')
+          : '<p style="opacity:.7;margin:10px 4px">' + (rows.length ? 'No one matches “' + esc(q) + '”.' : 'Open your chat list first to load your chats.') + '</p>';
+        N.textContent = sel.size + ' of ' + max + ' selected';
+        go.disabled = !sel.size; go.textContent = sel.size ? 'Forward to ' + sel.size + (sel.size === 1 ? ' chat' : ' chats') : 'Forward';
+        all.textContent = sel.size ? 'Clear' : 'Select all';
+        L.querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
+          const k = b.dataset.k;
+          if (sel.has(k)) sel.delete(k);
+          else if (sel.size >= max) { toast('You can forward to ' + max + (max === 1 ? ' chat' : ' chats') + ' at a time'); return; }
+          else sel.add(k);
+          paint();
+        });
+      };
+      $('#fcfQ', el).oninput = e => { q = e.target.value.trim(); paint(); };
+      all.onclick = () => {
+        if (sel.size) sel.clear();
+        else { for (const r of shown()) { if (sel.size >= max) break; sel.add(r.k); } if (shown().length > max) toast('Selected the first ' + max + ' — you can forward to ' + max + ' chats at a time'); }
+        paint();
+      };
+      go.onclick = async () => {
+        const picked = rows.filter(r => sel.has(r.k)); if (!picked.length) return;
+        done(); toast('Forwarding…');
         try {
           const files = [];
           for (const a of m.attachments || []) { const u = await blobFor(a.id); const blob = await (await fetch(u)).blob(); files.push({ filename: a.filename, mime_type: a.mime_type, data_base64: await toB64(blob) }); }
-          await api('/api/fc/send', { c: Number(b.dataset.c), kind: m.kind === 'system' ? 'text' : m.kind, body: m.body, meta: Object.assign({}, m.meta || {}, { fwd: (Number((m.meta || {}).fwd) || 0) + 1 }), files });   // FCA-01 forward count
-          toast('Forwarded');
+          let ok = 0, err = '';
+          for (const r of picked) {
+            try {
+              const cid = r.c || (await api('/api/fc/start', { user_id: r.u })).conversation_id;
+              await api('/api/fc/send', { c: Number(cid), kind: m.kind === 'system' ? 'text' : m.kind, body: m.body, meta: Object.assign({}, m.meta || {}, { fwd: (Number((m.meta || {}).fwd) || 0) + 1 }), files });   // FCA-01 forward count
+              ok++;
+            } catch (e) { err = e.message; }
+          }
+          toast(ok ? 'Forwarded to ' + ok + (ok === 1 ? ' chat' : ' chats') + (err ? ' · ' + err : '') : (err || 'Could not forward'));
+          if (ok) { try { loadList(); } catch (_) {} }
         } catch (e) { toast(e.message); }
-      });
+      };
+      paint();
     });
   }
   function convMenu() {
