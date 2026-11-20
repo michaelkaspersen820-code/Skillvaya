@@ -257,8 +257,20 @@
     });
   }
   function readFile(file) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('That file could not be read.')); r.readAsDataURL(file); }); }
+  // FCSTATUS-CAM-01: in the Future Chat app, "Photo or video" asks Camera or Gallery; Camera opens the phone camera.
+  // Skillvaya keeps its old behaviour (straight to the picker).
   function composeMedia() {
-    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*,video/mp4,video/webm';
+    if (!window.SV_FC_APP) { pickMedia(false); return; }
+    sheet('<h3>Photo or video status</h3>' +
+      '<div class="fc-acts"><button class="fc-act" data-a="cam"><i>📷</i><span>Take a photo</span></button><button class="fc-act" data-a="lib"><i>🖼️</i><span>Choose from gallery</span></button></div>', (el, done) => {
+      el.querySelector('[data-a="cam"]').onclick = () => { done(); pickMedia(true); };
+      el.querySelector('[data-a="lib"]').onclick = () => { done(); pickMedia(false); };
+    });
+  }
+  function pickMedia(useCamera) {
+    const inp = document.createElement('input'); inp.type = 'file';
+    if (useCamera) { inp.accept = 'image/*'; inp.setAttribute('capture', 'environment'); }
+    else inp.accept = 'image/*,video/mp4,video/webm';
     inp.onchange = async () => {
       const f = inp.files && inp.files[0]; if (!f) return;
       let data;
