@@ -12,7 +12,7 @@
   const call$ = (url, opts) => { try { if (typeof api === 'function') return api(url, opts); } catch (_) {} return Promise.reject(new Error('not ready')); };
   const modal = () => document.getElementById('svVideoCallModal');
   const isOpen = m => !!m && !m.classList.contains('hidden');
-  const fxOpen = () => { const b = document.getElementById('svFxBar'); return !!(b && !b.hidden); };
+  const fxOpen = () => { const b = document.getElementById('svFxBar'); return !!(b && !b.hidden && b.getClientRects().length); };   // hidden on voice calls = not open
   const closeFx = () => { if (fxOpen()) { try { svToggleFxBar(); } catch (_) { const b = document.getElementById('svFxBar'); if (b) b.hidden = true; } } };
   const setState = t => { try { svSetCallState(t); } catch (_) {} };
 
@@ -37,7 +37,9 @@
     'html #svFxBar .sv-orig-chip{min-width:44px!important;height:44px!important;padding:3px 6px!important;gap:0!important}',
     'html #svFxBar .sv-orig-chip small{font-size:9px!important}',
     'html #svFxBar .sv-lens-chip img{width:30px!important;height:30px!important}',
-    'html #svFxBar .sv-orig-chip span{font-size:21px!important;line-height:1!important}'
+    'html #svFxBar .sv-orig-chip span{font-size:21px!important;line-height:1!important}',
+    // FC-VOICENOFX-01 (owner 2026-11-20): no Filters on a voice call (nothing to filter) - video calls keep them
+    'html .sv-call-overlay.sv-call-voice-only #svFxBar,html .sv-call-overlay.sv-call-voice-only button[onclick^="svToggleFxBar"]{display:none!important}'
   ].join('');
   document.head.appendChild(st);
 

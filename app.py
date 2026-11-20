@@ -5125,7 +5125,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
                 fc_page = fc_page.replace('<script src="/futurechat/calllens.js?v=8" defer></script>', '<script src="/futurechat/fclens.js?v=1" defer></script>', 1)   # FC-LENSFIT-01
                 fc_page = fc_page.replace('<script src="/futurechat/fcstatus.js?v=9" defer></script>', '<script src="/futurechat/fcsm.js?v=3" defer></script>', 1)   # FCS-LIKE-01 / FCS-SHARE-01
                 # FC-CALLUI-01: loaded before fcm.js so the phone's back button reaches the call screen first
-                fc_page = fc_page.replace('<script src="/futurechat/fcm.js?v=3" defer></script>', '<script src="/futurechat/fccall.js?v=1" defer></script><script src="/futurechat/fcm.js?v=3" defer></script>', 1)
+                fc_page = fc_page.replace('<script src="/futurechat/fcm.js?v=3" defer></script>', '<script src="/futurechat/fccall.js?v=2" defer></script><script src="/futurechat/fcm.js?v=3" defer></script>', 1)
                 fc_page = fc_page.replace('<link rel="stylesheet" href="/futurechat/fc.css?v=4">', '<link rel="stylesheet" href="/futurechat/fcm.css?v=2"><link rel="stylesheet" href="/futurechat/fcapp.css?v=11"><style>#svSplash{background:linear-gradient(180deg,#0a1f33,#0f3150 55%,#11506a)!important;color:#fff!important}#svSplash .sv-splash-brand{color:#1ed6c8!important}#svSplash .sv-splash-caption{color:#cfe3f2!important}</style>', 1)
                 fc_page = fc_page.replace('<div class="sv-splash-brand">Skillvaya</div><div class="sv-splash-caption">Digital &amp; Creative Studio</div>', '<div class="sv-splash-brand">Future Chat</div><div class="sv-splash-caption">Stay close. Wherever life takes you.</div>', 1)
                 fc_html = fc_page.encode("utf-8")
