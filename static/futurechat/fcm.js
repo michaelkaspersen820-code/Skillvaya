@@ -349,11 +349,32 @@
     $('#fcSub', root).textContent = c.kind === 'group' ? (c.members || []).map(m => m.name).slice(0, 5).join(', ') : window.SV_FC_APP ? 'Future Chat' : c.who === 'business' ? 'Service provider · Skillvaya' : c.who === 'customer' ? 'Your customer' : 'Future Chat';
     if (window.FCX && window.FCX.afterHeader) { try { window.FCX.afterHeader(root, c); } catch (_) {} }
   }
+  // FC-STK-WEB-01: a sticker from the Future Chat app (meta.sticker + .webp picture + optional sound) shows like in the app:
+  // transparent 150 px picture, no bubble, a small ♪ button plays its sound (tap again stops).
+  function isStk(m) { return !m.deleted && m.meta && m.meta.sticker && (m.attachments || []).some(a => /^image\//.test(mimeOf(a.mime_type, a.filename))); }
+  function stkHtml(m) {
+    const atts = (m.attachments || []).map(a => Object.assign({}, a, { mime_type: mimeOf(a.mime_type, a.filename) }));
+    const img = atts.find(a => /^image\//.test(a.mime_type)), snd = atts.find(a => /^audio\//.test(a.mime_type));
+    const vol = Math.max(0, Math.min(1, Number(m.meta.sticker.vol == null ? 1 : m.meta.sticker.vol) || 0));
+    return '<span class="fc-stkw" style="position:relative;display:inline-block;width:150px;height:150px">' +
+      '<img class="fc-stk" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-att="' + img.id + '" alt="Sticker" style="width:150px;height:150px;object-fit:contain;background:transparent;display:block">' +
+      (snd ? '<audio data-att="' + snd.id + '" data-vol="' + vol + '" preload="none" style="display:none"></audio><button type="button" data-stksnd="1" aria-label="Play sound" style="position:absolute;bottom:2px;' + (m.mine ? 'left' : 'right') + ':2px;width:26px;height:26px;border-radius:99px;border:0;background:rgba(11,26,46,.8);color:#fff;font-weight:700;font-size:13px;cursor:pointer;padding:0">♪</button>' : '') +
+      (m.pending ? '<span class="fc-spin" aria-label="Sending"></span>' : '') + '</span>';
+  }
+  document.addEventListener('click', e => {
+    const b = e.target && e.target.closest ? e.target.closest('[data-stksnd]') : null; if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    const au = b.parentNode.querySelector('audio'); if (!au) return;
+    if (!au.paused) { au.pause(); au.currentTime = 0; return; }
+    document.querySelectorAll('.fc-stkw audio').forEach(x => { if (x !== au) x.pause(); });
+    au.volume = Number(au.dataset.vol || 1); au.currentTime = 0; const p = au.play(); if (p && p.catch) p.catch(() => {});
+  }, true);
   function bubble(m, prev) {
     if (m.kind === 'system') return '<div class="fc-sys">' + rich(m.body) + '</div>';
     if (m.kind === 'stokvel') return '<div class="fc-sys" style="cursor:pointer" onclick="window.FutureChat&&window.FutureChat.stokvel()">💰 ' + esc(m.body) + ' · ' + esc(clock(m.created_at)) + '</div>';
     if (m.kind === 'call') return '<div class="fc-sys">' + (/missed/i.test(m.body) ? '📵 ' : '📞 ') + esc((m.mine ? 'You · ' : '') + (m.body || 'Call')) + ' · ' + esc(clock(m.created_at)) + '</div>';
-    const big = !m.deleted && m.kind === 'text' && !m.reply && onlyCm(m.body);
+    const stk = isStk(m);
+    const big = stk || (!m.deleted && m.kind === 'text' && !m.reply && onlyCm(m.body));
     const showName = S.conv.kind === 'group' && !m.mine && (!prev || prev.sender_id !== m.sender_id || prev.kind === 'system');
     const sender = (S.conv.members || []).find(x => x.id === m.sender_id);
     let inner = '';
@@ -361,7 +382,8 @@
     if (m.reply) inner += '<span class="fc-quote"><b>' + (m.reply.sender_id === (S.me && S.me.id) ? 'You' : esc(((S.conv.members || []).find(x => x.id === m.reply.sender_id) || {}).name || 'Reply')) + '</b>' + rich(m.reply.text) + '</span>';
     if (m.deleted) inner += '<i style="opacity:.75">🚫 This message was deleted</i>';
     else {
-      for (const a0 of m.attachments || []) {
+      if (stk) inner += stkHtml(m);   // FC-STK-WEB-01
+      else for (const a0 of m.attachments || []) {
         const a = Object.assign({}, a0, { mime_type: mimeOf(a0.mime_type, a0.filename) });   // FC-PHOTO-01: a photo is always shown as a photo
         if (/^image\//.test(a.mime_type)) inner += (m.pending ? '<span class="fc-upw">' : '') + '<img class="fc-img fc-ld" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-att="' + a.id + '" alt="">' + (m.pending ? '<span class="fc-spin" aria-label="Sending"></span></span>' : '');   // FC-IMG-01: neat grey box while loading, never the broken-picture icon
         else if (/^video\//.test(a.mime_type)) inner += (m.pending ? '<span class="fc-upw">' : '') + '<video class="fc-img" data-att="' + a.id + '" controls playsinline preload="metadata"></video>' + (m.pending ? '<span class="fc-spin" aria-label="Sending"></span></span>' : '');
