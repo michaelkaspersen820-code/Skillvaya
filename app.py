@@ -4264,9 +4264,18 @@ def seo_sitemap_body():
             entries + '</urlset>').encode("utf-8")
 
 
+
+DB_STATE = {"down": False}
+DB_OUTAGE_MESSAGE = "We're doing some quick maintenance. Please try again a little later."
+def _looks_like_db_outage(text):
+    t = (text or "").lower()
+    return any(k in t for k in ("exceeded the quota", "connection failed", "connection to server", "neon.tech", "is the server running", "could not connect", "server closed the connection", "operationalerror", "connection is bad", "port 5432", "timeout expired", "connectiontimeout", "the database system", "too many connections", "ssl syscall", "object has no attribute 'conn'"))
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*a): pass
     def sendj(self,obj,status=200):
+        if isinstance(obj,dict) and isinstance(obj.get("error"),str) and status>=400 and (DB_STATE["down"] or _looks_like_db_outage(obj["error"])):
+            print("Database unavailable:", obj["error"][:300], flush=True); obj=dict(obj); obj["error"]=DB_OUTAGE_MESSAGE; status=503
         data=json.dumps(obj).encode(); self.send_response(status); self.send_header("Content-Type","application/json; charset=utf-8")
         if isinstance(obj,dict) and obj.get("token"):
             self.send_header("Set-Cookie","skillvaya_session="+str(obj["token"])+"; Path=/; Max-Age=315360000; Secure; HttpOnly; SameSite=Lax")
@@ -7140,10 +7149,27 @@ def fc_setup():
     OWN.bind(KAI.A, KAI._verify)
     with conn() as c: KAI.init(c)
     threading.Thread(target=lambda:FC.migrate_legacy(True),name="futurechat-migrate",daemon=True).start()
-def main():
+def _db_startup():
     init()
     fc_setup()
+    DB_STATE["down"]=False
     print("Skillvaya database initialized; starting HTTP server",flush=True)
+def main():
+    # If the database is unreachable at boot (provider quota or outage), still bind the HTTP
+    # port so users get a friendly maintenance message, and keep retrying in the background.
+    try:
+        _db_startup()
+    except Exception as e:
+        DB_STATE["down"]=True
+        print("Database not reachable at startup; serving in maintenance mode and retrying:",type(e).__name__,str(e)[:200],flush=True)
+        def _retry_db():
+            while True:
+                threading.Event().wait(60)
+                try:
+                    _db_startup(); print("Database is back; startup completed",flush=True); return
+                except Exception as e2:
+                    print("Database still unreachable:",type(e2).__name__,flush=True)
+        threading.Thread(target=_retry_db,name="skillvaya-db-retry",daemon=True).start()
     # Off the startup path so the HTTP port binds immediately (Render detects it); indexes build in the background.
     threading.Thread(target=ensure_performance_indexes,name="skillvaya-indexes",daemon=True).start()
     if "fcm_prewarm" in globals(): threading.Thread(target=fcm_prewarm,name="skillvaya-fcm-prewarm",daemon=True).start()
